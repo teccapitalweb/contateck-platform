@@ -1,0 +1,27 @@
+{
+  "name": "contateck-backend",
+  "version": "1.0.0",
+  "description": "Backend de timbrado CFDI 4.0 para CONTATECK (Fiscalapi + Firebase)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test-local.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.9.3",
+    "firebase-admin": "^14.0.0",
+    "fiscalapi": "^4.0.386",
+    "pdfmake": "^0.3.11",
+    "qrcode": "^1.5.4"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  }
+}

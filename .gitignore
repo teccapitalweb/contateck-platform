@@ -1,0 +1,23 @@
+# Nunca subir credenciales reales ni CSD
+.env
+.env.local
+*.key
+*.cer
+*.pfx
+csd/
+
+# Dependencias
+node_modules/
+backend/node_modules/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel · CONTATECK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body data-dashboard>
+<div class="scrim"></div>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="side__brand">
+      <a href="index.html" class="brand">
+        <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
+        <span class="brand__word">Conta<b class="t">teck</b></span>
+      </a>
+    </div>
+
+    <div class="side__group">
+      <div class="side__label">Inicio</div>
+      <div class="nav-item is-active" data-view="dashboard" data-title="Dashboard ejecutivo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg>
+        Dashboard
+      </div>
+    </div>
+
+    <div class="side__group">
+      <div class="side__label">Operación</div>
+      <div class="nav-item" data-view="contabilidad" data-title="Contabilidad general">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 0 2 2h13"/><path d="M9 7h6M9 11h6"/></svg>
+        Contabilidad
+      </div>
+      <div class="nav-item" data-view="ventas" data-title="Ventas y pagos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-1.5 9.5a2 2 0 0 1-2 1.7H8.5a2 2 0 0 1-2-1.7L5 4H3"/><circle cx="9" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>
+        Ventas y Pagos
+      </div>
+      <div class="nav-item" data-view="facturacion" data-title="Facturación">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4L10 21l-2-1.4L6 21z"/><path d="M9.5 8h5M9.5 12h5"/></svg>
+        Facturación
+      </div>
+      <div class="nav-item" data-view="nomina" data-title="Nómina">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3 3 0 0 1 0 5.4M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg>
+        Nómina
+      </div>
+    </div>
+
+    <div class="side__group">
+      <div class="side__label">Fiscal</div>
+      <div class="nav-item" data-view="sat" data-title="SAT y fiscal México">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg>
+        SAT y Fiscal
+      </div>
+    </div>
+
+    <div class="side__group">
+      <div class="side__label">Asistente</div>
+      <div class="nav-item" data-view="ia" data-title="IA contable">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7z"/><path d="M18.5 14.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg>
+        IA Contable
+        <span class="tag">IA</span>
+      </div>
+    </div>
+
+    <div class="side__foot">
+      <div class="side__user" data-logout role="button" tabindex="0" title="Cerrar sesión">
+        <span class="avatar" data-user-ini>JG</span>
+        <span class="meta"><b data-user-name>Jorge · Director General</b><span data-user-sub>Cerrar sesión</span></span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CONTENIDO -->
+  <div>
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <button class="menu-btn" data-menu aria-label="Menú"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div class="crumb"><small>CONTATECK</small><b data-crumb-title>Dashboard ejecutivo</b></div>
+      <div class="topbar__spacer"></div>
+
+      <!-- Selector de empresa (multiempresa) -->
+      <div class="select empresa-sel">
+        <button class="select__btn">
+          <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16M15 9h3a2 2 0 0 1 2 2v10M4 21h16M8 7h3M8 11h3M8 15h3"/></svg>
+          <span data-empresa-label>Empresa</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="select__menu" data-empresas></div>
+      </div>
+
+      <button class="icon-btn" aria-label="Buscar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg></button>
+      <button class="icon-btn" aria-label="Notificaciones"><span class="dot"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button>
+      <button class="theme-toggle" data-theme-toggle aria-label="Cambiar tema">
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.6 6.6 0 0 0 21 12.8z"/></svg>
+      </button>
+    </header>
+
+    <!-- MAIN -->
+    <main class="main">
+
+      <!-- ===== VISTA: DASHBOARD EJECUTIVO ===== -->
+      <section class="view is-active" data-view="dashboard">
+        <div class="page-head">
+          <div>
+            <h1>Dashboard ejecutivo</h1>
+            <p>Resumen de <b data-empresa-label>tu empresa</b> · junio 2026</p>
+          </div>
+          <div class="page-head__actions">
+            <button class="btn btn--ghost" data-soon="La exportación a Excel/PDF llega en la siguiente fase.">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+              Exportar
+            </button>
+            <button class="btn btn--primary" data-cont-nueva-pol>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Nueva póliza
+            </button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpis" data-kpis></div>
+
+        <!-- Firma: cuadre del libro mayor -->
+        <div class="card" style="margin-bottom:1.2rem" data-ledger-bar>
+          <div class="card__head" style="margin-bottom:.9rem">
+            <h3>Cuadre del libro mayor</h3>
+            <span class="sub">Periodo en curso</span>
+          </div>
+          <div class="ledger__top"><span>Debe</span><span>Haber</span></div>
+          <div class="ledger__bar"><span class="deb"></span><span class="hab"></span></div>
+          <div class="ledger__nums"><b data-debe>$0</b><b data-haber>$0</b></div>
+          <div class="ledger__bal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Asientos balanceados — cargos = abonos</div>
+        </div>
+
+        <!-- Chart + alertas -->
+        <div class="grid-2">
+          <div class="card">
+            <div class="card__head">
+              <div><h3>Ventas vs gastos</h3><span class="sub">Últimos 12 meses · miles MXN</span></div>
+              <div class="seg">
+                <button>Mes</button><button class="is-active">Año</button>
+              </div>
+            </div>
+            <div class="legend">
+              <span class="l-vent"><i></i>Ventas</span>
+              <span class="l-gas"><i></i>Gastos</span>
+            </div>
+            <div class="chart-wrap" data-chart-main></div>
+          </div>
+
+          <div class="card">
+            <div class="card__head"><h3>Alertas</h3><span class="sub">3 activas</span></div>
+            <div class="alerts" data-alerts></div>
+          </div>
+        </div>
+
+        <!-- Composición + balance + fiscal -->
+        <div class="grid-3">
+          <div class="card">
+            <div class="card__head"><h3>Composición de gastos</h3></div>
+            <div class="donut-wrap">
+              <div data-donut></div>
+              <ul class="donut-legend" data-donut-legend></ul>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card__head"><h3>Balance general</h3></div>
+            <div class="comp" data-balance></div>
+          </div>
+
+          <div class="card">
+            <div class="card__head"><h3>Indicadores fiscales</h3><span class="sub">Estimado</span></div>
+            <div class="comp" data-fiscal></div>
+          </div>
+        </div>
+
+        <!-- Obligaciones SAT -->
+        <div class="card">
+          <div class="card__head"><h3>Próximas obligaciones SAT</h3><span class="sub">Junio 2026</span></div>
+          <div style="overflow-x:auto">
+            <table class="tbl">
+              <thead><tr><th>Obligación</th><th>Periodo</th><th>Vence</th><th>Monto</th><th>Estado</th></tr></thead>
+              <tbody data-obligaciones></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== VISTAS EN CONSTRUCCIÓN ===== -->
+      <section class="view" data-view="contabilidad">
+        <div class="page-head">
+          <div><h1>Contabilidad general</h1><p>Catálogo de cuentas y pólizas · <b data-empresa-label>tu empresa</b></p></div>
+          <div class="page-head__actions">
+            <div data-cont-periodo></div>
+            <button class="btn btn--primary" data-cont-nueva-pol><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nueva póliza</button>
+          </div>
+        </div>
+        <div class="kpis" data-cont-stats></div>
+        <div class="tabs" data-tabs="cont">
+          <button class="tab is-active" data-tab="catalogo">Catálogo de cuentas</button>
+          <button class="tab" data-tab="polizas">Pólizas</button>
+          <button class="tab" data-tab="mayor">Libro Mayor</button>
+          <button class="tab" data-tab="balanza">Balanza</button>
+          <button class="tab" data-tab="estados">Estados financieros</button>
+          <button class="tab" data-tab="sat">SAT / Declaraciones</button>
+        </div>
+        <div class="tabpane is-active" data-pane="catalogo">
+          <div class="card">
+            <div class="toolbar">
+              <button class="btn btn--ghost btn--sm" data-cont-nueva-cta><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="width:15px;height:15px;margin-right:.3rem"><path d="M12 5v14M5 12h14"/></svg>Nueva cuenta</button>
+            </div>
+            <div style="overflow-x:auto">
+              <table class="tbl">
+                <thead><tr><th>Código</th><th>Cuenta</th><th>Naturaleza</th><th style="text-align:right">Saldo</th><th></th></tr></thead>
+                <tbody data-cuentas></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="tabpane" data-pane="polizas">
+          <div class="card">
+            <div class="toolbar" style="flex-wrap:wrap;gap:.6rem">
+              <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-search="polizas" placeholder="Buscar póliza por folio o concepto…"></div>
+              <button class="btn btn--primary btn--sm" data-cont-contabilizar><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;margin-right:.35rem"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Contabilizar CFDI</button>
+              <button class="btn btn--ghost btn--sm" data-cont-importar-xml><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;margin-right:.35rem"><path d="M12 16V4M7 9l5-5 5 5M5 21h14"/></svg>Importar XML recibido</button>
+            </div>
+            <div style="overflow-x:auto">
+              <table class="tbl">
+                <thead><tr><th>Folio</th><th>Tipo</th><th>Fecha</th><th>Concepto</th><th style="text-align:right">Monto</th><th>Estado</th><th></th></tr></thead>
+                <tbody data-polizas></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="tabpane" data-pane="mayor"></div>
+        <div class="tabpane" data-pane="balanza"></div>
+        <div class="tabpane" data-pane="estados"></div>
+        <div class="tabpane" data-pane="sat"></div>
+      </section>
+
+      <section class="view" data-view="ventas"><div data-ventas-root></div></section>
+
+      <section class="view" data-view="facturacion">
+        <div class="page-head">
+          <div><h1>Facturación</h1><p>CFDI 4.0 emitidos · <b data-empresa-label>tu empresa</b></p></div>
+          <div class="page-head__actions">
+            <button class="btn btn--ghost" data-config-empresa><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Configuración</button>
+            <button class="btn btn--ghost" data-soon="El timbrado masivo ante el PAC requiere backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></svg>Timbrado masivo</button>
+            <button class="btn btn--primary" data-facturar><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Timbrar CFDI</button>
+          </div>
+        </div>
+        <div class="kpis" data-fact-stats></div>
+        <div class="card">
+          <div class="toolbar">
+            <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-search="cfdis" placeholder="Buscar por folio, cliente o UUID…"></div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl">
+              <thead><tr><th>Folio</th><th>UUID</th><th>Cliente</th><th>Fecha</th><th style="text-align:right">Total</th><th>Estado</th><th></th></tr></thead>
+              <tbody data-cfdis></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" data-view="nomina">
+        <div class="page-head">
+          <div><h1>Nómina</h1><p>Cálculo y timbrado · <b data-empresa-label>tu empresa</b></p></div>
+          <div class="page-head__actions">
+            <button class="btn btn--ghost" data-soon="El cálculo de nómina (ISR/IMSS) con tablas SAT llega en la siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>Calcular</button>
+            <button class="btn btn--primary" data-soon="El timbrado de CFDI Nómina ante el PAC requiere backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Timbrar nómina</button>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="card__head"><h3>Resumen del periodo</h3><span class="sub" data-nom-periodo></span></div>
+          <div class="nom-grid">
+            <div class="nom-box perc"><span>Percepciones</span><b data-nom-perc>$0</b></div>
+            <div class="nom-box ded"><span>Deducciones</span><b data-nom-ded>$0</b></div>
+            <div class="nom-box neto"><span>Neto a pagar</span><b data-nom-neto>$0</b></div>
+          </div>
+          <div class="comp" data-nom-desglose></div>
+        </div>
+        <div class="card">
+          <div class="card__head"><h3>Empleados</h3><div style="display:flex;align-items:center;gap:.8rem"><span class="sub" data-emp-count></span><button class="btn btn--ghost" style="padding:.45rem .8rem;font-size:.84rem" data-new="empleado"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Empleado</button></div></div>
+          <div class="toolbar">
+            <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-search="empleados" placeholder="Buscar empleado por nombre o puesto…"></div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl">
+              <thead><tr><th>Empleado</th><th>Puesto</th><th style="text-align:right">Sueldo mensual</th><th>Estado</th><th></th></tr></thead>
+              <tbody data-empleados></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" data-view="sat">
+        <div class="page-head">
+          <div><h1>SAT y Fiscal México</h1><p>Descarga de XML, validación y declaraciones · <b data-empresa-label>tu empresa</b></p></div>
+          <div class="page-head__actions">
+            <button class="btn btn--ghost" data-soon="La descarga masiva de XML del SAT requiere e.firma + backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 21h14"/></svg>Descargar XML</button>
+            <button class="btn btn--primary" data-soon="La presentación de declaraciones ante el SAT requiere backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg>Presentar declaración</button>
+          </div>
+        </div>
+        <div class="kpis" data-sat-stats></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card__head"><h3>Declaraciones</h3><span class="sub">Últimos periodos</span></div>
+            <div style="overflow-x:auto">
+              <table class="tbl">
+                <thead><tr><th>Tipo</th><th>Periodo</th><th>Presentada</th><th>Acuse</th><th>Estado</th></tr></thead>
+                <tbody data-declaraciones></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card__head"><h3>Buzón fiscal</h3><span class="sub">IA</span></div>
+            <div class="alerts" data-buzon></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" data-view="ia">
+        <div class="page-head">
+          <div><h1>IA Contable</h1><p>Tu asistente fiscal y contable · <b data-empresa-label>tu empresa</b></p></div>
+        </div>
+        <div class="chips" data-ia-acciones></div>
+        <div class="card">
+          <div class="chat">
+            <div class="chat__log" data-ia-chat></div>
+            <div class="chat__input">
+              <input data-ia-input placeholder="Pregúntale algo a tu contador con IA…" autocomplete="off">
+              <button class="chat__send" data-ia-send aria-label="Enviar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Modal de creación (póliza / CFDI / empleado) -->
+<div class="modal" data-modal>
+  <div class="modal__scrim" data-modal-close></div>
+  <div class="modal__card" role="dialog" aria-modal="true">
+    <div class="modal__head">
+      <h3 data-modal-title>Nuevo registro</h3>
+      <button class="modal__x" data-modal-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="modal__body" data-modal-body></div>
+    <div class="modal__foot">
+      <button class="btn btn--ghost" data-modal-close>Cancelar</button>
+      <button class="btn btn--primary" data-modal-save>Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Avisos -->
+<div class="toast-wrap" data-toasts></div>
+
+<script src="data.js"></script>
+<script src="app.js?v=4"></script>
+<script src="firebase-config.js"></script>
+<script type="module" src="auth-guard.js"></script>
+<script type="module" src="data-firestore.js?v=6"></script>
+<script src="facturacion.js?v=20"></script>
+<script src="contabilidad.js?v=5"></script>
+<script src="ventas.js?v=1"></script>
+</body>
+</html>

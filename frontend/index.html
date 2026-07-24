@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CONTATECK · Software contable con IA para México</title>
+<meta name="description" content="Contabilidad, SAT, facturación CFDI 4.0 y nómina en un solo sistema, con IA en cada módulo.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<div class="glowbg"></div>
+
+<!-- NAV -->
+<nav class="nav">
+  <a href="index.html" class="brand">
+    <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
+    <span class="brand__word">Conta<b class="t">teck</b></span>
+  </a>
+  <div class="nav__links">
+    <a href="#modulos">Módulos</a>
+    <a href="#ia">IA Contable</a>
+    <a href="#despachos">Despachos</a>
+  </div>
+  <div class="nav__right">
+    <button class="theme-toggle" data-theme-toggle aria-label="Cambiar tema">
+      <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.6 6.6 0 0 0 21 12.8z"/></svg>
+    </button>
+    <a href="login.html" class="btn btn--primary">Entrar</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div>
+    <span class="eyebrow">Software contable · México</span>
+    <h1 class="hero__h1">Tu contabilidad y el <em>SAT</em>,<br>siempre <span class="gold">al día</span>.</h1>
+    <p class="hero__sub">Pólizas, CFDI 4.0, nómina y declaraciones en un solo lugar. La IA sugiere cuentas, detecta errores y te avisa antes de que lo haga el SAT.</p>
+    <div class="hero__cta">
+      <a href="login.html" class="btn btn--primary btn--lg">Entrar al panel
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a href="#modulos" class="btn btn--ghost btn--lg">Ver módulos</a>
+    </div>
+    <div class="hero__trust">
+      <span><b>6</b>módulos en el MVP</span>
+      <span><b>CFDI 4.0</b>+ REP y complementos</span>
+      <span><b>Multiempresa</b>y consolidación</span>
+    </div>
+  </div>
+
+  <!-- Peek: muestra el producto -->
+  <div class="peek">
+    <div class="peek__head">
+      <span class="peek__title">Dashboard ejecutivo</span>
+      <span class="peek__dot"><i></i><i></i><i></i></span>
+    </div>
+    <div class="peek__kpis">
+      <div class="peek__kpi"><span>Utilidad neta</span><b>$542k <small class="up">+18.9%</small></b></div>
+      <div class="peek__kpi"><span>Liquidez</span><b>1.82 <small class="down">-3.2%</small></b></div>
+    </div>
+    <div class="peek__chart">
+      <span>Ventas vs gastos · 12 meses</span>
+      <svg viewBox="0 0 260 64" preserveAspectRatio="none" style="width:100%;height:64px">
+        <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--brand)" stop-opacity=".28"/><stop offset="1" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>
+        <path d="M0 58 L0 40 L24 36 L48 42 L72 28 L96 30 L120 18 L144 24 L168 14 L192 16 L216 10 L240 6 L260 6 L260 58 Z" fill="url(#pg)"/>
+        <path d="M0 40 L24 36 L48 42 L72 28 L96 30 L120 18 L144 24 L168 14 L192 16 L216 10 L240 6 L260 6" fill="none" stroke="var(--brand)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M0 50 L24 49 L48 51 L72 47 L96 48 L120 44 L144 46 L168 42 L192 43 L216 40 L240 41 L260 39" fill="none" stroke="var(--gold)" stroke-width="2" stroke-dasharray="2 4" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<!-- MÓDULOS -->
+<section class="section" id="modulos">
+  <div class="section__head">
+    <span class="eyebrow">Lo que incluye el MVP</span>
+    <h2 class="section__title">Seis módulos. Un solo sistema contable.</h2>
+    <p class="section__lead">Del registro de pólizas al timbrado fiscal, con un asistente de IA en cada paso del proceso.</p>
+  </div>
+  <div class="mods">
+    <article class="mod">
+      <span class="mod__n">01</span>
+      <div class="mod__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 0 2 2h13"/><path d="M9 7h6M9 11h6"/></svg></div>
+      <h3>Contabilidad General</h3>
+      <p>Catálogo de cuentas configurable, pólizas, asientos automáticos y reportes financieros. Multiempresa y consolidación.</p>
+    </article>
+    <article class="mod">
+      <span class="mod__n">02</span>
+      <div class="mod__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+      <h3>SAT y Fiscal México</h3>
+      <p>Descarga masiva de XML, validación de CFDI, cálculo de IVA, ISR y retenciones, DIOT y contabilidad electrónica.</p>
+    </article>
+    <article class="mod">
+      <span class="mod__n">03</span>
+      <div class="mod__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4L10 21l-2-1.4L6 21z"/><path d="M9.5 8h5M9.5 12h5"/></svg></div>
+      <h3>Facturación</h3>
+      <p>CFDI 4.0, notas de crédito, REP y complementos. Timbrado masivo, cancelación y facturación recurrente.</p>
+    </article>
+    <article class="mod">
+      <span class="mod__n">08</span>
+      <div class="mod__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3 3 0 0 1 0 5.4M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg></div>
+      <h3>Nómina</h3>
+      <p>Cálculo de sueldos, finiquitos y aguinaldos. ISR, IMSS, INFONAVIT y Fonacot. Timbrado de CFDI Nómina.</p>
+    </article>
+    <article class="mod">
+      <span class="mod__n">14</span>
+      <div class="mod__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg></div>
+      <h3>Dashboard Ejecutivo</h3>
+      <p>Indicadores de ventas, utilidad y liquidez. Comparativos mensuales, trimestrales y alertas en tiempo real.</p>
+    </article>
+    <article class="mod">
+      <span class="mod__n">15</span>
+      <div class="mod__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7z"/><path d="M18.5 14.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg></div>
+      <h3>IA Contable</h3>
+      <p>Chat contable, automatización XML → contabilidad, auditor inteligente y monitoreo de obligaciones para despachos.</p>
+    </article>
+  </div>
+</section>
+
+<!-- BANDA IA -->
+<section class="band" id="ia">
+  <div class="band__inner">
+    <div>
+      <span class="eyebrow">Módulo 15 · IA Contable</span>
+      <h2>Un contador con IA, trabajando 24/7.</h2>
+      <p>Conecta tus XML y tus bancos. CONTATECK clasifica, concilia y detecta riesgos fiscales antes de que se conviertan en multas.</p>
+    </div>
+    <ul class="band__list" id="despachos">
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Automatización XML → Contabilidad</li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Conciliación Bancos → Contabilidad</li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Auditor inteligente de riesgos fiscales</li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Monitoreo de obligaciones para despachos</li>
+    </ul>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="foot">
+  <div class="foot__inner">
+    <a href="index.html" class="brand">
+      <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
+      <span class="brand__word">Conta<b class="t">teck</b></span>
+    </a>
+    <p>© 2026 CONTATECK · TEC CAPITAL Group</p>
+    <div style="display:flex;gap:1.4rem">
+      <a href="#">Aviso de privacidad</a>
+      <a href="login.html">Iniciar sesión</a>
+    </div>
+  </div>
+</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

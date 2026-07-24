@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Iniciar sesión · CONTATECK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<main class="auth">
+
+  <!-- Panel de marca -->
+  <aside class="auth__brand">
+    <a href="index.html" class="brand">
+      <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
+      <span class="brand__word">Conta<b class="t">teck</b></span>
+    </a>
+    <div class="auth__pitch">
+      <span class="eyebrow">Panel contable</span>
+      <h2>Tu cierre del mes empieza aquí.</h2>
+      <p>Pólizas, CFDI, nómina y declaraciones — sincronizados y cuadrados en tiempo real.</p>
+    </div>
+    <!-- Firma: cuadre Debe/Haber -->
+    <div class="auth__ledger">
+      <div class="ledger">
+        <div class="ledger__top"><span>Debe</span><span>Haber</span></div>
+        <div class="ledger__bar"><span class="deb" style="width:50%"></span><span class="hab" style="width:50%"></span></div>
+        <div class="ledger__nums"><b>$6,460,000</b><b>$6,460,000</b></div>
+        <div class="ledger__bal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Libro mayor cuadrado</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Formulario -->
+  <section class="auth__form">
+    <div class="auth__card">
+      <a href="index.html" class="brand">
+        <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
+        <span class="brand__word">Conta<b class="t">teck</b></span>
+      </a>
+      <h1>Iniciar sesión</h1>
+      <p class="sub">Accede al panel contable de tu empresa.</p>
+
+      <div class="field">
+        <label for="correo">Correo</label>
+        <div class="input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 6.5 8.5 6 8.5-6"/></svg>
+          <input class="input" id="correo" type="email" placeholder="tu@empresa.mx" autocomplete="username">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="pwd">Contraseña</label>
+        <div class="input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <input class="input input--pwd" id="pwd" type="password" placeholder="••••••••" autocomplete="current-password">
+          <button class="input-eye" type="button" aria-label="Mostrar contraseña">
+            <svg class="i-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="i-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.4 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.4 9.4 0 0 0 2.6-.4"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="check">
+          <input type="checkbox" checked>
+          <span class="check__box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          Recordarme
+        </label>
+        <a href="#" class="link">¿Olvidaste tu contraseña?</a>
+      </div>
+
+      <p id="loginError" class="form-error"></p>
+
+      <button class="btn btn--primary btn--block btn--lg" id="btnLogin">Entrar al panel</button>
+
+      <div class="divider">o continúa con</div>
+      <button class="btn--oauth" type="button" id="btnGoogle">
+        <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.5h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2-1.9 3.3-4.7 3.3-8.2z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1-3.8 1-2.9 0-5.4-2-6.3-4.6H2v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.7 14a6.6 6.6 0 0 1 0-4.2V7H2a11 11 0 0 0 0 10z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3 .6 4.2 1.6l3.1-3.1A11 11 0 0 0 2 7l3.7 2.8C6.6 7.3 9.1 5.4 12 5.4z"/></svg>
+        Google
+      </button>
+
+      <p class="auth__foot">¿Aún no tienes cuenta? <a href="#" class="link">Solicita acceso</a></p>
+    </div>
+  </section>
+</main>
+
+<button class="theme-toggle" data-theme-toggle aria-label="Cambiar tema" style="position:fixed;top:1.1rem;right:1.1rem;z-index:99">
+  <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+  <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.6 6.6 0 0 0 21 12.8z"/></svg>
+</button>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="firebase-config.js"></script>
+<script type="module" src="auth-login.js"></script>
+</body>
+</html>
