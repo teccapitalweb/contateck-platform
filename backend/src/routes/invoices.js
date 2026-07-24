@@ -8,7 +8,8 @@
 // ============================================================
 import { Router } from 'express';
 import { getFiscalapi, unwrap } from '../fiscalapi.js';
-import { verifyAuth, saveCfdi, markCfdiCancelled } from '../firebase.js';
+import { verifyAuth } from '../supabaseAuth.js';
+import { saveCfdi, markCfdiCancelled } from '../firebase.js';
 import { construirFactura, construirNotaCredito, construirREP, EMISOR_PRUEBA } from '../demo-data.js';
 import { generarPdfCfdi } from '../pdf-cfdi.js';
 

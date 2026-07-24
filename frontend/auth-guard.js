@@ -1,12 +1,14 @@
 /* ============================================================
    CONTATECK · auth-guard.js  (módulo ES)
-   Protege el panel: sin sesión → manda a login. Pinta el usuario
-   real y maneja "Cerrar sesión". Si no hay config válida, corre
-   en modo demo (no bloquea, logout solo regresa a login).
+   OT-0004 · Protege el panel con Supabase Auth (reemplaza Firebase
+   Auth). Mismo comportamiento: sin sesión → manda a login. Pinta
+   el usuario real y maneja "Cerrar sesión". Si no hay config
+   válida, corre en modo demo (no bloquea).
    ============================================================ */
-const FB_VER = "12.15.0";
-const cfg = window.FIREBASE_CONFIG || {};
-const configured = !!cfg.apiKey && cfg.apiKey.indexOf("PEGA") === -1 && cfg.apiKey.indexOf("TU-") === -1;
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+const cfg = window.SUPABASE_CONFIG || {};
+const configured = !!cfg.url && !!cfg.anonKey && cfg.url.indexOf("PEGA") === -1;
 const logoutEls = document.querySelectorAll("[data-logout]");
 
 function initials(name) {
@@ -28,33 +30,35 @@ if (!configured) {
   /* ---------- PROTECCIÓN REAL ---------- */
   const app2 = document.querySelector(".app");
   try {
-    const [appMod, authMod] = await Promise.all([
-      import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-app.js`),
-      import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-auth.js`),
-    ]);
-    const { initializeApp } = appMod;
-    const { getAuth, onAuthStateChanged, signOut } = authMod;
+    const supabase = createClient(cfg.url, cfg.anonKey, {
+      auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true },
+    });
 
-    const app = initializeApp(cfg);
-    const auth = getAuth(app);
-
-    // Evita el "flash" del panel antes de confirmar la sesión
+    // Evita el "flash" del panel antes de confirmar la sesión.
     if (app2) app2.style.visibility = "hidden";
 
-    onAuthStateChanged(auth, (user) => {
+    async function checkSession() {
+      const { data } = await supabase.auth.getSession();
+      const user = data?.session?.user;
       if (!user) { window.location.replace("login.html"); return; }
-      paintUser(user.displayName || user.email || "Usuario", "Cerrar sesión");
+      const displayName = user.user_metadata?.full_name || user.email || "Usuario";
+      paintUser(displayName, "Cerrar sesión");
       if (app2) app2.style.visibility = "";
+    }
+    checkSession();
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) window.location.replace("login.html");
     });
 
     logoutEls.forEach((el) =>
       el.addEventListener("click", async () => {
-        try { await signOut(auth); } catch (e) {}
+        try { await supabase.auth.signOut(); } catch (e) {}
         window.location.replace("login.html");
       })
     );
   } catch (e) {
-    // Si Firebase no carga, no dejamos el panel oculto
+    // Si Supabase no carga, no dejamos el panel oculto.
     if (app2) app2.style.visibility = "";
     logoutEls.forEach((el) => el.addEventListener("click", () => { window.location.href = "login.html"; }));
   }

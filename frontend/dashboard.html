@@ -370,6 +370,10 @@
 <script src="data.js"></script>
 <script src="app.js?v=4"></script>
 <script src="firebase-config.js"></script>
+<!-- OT-0004: supabase-config.js se agrega para auth-guard.js. firebase-config.js
+     se mantiene porque data-firestore.js sigue usando Firestore (objetivo 5:
+     no migrar datos ni tocar Firestore todavía). Ambos coexisten en esta fase. -->
+<script src="supabase-config.js"></script>
 <script type="module" src="auth-guard.js"></script>
 <script type="module" src="data-firestore.js?v=6"></script>
 <script src="facturacion.js?v=20"></script>
