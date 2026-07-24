@@ -7,8 +7,10 @@
 (function () {
   "use strict";
 
-  // URL del backend de timbrado en Railway.
-  const BACKEND = "https://contateck-backend-production.up.railway.app";
+  // URL del backend de timbrado. Por default, producción (Railway).
+  // OT-0005: ahora se puede sobreescribir desde app-config.js para
+  // pruebas locales, sin tocar esta línea cada vez.
+  const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
 
   // Catálogo corto de Uso de CFDI (los más comunes).
   const USOS = [
