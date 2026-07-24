@@ -10,19 +10,28 @@
 -- ------------------------------------------------------------
 
 -- Devuelve la empresa del usuario autenticado actual.
+-- SECURITY DEFINER: necesario porque esta función lee `perfiles`, y
+-- `perfiles` también tiene RLS. Sin esto, la política de `perfiles`
+-- vuelve a llamar a esta función y se genera un bucle infinito
+-- (error real detectado en despliegue DEV: "stack depth limit exceeded").
 create or replace function auth_empresa_id()
 returns uuid
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select empresa_id from perfiles where id = auth.uid()
 $$;
 
--- Devuelve el nombre del rol del usuario autenticado actual.
+-- Mismo motivo que auth_empresa_id(): SECURITY DEFINER evita el bucle
+-- al leer perfiles/roles, que también tienen RLS activo.
 create or replace function auth_rol()
 returns text
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select r.nombre
   from perfiles p
