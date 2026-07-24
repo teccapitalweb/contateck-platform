@@ -7,6 +7,8 @@ import cors from 'cors';
 import { config, logConfigWarnings } from './src/config.js';
 import { initFirebase, isFirebaseReady } from './src/firebase.js';
 import { isSupabaseAuthReady } from './src/supabaseAuth.js';
+import { isPostgresDataReady } from './src/supabaseData.js';
+import { perfilRouter } from './src/routes/perfil.js';
 import { invoicesRouter } from './src/routes/invoices.js';
 import { demoRouter } from './src/routes/demo.js';
 
@@ -30,6 +32,7 @@ app.get('/', (_req, res) => {
     ambiente: config.fiscalapi.apiUrl.includes('test.') ? 'PRUEBAS' : 'PRODUCCIÓN',
     firebase: isFirebaseReady() ? 'conectado' : 'no-configurado',
     supabaseAuth: isSupabaseAuthReady() ? 'conectado' : 'no-configurado',
+    postgresData: isPostgresDataReady() ? 'conectado' : 'no-configurado',
     timbrado: config.fiscalapi.apiKey ? 'listo' : 'faltan-llaves',
     probarTimbrado: '/api/demo/timbrar',
   });
@@ -38,6 +41,7 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // ---- API ----
 app.use('/api', invoicesRouter);
+app.use('/api', perfilRouter);
 app.use('/api/demo', demoRouter);
 
 // ---- 404 ----
