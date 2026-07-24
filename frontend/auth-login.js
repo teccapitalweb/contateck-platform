@@ -1,12 +1,22 @@
 /* ============================================================
    CONTATECK · auth-login.js  (módulo ES)
-   Login real con Firebase Auth. Si no hay config válida en
-   firebase-config.js, degrada a modo demo (navega sin validar).
-   Importa Firebase de forma dinámica: en modo demo NO toca la red.
+   OT-0004 · Login real con Supabase Auth (reemplaza Firebase Auth).
+   Si no hay config válida en supabase-config.js, degrada a modo
+   demo (navega sin validar) — mismo patrón que el archivo anterior.
+
+   Diferencias de comportamiento respecto a la versión con Firebase
+   (documentadas también en docs/work-orders/OT-0004.md):
+   - Login con Google: Supabase usa redirección de página completa
+     (signInWithOAuth), no una ventana emergente como signInWithPopup
+     de Firebase. El usuario sale de la página y regresa a dashboard.html.
+   - Los mensajes de error de Supabase son texto libre (error.message),
+     no códigos como "auth/wrong-password"; se mapean por coincidencia
+     de texto en vez de por código exacto.
    ============================================================ */
-const FB_VER = "12.15.0";
-const cfg = window.FIREBASE_CONFIG || {};
-const configured = !!cfg.apiKey && cfg.apiKey.indexOf("PEGA") === -1 && cfg.apiKey.indexOf("TU-") === -1;
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+const cfg = window.SUPABASE_CONFIG || {};
+const configured = !!cfg.url && !!cfg.anonKey && cfg.url.indexOf("PEGA") === -1;
 
 const $ = (id) => document.getElementById(id);
 const btn   = $("btnLogin");
@@ -30,79 +40,81 @@ function loading(on, el, txt) {
 
 if (!configured) {
   /* ---------- MODO DEMO ---------- */
-  note("Modo demo · pega tu configuración en firebase-config.js para activar el acceso real.", false);
+  note("Modo demo · pega tu configuración en supabase-config.js para activar el acceso real.", false);
   const go = () => { window.location.href = "dashboard.html"; };
   if (btn)  btn.addEventListener("click", go);
   if (btnG) btnG.addEventListener("click", go);
   if (pwd)  pwd.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
 } else {
-  /* ---------- FIREBASE AUTH REAL ---------- */
-  const ERR = {
-    "auth/invalid-email": "El correo no es válido.",
-    "auth/user-disabled": "Esta cuenta está deshabilitada.",
-    "auth/user-not-found": "No existe una cuenta con ese correo.",
-    "auth/wrong-password": "Contraseña incorrecta.",
-    "auth/invalid-credential": "Correo o contraseña incorrectos.",
-    "auth/missing-password": "Escribe tu contraseña.",
-    "auth/too-many-requests": "Demasiados intentos. Espera un momento e inténtalo de nuevo.",
-    "auth/network-request-failed": "Sin conexión. Revisa tu internet.",
-    "auth/popup-closed-by-user": "Cerraste la ventana de Google antes de terminar.",
-    "auth/popup-blocked": "El navegador bloqueó la ventana de Google. Permite las ventanas emergentes.",
-    "auth/cancelled-popup-request": "Hay otra ventana de acceso abierta.",
-    "auth/operation-not-allowed": "Este método de acceso no está habilitado en Firebase.",
-    "auth/unauthorized-domain": "Este dominio no está autorizado en Firebase Authentication.",
+  /* ---------- SUPABASE AUTH REAL ---------- */
+
+  // "Recordar sesión" (checkbox) → localStorage; si no, sessionStorage.
+  // Se resuelve en el momento del login, no al cargar el cliente.
+  let persistLocally = true;
+  const dynamicStorage = {
+    getItem: (key) => (persistLocally ? window.localStorage : window.sessionStorage).getItem(key),
+    setItem: (key, value) => (persistLocally ? window.localStorage : window.sessionStorage).setItem(key, value),
+    removeItem: (key) => (persistLocally ? window.localStorage : window.sessionStorage).removeItem(key),
   };
-  const msgFor = (code) => ERR[code] || "No se pudo iniciar sesión. Inténtalo de nuevo.";
 
-  try {
-    const [appMod, authMod] = await Promise.all([
-      import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-app.js`),
-      import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-auth.js`),
-    ]);
-    const { initializeApp } = appMod;
-    const {
-      getAuth, setPersistence, browserLocalPersistence, browserSessionPersistence,
-      signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged,
-    } = authMod;
+  const supabase = createClient(cfg.url, cfg.anonKey, {
+    auth: { storage: dynamicStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: true },
+  });
 
-    const app = initializeApp(cfg);
-    const auth = getAuth(app);
-    auth.useDeviceLanguage();
+  const ERR_MATCH = [
+    [/invalid login credentials/i, "Correo o contraseña incorrectos."],
+    [/email not confirmed/i,        "Confirma tu correo antes de entrar."],
+    [/user not found/i,             "No existe una cuenta con ese correo."],
+    [/too many requests/i,          "Demasiados intentos. Espera un momento e inténtalo de nuevo."],
+    [/network/i,                    "Sin conexión. Revisa tu internet."],
+  ];
+  const msgFor = (message) => {
+    const match = ERR_MATCH.find(([re]) => re.test(message || ""));
+    return match ? match[1] : "No se pudo iniciar sesión. Inténtalo de nuevo.";
+  };
 
-    // Si ya hay sesión activa, directo al panel
-    onAuthStateChanged(auth, (u) => { if (u) window.location.replace("dashboard.html"); });
+  // Si ya hay sesión activa, directo al panel.
+  supabase.auth.getSession().then(({ data }) => {
+    if (data?.session) window.location.replace("dashboard.html");
+  });
 
-    const persist = async () =>
-      setPersistence(auth, remember && remember.checked ? browserLocalPersistence : browserSessionPersistence);
-
-    async function emailLogin() {
-      clearNote();
-      const e = (email.value || "").trim();
-      const p = pwd.value || "";
-      if (!e || !p) { note("Escribe tu correo y contraseña.", true); return; }
-      loading(true, btn, "Entrando…");
-      try {
-        await persist();
-        await signInWithEmailAndPassword(auth, e, p); // onAuthStateChanged redirige
-      } catch (err) { note(msgFor(err.code), true); loading(false, btn); }
+  async function emailLogin() {
+    clearNote();
+    const e = (email.value || "").trim();
+    const p = pwd.value || "";
+    if (!e || !p) { note("Escribe tu correo y contraseña.", true); return; }
+    persistLocally = !!(remember && remember.checked);
+    loading(true, btn, "Entrando…");
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: e, password: p });
+      if (error) throw error;
+      window.location.replace("dashboard.html");
+    } catch (err) {
+      note(msgFor(err.message), true);
+      loading(false, btn);
     }
-
-    async function googleLogin() {
-      clearNote();
-      loading(true, btnG, "Conectando…");
-      try {
-        await persist();
-        await signInWithPopup(auth, new GoogleAuthProvider()); // onAuthStateChanged redirige
-      } catch (err) { note(msgFor(err.code), true); loading(false, btnG); }
-    }
-
-    if (btn)  btn.addEventListener("click", emailLogin);
-    if (btnG) btnG.addEventListener("click", googleLogin);
-    if (pwd)  pwd.addEventListener("keydown", (e) => { if (e.key === "Enter") emailLogin(); });
-    if (email) email.addEventListener("keydown", (e) => { if (e.key === "Enter" && pwd) pwd.focus(); });
-  } catch (e) {
-    note("No se pudo cargar Firebase. Revisa tu conexión y la configuración.", true);
-    // Fallback: que el botón al menos navegue para no bloquear pruebas
-    if (btn) btn.addEventListener("click", () => { window.location.href = "dashboard.html"; });
   }
+
+  async function googleLogin() {
+    clearNote();
+    persistLocally = !!(remember && remember.checked);
+    loading(true, btnG, "Conectando…");
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin + window.location.pathname.replace("login.html", "dashboard.html") },
+      });
+      if (error) throw error;
+      // No hay redirect manual aquí: Supabase navega la página completa a Google
+      // y de regreso a redirectTo — a diferencia del popup que usaba Firebase.
+    } catch (err) {
+      note(msgFor(err.message), true);
+      loading(false, btnG);
+    }
+  }
+
+  if (btn)  btn.addEventListener("click", emailLogin);
+  if (btnG) btnG.addEventListener("click", googleLogin);
+  if (pwd)  pwd.addEventListener("keydown", (e) => { if (e.key === "Enter") emailLogin(); });
+  if (email) email.addEventListener("keydown", (e) => { if (e.key === "Enter" && pwd) pwd.focus(); });
 }

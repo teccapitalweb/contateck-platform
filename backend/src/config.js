@@ -38,7 +38,17 @@ export const config = {
 
   // ---- Firebase Admin (opcional al inicio) ----
   // Pega el JSON completo del service account en una sola variable.
+  // Se conserva porque data-firestore.js / saveCfdi siguen usando Firestore
+  // (OT-0004 solo migra Auth, no la base de datos — ver objetivo 5).
   firebaseServiceAccount: process.env.FIREBASE_SERVICE_ACCOUNT || '',
+
+  // ---- Supabase Auth (OT-0004) ----
+  // Se usa SOLO para verificar el JWT de sesión del usuario (verifyAuth).
+  // La service role key nunca se expone al frontend, solo vive aquí.
+  supabase: {
+    url: process.env.SUPABASE_URL || '',
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  },
 
   // ---- Seguridad ----
   // Si es true, TODA petición a /api/* exige un idToken de Firebase válido.
@@ -68,7 +78,10 @@ export function logConfigWarnings(log = console) {
     log.warn('[config] Sin emisor real (EMISOR_RFC/EMISOR_CSD_*). Se usa el CSD público de PRUEBAS (ESCUELA KEMPER URGATE).');
   }
   if (!config.firebaseServiceAccount) {
-    log.warn('[config] Sin FIREBASE_SERVICE_ACCOUNT: no se verifican usuarios ni se guarda en Firestore (modo solo-timbrado).');
+    log.warn('[config] Sin FIREBASE_SERVICE_ACCOUNT: no se guarda en Firestore (modo solo-timbrado).');
+  }
+  if (!config.supabase.url || !config.supabase.serviceRoleKey) {
+    log.warn('[config] Sin SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY: no se verifican tokens de Supabase Auth (modo dev sin auth real).');
   }
   if (config.allowedOrigins.includes('*')) {
     log.warn('[config] CORS abierto a todos los orígenes (*). En producción pon tu dominio en ALLOWED_ORIGINS.');

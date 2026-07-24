@@ -6,6 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import { config, logConfigWarnings } from './src/config.js';
 import { initFirebase, isFirebaseReady } from './src/firebase.js';
+import { isSupabaseAuthReady } from './src/supabaseAuth.js';
 import { invoicesRouter } from './src/routes/invoices.js';
 import { demoRouter } from './src/routes/demo.js';
 
@@ -28,6 +29,7 @@ app.get('/', (_req, res) => {
     status: 'ok',
     ambiente: config.fiscalapi.apiUrl.includes('test.') ? 'PRUEBAS' : 'PRODUCCIÓN',
     firebase: isFirebaseReady() ? 'conectado' : 'no-configurado',
+    supabaseAuth: isSupabaseAuthReady() ? 'conectado' : 'no-configurado',
     timbrado: config.fiscalapi.apiKey ? 'listo' : 'faltan-llaves',
     probarTimbrado: '/api/demo/timbrar',
   });

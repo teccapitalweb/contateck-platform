@@ -1,7 +1,7 @@
 {
   "name": "contateck-backend",
   "version": "1.0.0",
-  "description": "Backend de timbrado CFDI 4.0 para CONTATECK (Fiscalapi + Firebase)",
+  "description": "Backend de timbrado CFDI 4.0 para CONTATECK (Fiscalapi + Supabase Auth; Firestore heredado en migración)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -18,7 +18,8 @@
     "firebase-admin": "^14.0.0",
     "fiscalapi": "^4.0.386",
     "pdfmake": "^0.3.11",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "@supabase/supabase-js": "^2.45.4"
   },
   "type": "module",
   "engines": {
