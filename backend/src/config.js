@@ -42,11 +42,15 @@ export const config = {
   // (OT-0004 solo migra Auth, no la base de datos — ver objetivo 5).
   firebaseServiceAccount: process.env.FIREBASE_SERVICE_ACCOUNT || '',
 
-  // ---- Supabase Auth (OT-0004) ----
-  // Se usa SOLO para verificar el JWT de sesión del usuario (verifyAuth).
-  // La service role key nunca se expone al frontend, solo vive aquí.
+  // ---- Supabase (OT-0004 Auth, OT-0006 acceso a datos) ----
+  // url + anonKey: públicos, mismos valores que frontend/supabase-config.js.
+  // serviceRoleKey: secreta, solo para verifyAuth (validar quién es el usuario).
+  // Las CONSULTAS a datos (empresas, perfiles, etc.) se hacen con el token
+  // del propio usuario + anonKey, para que RLS filtre de verdad — nunca con
+  // la service role key, que se saltaría RLS por completo.
   supabase: {
     url: process.env.SUPABASE_URL || '',
+    anonKey: process.env.SUPABASE_ANON_KEY || '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   },
 

@@ -44,6 +44,27 @@ if (!configured) {
       const displayName = user.user_metadata?.full_name || user.email || "Usuario";
       paintUser(displayName, "Cerrar sesión");
       if (app2) app2.style.visibility = "";
+
+      // OT-0006 · Fase A: intenta traer empresa/perfil reales de Postgres.
+      // Si no hay backend, no hay datos, o algo falla, NO se toca nada —
+      // el selector de empresa sigue funcionando con EMPRESAS de data.js
+      // exactamente como antes. Esto es un agregado, no un reemplazo.
+      try {
+        const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+        const resp = await fetch(`${BACKEND}/api/perfil`, {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        });
+        const perfilData = await resp.json();
+        if (perfilData.ok && perfilData.fuente === "postgres" && perfilData.empresa) {
+          window.CONTATECK_EMPRESA_PG = perfilData.empresa;
+          window.CONTATECK_PERFIL_PG = perfilData.perfil;
+          document.querySelectorAll("[data-empresa-label]").forEach((el) => {
+            el.textContent = perfilData.empresa.nombre;
+          });
+        }
+      } catch (e) {
+        // Silencioso a propósito: sin Postgres disponible, sigue el modo local.
+      }
     }
     checkSession();
 
