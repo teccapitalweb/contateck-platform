@@ -20,7 +20,7 @@ const app = express();
 // ---- CORS ----
 const corsOptions = {
   origin: config.allowedOrigins.includes('*') ? true : config.allowedOrigins,
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 app.use(cors(corsOptions));
