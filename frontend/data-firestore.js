@@ -302,6 +302,43 @@ if (configured) {
   }
 }
 
+/* ---- OT-0008 · Fase A: mezclar empleados/pólizas de Postgres (aditivo) ----
+   auth-guard.js trae estos datos en paralelo vía /api/operacion; como los
+   dos scripts son módulos que arrancan casi al mismo tiempo, esperamos un
+   momento corto a que window.CONTATECK_EMPLEADOS_PG/POLIZAS_PG existan
+   antes de decidir si hay algo que mezclar. Si nunca llegan (sin Postgres,
+   sin sesión, etc.), no pasa nada — el panel sigue con lo de Firestore. */
+async function esperarOperacionPostgres(maxMs = 1500) {
+  const start = Date.now();
+  while (
+    window.CONTATECK_EMPLEADOS_PG === undefined &&
+    window.CONTATECK_POLIZAS_PG === undefined &&
+    Date.now() - start < maxMs
+  ) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+try {
+  await esperarOperacionPostgres();
+  const pgEmp = window.CONTATECK_EMPLEADOS_PG || [];
+  const pgPol = window.CONTATECK_POLIZAS_PG || [];
+  if (pgEmp.length) {
+    const nombresLocal = new Set(state.empleados.map((e) => e.nombre));
+    state.empleados = state.empleados.concat(pgEmp.filter((e) => !nombresLocal.has(e.nombre)));
+  }
+  if (pgPol.length) {
+    const foliosLocal = new Set(state.polizas.map((p) => p.folio));
+    state.polizas = state.polizas.concat(pgPol.filter((p) => !foliosLocal.has(p.folio)));
+  }
+  if (pgEmp.length || pgPol.length) {
+    ensureIds("empleados"); ensureIds("polizas");
+    refresh("empleados"); refresh("polizas");
+  }
+} catch (e) {
+  // No debe romper el resto del panel si algo falla aquí.
+}
+
 /* ============================================================
    API pública para otros módulos (facturacion.js).
    Agrega un CFDI ya timbrado a la tabla y lo guarda en Firestore.
