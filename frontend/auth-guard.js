@@ -73,6 +73,16 @@ if (!configured) {
           window.CONTATECK_CLIENTES_PG = catData.clientes || [];
           window.CONTATECK_PRODUCTOS_PG = catData.productos || [];
         }
+
+        // OT-0008 · Fase A: empleados/pólizas desde Postgres (aditivo).
+        const respOp = await fetch(`${BACKEND}/api/operacion`, {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        });
+        const opData = await respOp.json();
+        if (opData.ok && opData.fuente === "postgres") {
+          window.CONTATECK_EMPLEADOS_PG = opData.empleados || [];
+          window.CONTATECK_POLIZAS_PG = opData.polizas || [];
+        }
       } catch (e) {
         // Silencioso a propósito: sin Postgres disponible, sigue el modo local.
       }
