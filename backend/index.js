@@ -11,7 +11,6 @@ import { isPostgresDataReady } from './src/supabaseData.js';
 import { perfilRouter } from './src/routes/perfil.js';
 import { catalogoRouter } from './src/routes/catalogo.js';
 import { operacionRouter } from './src/routes/operacion.js';
-import { firebaseBridgeRouter } from './src/routes/firebaseBridge.js';
 import { crudRouter } from './src/routes/crud.js';
 import { invoicesRouter } from './src/routes/invoices.js';
 import { demoRouter } from './src/routes/demo.js';
@@ -48,7 +47,6 @@ app.use('/api', invoicesRouter);
 app.use('/api', perfilRouter);
 app.use('/api', catalogoRouter);
 app.use('/api', operacionRouter);
-app.use('/api', firebaseBridgeRouter);
 app.use('/api', crudRouter);
 app.use('/api/demo', demoRouter);
 
