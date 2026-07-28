@@ -38,10 +38,10 @@ export async function obtenerCatalogo(accessToken, log = console) {
 
     return {
       clientes: (clientes || []).map((c) => ({
-        rfc: c.rfc, nombre: c.nombre, email: c.email, usoCfdi: c.uso_cfdi, cp: c.cp, regimen: c.regimen,
+        id: c.id, rfc: c.rfc, nombre: c.nombre, email: c.email, usoCfdi: c.uso_cfdi, cp: c.cp, regimen: c.regimen,
       })),
       productos: (productos || []).map((p) => ({
-        descripcion: p.descripcion, claveProdServ: p.clave_prod_serv, claveUnidad: p.clave_unidad, precioUnitario: p.precio_unitario,
+        id: p.id, descripcion: p.descripcion, claveProdServ: p.clave_prod_serv, claveUnidad: p.clave_unidad, precioUnitario: p.precio_unitario,
       })),
     };
   } catch (err) {

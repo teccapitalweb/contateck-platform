@@ -192,17 +192,28 @@ async function saveCurrent() {
   const v = readForm(s); if (!v) return;
   const patch = s.editable(v);
   if (mSave) { mSave.disabled = true; mSave.textContent = "Guardando…"; }
+  // OT-0008-C: polizas/empleados escriben en Postgres, no en Firestore.
+  const usaPostgres = (current.coll === "polizas" || current.coll === "empleados") && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN;
   try {
     if (current.mode === "create") {
       let obj = Object.assign(s.meta(), patch);
       if (s.fix) obj = s.fix(obj);
-      if (db) { const ref = await _addDoc(_collection(db, current.coll), obj); obj.id = ref.id; }
+      if (usaPostgres) {
+        const r = await window.CTPostgres.crear(current.coll, patch);
+        if (!r.ok) throw new Error(r.error || "No se pudo guardar en Postgres");
+        obj = Object.assign(obj, r.registro);
+      } else if (db) { const ref = await _addDoc(_collection(db, current.coll), obj); obj.id = ref.id; }
       else obj.id = "local-" + (++localSeq);
       state[current.coll].unshift(obj);
       refresh(current.coll);
-      toast(db ? "Guardado en Firestore" : "Guardado localmente", db ? "ok" : "warn");
+      toast(usaPostgres ? "Guardado en Postgres" : (db ? "Guardado en Firestore" : "Guardado localmente"), usaPostgres || db ? "ok" : "warn");
     } else { // edit
-      if (db) await _updateDoc(_doc(db, current.coll, current.id), patch);
+      if (usaPostgres && current.id && !String(current.id).startsWith("local-")) {
+        const r = await window.CTPostgres.actualizar(current.coll, current.id, patch);
+        if (!r.ok) throw new Error(r.error || "No se pudo actualizar en Postgres");
+      } else if (db) {
+        await _updateDoc(_doc(db, current.coll, current.id), patch);
+      }
       Object.assign(current.obj, patch);
       refresh(current.coll);
       toast("Cambios guardados", "ok");
@@ -220,8 +231,24 @@ async function doDelete() {
   if (!current) return;
   const { coll, id } = current;
   if (mSave) { mSave.disabled = true; mSave.textContent = "Eliminando…"; }
+  // OT-0008-C: polizas/empleados se eliminan (o dan de baja) en Postgres.
+  const usaPostgres = (coll === "polizas" || coll === "empleados") && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN && id && !String(id).startsWith("local-");
   try {
-    if (db) await _deleteDoc(_doc(db, coll, id));
+    if (usaPostgres) {
+      const r = await window.CTPostgres.eliminar(coll, id);
+      if (!r.ok) throw new Error(r.error || "No se pudo eliminar en Postgres");
+      if (r.softDelete) {
+        // Empleados: no se borra el registro, solo se marca "baja".
+        const row = state[coll].find((x) => x.id === id);
+        if (row) row.estado = "baja";
+        refresh(coll);
+        toast("Empleado marcado como baja", "ok");
+        closeModal();
+        return;
+      }
+    } else if (db) {
+      await _deleteDoc(_doc(db, coll, id));
+    }
     state[coll] = state[coll].filter((x) => x.id !== id);
     refresh(coll);
     toast("Registro eliminado", "ok");
@@ -272,6 +299,38 @@ if (configured) {
     const app = getApps().length ? getApp() : initializeApp(cfg);
     db = getFirestore(app);
     _collection = collection; _addDoc = addDoc; _doc = doc; _updateDoc = updateDoc; _deleteDoc = deleteDoc;
+
+    /* ---- OT-0008-B: puente Supabase Auth → Firebase Auth ----
+       Las reglas de Firestore exigen request.auth != null (de Firebase).
+       Desde que el login real es con Supabase (OT-0004), Firestore
+       rechazaba todo con "permission-denied". Aquí se pide al backend
+       un Firebase Custom Token (usando la sesión de Supabase ya
+       verificada) y se inicia sesión también en Firebase, sin pedirle
+       nada nuevo al usuario. Si algo de esto falla, se sigue de largo:
+       las lecturas de Firestore fallarán igual que antes (con su
+       propio try/catch), no se rompe el resto del panel. */
+    try {
+      const start = Date.now();
+      while (window.CONTATECK_SUPABASE_TOKEN === undefined && Date.now() - start < 4000) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      const supaToken = window.CONTATECK_SUPABASE_TOKEN;
+      if (supaToken) {
+        const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+        const resp = await fetch(`${BACKEND}/api/firebase-token`, {
+          headers: { Authorization: `Bearer ${supaToken}` },
+        });
+        const data = await resp.json();
+        if (data.ok && data.token) {
+          const authMod = await import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-auth.js`);
+          const { getAuth, signInWithCustomToken } = authMod;
+          await signInWithCustomToken(getAuth(app), data.token);
+        }
+      }
+    } catch (e) {
+      // Sin puente de Firebase disponible: las lecturas de abajo
+      // fallarán con permission-denied, igual que ya pasaba antes.
+    }
 
     async function loadColl(name, seed) {
       const snap = await getDocs(query(collection(db, name), orderBy("createdAt", "desc")));
@@ -342,8 +401,9 @@ try {
   // arranque en frío), reintenta una vez más pasados unos segundos.
   setTimeout(mezclarOperacionPostgres, 3000);
 } catch (e) {
-  // OT-0008 diagnóstico temporal: mostrar el error real en consola.
-  console.error("[CONTATECK][OT-0008] Error al mezclar empleados/pólizas de Postgres:", e);
+  // No debe romper el resto del panel si algo falla aquí; se deja como
+  // warning silencioso (no error) para diagnóstico futuro si hiciera falta.
+  console.warn("[CONTATECK][OT-0008] No se pudo mezclar empleados/pólizas de Postgres:", e);
 }
 
 /* ============================================================
@@ -416,7 +476,13 @@ async function saveClienteLocal(c) {
   const existe = state.clientes.find((x) => x.rfc === obj.rfc);
   if (existe) return existe; // no duplicar por RFC
   try {
-    if (db) { const ref = await _addDoc(_collection(db, "clientes"), obj); obj.id = ref.id; }
+    // OT-0008-C: clientes/productos ahora se crean en Postgres primero.
+    if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+      const r = await window.CTPostgres.crear("clientes", { nombre: obj.nombre, rfc: obj.rfc, uso_cfdi: obj.usoCfdi });
+      if (r.ok) obj.id = r.registro.id;
+      else if (db) { const ref = await _addDoc(_collection(db, "clientes"), obj); obj.id = ref.id; }
+      else obj.id = "local-" + (++localSeq);
+    } else if (db) { const ref = await _addDoc(_collection(db, "clientes"), obj); obj.id = ref.id; }
     else obj.id = "local-" + (++localSeq);
   } catch (e) { obj.id = "local-" + (++localSeq); }
   state.clientes.unshift(obj);
@@ -433,7 +499,12 @@ async function saveProductoLocal(p) {
   const existe = state.productos.find((x) => x.descripcion === obj.descripcion && x.precioUnitario === obj.precioUnitario);
   if (existe) return existe;
   try {
-    if (db) { const ref = await _addDoc(_collection(db, "productos"), obj); obj.id = ref.id; }
+    if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+      const r = await window.CTPostgres.crear("productos", { descripcion: obj.descripcion, precio_unitario: obj.precioUnitario });
+      if (r.ok) obj.id = r.registro.id;
+      else if (db) { const ref = await _addDoc(_collection(db, "productos"), obj); obj.id = ref.id; }
+      else obj.id = "local-" + (++localSeq);
+    } else if (db) { const ref = await _addDoc(_collection(db, "productos"), obj); obj.id = ref.id; }
     else obj.id = "local-" + (++localSeq);
   } catch (e) { obj.id = "local-" + (++localSeq); }
   state.productos.unshift(obj);
