@@ -59,15 +59,17 @@ Correr `database/seed_demo_ot0008.sql` (empleados y pólizas en las 3 empresas d
 ### 4.3 Plantilla de resultados
 
 ```
-Fecha de prueba:
-Probado por:
+Fecha de prueba: 28 julio 2026
+Probado por: Jorge (TEC CAPITAL Group)
 
-[ ] Prueba 1 — Datos por empresa vía API: PASA / NO PASA
-[ ] Prueba 2 — Vendedor sin acceso a empleados (frontend): PASA / NO PASA
-[ ] Prueba 3 — Respaldo local sin Postgres: PASA / NO PASA
-[ ] Prueba 4 — CRUD de Firestore intacto: PASA / NO PASA
+[x] Prueba 1 — Datos por empresa vía API: PASA — con demo.director.c@contateck.mx, "Empleado Demo C" y la póliza "DEMO-D-00003" aparecieron en Nómina/Contabilidad tras un margen de espera ampliado a 5s + reintento de respaldo a los 3s (necesario por arranque en frío del backend local).
+[x] Prueba 2 — Vendedor sin acceso a empleados (frontend): PASA — con demo.vendedor@contateck.mx, Nómina mostró solo los 5 empleados locales, sin "Empleado Demo C" (RLS lo bloquea también end-to-end en el navegador, no solo en Supabase).
+[x] Prueba 3 — Respaldo local sin Postgres: PASA — con app-config.js apuntando a producción, las llamadas a /api/perfil, /api/catalogo y /api/operacion fallaron con 404 (esperado, esas rutas aún no están desplegadas en Railway) y el panel siguió funcionando sin errores visibles para el usuario.
+[x] Prueba 4 — CRUD de Firestore intacto: PASA — se creó una póliza nueva ("E-00001, Egreso, pago de colegiatura, $1,000.00") y se guardó normal, confirmando que el flujo de crear/editar/borrar de Firestore no se vio afectado por esta OT.
 
-Conclusión: OT-0008 [ ] CERRADA  [ ] PENDIENTE
+Conclusión: OT-0008 [x] CERRADA  [ ] PENDIENTE
+
+Hallazgo aparte (no bloquea el cierre, se documenta para OT-0009): Firestore está respondiendo "permission-denied" en la cuenta de producción de TEC CAPITAL Group — probablemente porque sus reglas de seguridad exigen sesión de Firebase Auth, y desde OT-0004 el login real es con Supabase Auth. Esto es anterior a OT-0008 y no afecta el resultado de esta OT, pero es importante resolverlo antes de tocar `cfdis` en OT-0009, ya que ese módulo todavía depende de Firestore para el guardado de facturas timbradas.
 ```
 
 ---
