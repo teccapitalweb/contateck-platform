@@ -131,16 +131,17 @@
       poliza.id = "p" + Date.now() + Math.floor(Math.random() * 1000);
       poliza.creada = Date.now();
       if (!poliza.folio) poliza.folio = siguienteFolio(poliza.tipo);
+      let rechazadoPorPermiso = false;
       if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
         try {
           const r = await window.CTPostgres.crear("polizas", {
             folio: poliza.folio, tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, monto, estado: "ok",
           });
           if (r.ok) { poliza.pgId = r.registro.id; poliza.origen = "postgres"; }
-          else { pgError = r.error; poliza.origen = "local"; }
+          else { pgError = r.error; rechazadoPorPermiso = true; }
         } catch (e) { pgError = e.message; poliza.origen = "local"; }
       } else { poliza.origen = "local"; }
-      arr.push(poliza);
+      if (!rechazadoPorPermiso) arr.push(poliza);
     } else {
       const i = arr.findIndex((p) => p.id === poliza.id);
       const existente = i >= 0 ? arr[i] : null;
@@ -152,8 +153,15 @@
           if (!r.ok) pgError = r.error;
         } catch (e) { pgError = e.message; }
       }
-      if (i >= 0) arr[i] = { ...arr[i], ...poliza };
-      else arr.push(poliza);
+      // OT-0009 fix: si Postgres rechazó el cambio (RLS u otro motivo), NO se
+      // aplica tampoco en localStorage — evita que la pantalla muestre un
+      // dato que en realidad nunca se guardó de verdad en la base.
+      if (!pgError) {
+        if (i >= 0) arr[i] = { ...arr[i], ...poliza };
+        else arr.push(poliza);
+        guardarPolizas(arr);
+      }
+      return { poliza: pgError ? existente : poliza, pgError };
     }
     guardarPolizas(arr);
     return { poliza, pgError };
@@ -914,7 +922,14 @@ ${ctas}
     if (!pol) { msg.innerHTML = `<div class="cont-err">No se pudo crear el movimiento.</div>`; return; }
     const btn = cbody.querySelector("[data-rapido-guardar]"); if (btn) btn.disabled = true;
     const { pgError } = await savePoliza(pol);
-    if (pgError) { msg.innerHTML = `<div class="cont-err">Guardado localmente, pero no en Postgres (${pgError}).</div>`; }
+    if (pgError) {
+      const mensaje = /coerce|single JSON|permission|policy/i.test(pgError)
+        ? "No tienes permiso para esta acción (tu rol no lo permite)."
+        : `No se pudo guardar en Postgres (${pgError}).`;
+      msg.innerHTML = `<div class="cont-err">${mensaje}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
     closeModal(); renderTodo();
   }
   function renderModoAvanzado(p) {
@@ -988,7 +1003,14 @@ ${ctas}
     const payload = { tipo, fecha, concepto, asientos };
     if (editandoId) payload.id = editandoId;
     const { pgError } = await savePoliza(payload);
-    if (pgError) { msg.innerHTML = `<div class="cont-err">Guardado localmente, pero no en Postgres (${pgError}).</div>`; return; }
+    if (pgError) {
+      const mensaje = /coerce|single JSON|permission|policy/i.test(pgError)
+        ? "No tienes permiso para esta acción (tu rol no lo permite)."
+        : `No se pudo guardar en Postgres (${pgError}).`;
+      msg.innerHTML = `<div class="cont-err">${mensaje}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
     editandoId = null;
     closeModal(); renderTodo();
   }
