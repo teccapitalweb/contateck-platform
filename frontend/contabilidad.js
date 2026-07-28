@@ -863,7 +863,9 @@ ${ctas}
   }
 
   /* ---------- Modal: registrar movimiento (rápido + avanzado) ---------- */
+  let editandoId = null; // OT-0009: id de la póliza en edición, null si es nueva.
   function openPolizaForm() {
+    editandoId = null;
     openModal("Registrar movimiento");
     cbody.innerHTML = `
       <div class="cont-modo-tabs">
@@ -915,16 +917,18 @@ ${ctas}
     if (pgError) { msg.innerHTML = `<div class="cont-err">Guardado localmente, pero no en Postgres (${pgError}).</div>`; }
     closeModal(); renderTodo();
   }
-  function renderModoAvanzado() {
+  function renderModoAvanzado(p) {
+    p = p || {};
+    const filas = (p.asientos && p.asientos.length) ? p.asientos.map((a) => asientoRow(a)).join("") : asientoRow() + asientoRow();
     cbody.querySelector("[data-modo-body]").innerHTML = `
       <div class="cont-grid3">
         <div class="field"><label>Tipo</label><select class="input" id="pol-tipo">
-          <option>Ingreso</option><option>Egreso</option><option selected>Diario</option></select></div>
-        <div class="field"><label>Fecha</label><input class="input" id="pol-fecha" type="date" value="${hoyISO()}"></div>
+          <option${p.tipo === "Ingreso" ? " selected" : ""}>Ingreso</option><option${p.tipo === "Egreso" ? " selected" : ""}>Egreso</option><option${!p.tipo || p.tipo === "Diario" ? " selected" : ""}>Diario</option></select></div>
+        <div class="field"><label>Fecha</label><input class="input" id="pol-fecha" type="date" value="${esc(p.fecha || hoyISO())}"></div>
       </div>
-      <div class="field"><label>Concepto</label><input class="input" id="pol-concepto" placeholder="Ej. Provisión de nómina 2a quincena"></div>
+      <div class="field"><label>Concepto</label><input class="input" id="pol-concepto" placeholder="Ej. Provisión de nómina 2a quincena" value="${esc(p.concepto || "")}"></div>
       <div class="cont-asientos-head"><span>Cuenta</span><span>Debe</span><span>Haber</span><span></span></div>
-      <div data-cont-asientos>${asientoRow()}${asientoRow()}</div>
+      <div data-cont-asientos>${filas}</div>
       <button class="btn btn--ghost btn--sm" data-cont-as-add style="margin-top:.4rem">+ Agregar línea</button>
       <div class="cont-totales">
         <div class="cont-totales-row"><span>Total Debe</span><b data-tot-debe>$0.00</b></div>
@@ -934,7 +938,7 @@ ${ctas}
       <div data-cont-msg></div>
       <div class="cont-foot">
         <button class="btn btn--ghost" data-cont-close>Cancelar</button>
-        <button class="btn btn--primary" data-cont-guardar-pol disabled>Guardar póliza</button></div>`;
+        <button class="btn btn--primary" data-cont-guardar-pol disabled>${editandoId ? "Guardar cambios" : "Guardar póliza"}</button></div>`;
     recalcCuadre();
   }
   // Pone la diferencia en una línea vacía para cuadrar al instante.
@@ -981,9 +985,21 @@ ${ctas}
     if (Math.abs(round2(debe - haber)) >= 0.01) { msg.innerHTML = `<div class="cont-err">La póliza no cuadra: Debe ≠ Haber.</div>`; return; }
     if (round2(debe) <= 0) { msg.innerHTML = `<div class="cont-err">El importe debe ser mayor a cero.</div>`; return; }
     const btn = cbody.querySelector("[data-cont-guardar-pol]"); if (btn) btn.disabled = true;
-    const { pgError } = await savePoliza({ tipo, fecha, concepto, asientos });
+    const payload = { tipo, fecha, concepto, asientos };
+    if (editandoId) payload.id = editandoId;
+    const { pgError } = await savePoliza(payload);
     if (pgError) { msg.innerHTML = `<div class="cont-err">Guardado localmente, pero no en Postgres (${pgError}).</div>`; return; }
+    editandoId = null;
     closeModal(); renderTodo();
+  }
+
+  function abrirEditarPoliza(id) {
+    const p = getPolizas().find((x) => x.id === id);
+    if (!p) return;
+    editandoId = id;
+    openModal(`Editar póliza ${p.folio}`);
+    cbody.innerHTML = `<div data-modo-body></div>`;
+    renderModoAvanzado(p);
   }
 
   /* ---------- Modal: ver póliza ---------- */
@@ -1008,7 +1024,9 @@ ${ctas}
       <tbody>${filas}</tbody>
       <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
         <td class="num" style="text-align:right">$${fmt(debe)}</td><td class="num" style="text-align:right">$${fmt(haber)}</td></tr></tfoot></table></div>
-      <div class="cont-foot"><button class="btn btn--ghost" data-cont-close>Cerrar</button></div>`;
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-cont-close>Cerrar</button>
+        <button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button></div>`;
   }
 
   /* ---------- Modal: Contabilizar CFDI emitidos (Bloque 1) ---------- */
@@ -1194,6 +1212,8 @@ ${ctas}
     if (e.target.closest("[data-cont-nueva-cta]")) { e.preventDefault(); openCuentaForm(); return; }
     const ver = e.target.closest("[data-cont-ver]");
     if (ver) { verPoliza(ver.getAttribute("data-cont-ver")); return; }
+    const editPol = e.target.closest("[data-cont-editar-pol]");
+    if (editPol) { abrirEditarPoliza(editPol.getAttribute("data-cont-editar-pol")); return; }
     const delPol = e.target.closest("[data-cont-del-pol]");
     if (delPol) {
       if (confirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.")) {
