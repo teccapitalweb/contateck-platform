@@ -190,9 +190,23 @@
 
   const money = (n) => "$" + Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // ---- Catálogo de clientes/productos guardados (desde Firestore) ----
-  function getClientesList() { return (window.CTData && window.CTData.getClientes) ? window.CTData.getClientes() : []; }
-  function getProductosList() { return (window.CTData && window.CTData.getProductos) ? window.CTData.getProductos() : []; }
+  // ---- Catálogo de clientes/productos (Firestore local + Postgres OT-0007) ----
+  // OT-0007 · Fase A: si hay datos en window.CONTATECK_CLIENTES_PG/PRODUCTOS_PG
+  // (llenados por auth-guard.js desde /api/catalogo), se agregan al catálogo
+  // local sin duplicar por RFC/descripción. Si no hay Postgres, el
+  // comportamiento es idéntico al de antes de esta OT.
+  function getClientesList() {
+    const local = (window.CTData && window.CTData.getClientes) ? window.CTData.getClientes() : [];
+    const pg = window.CONTATECK_CLIENTES_PG || [];
+    const rfcsLocal = new Set(local.map((c) => c.rfc));
+    return local.concat(pg.filter((c) => !rfcsLocal.has(c.rfc)));
+  }
+  function getProductosList() {
+    const local = (window.CTData && window.CTData.getProductos) ? window.CTData.getProductos() : [];
+    const pg = window.CONTATECK_PRODUCTOS_PG || [];
+    const descLocal = new Set(local.map((p) => p.descripcion));
+    return local.concat(pg.filter((p) => !descLocal.has(p.descripcion)));
+  }
   function clienteOptions() {
     return getClientesList().map((c, i) => `<option value="${i}">${(c.nombre || "").slice(0, 40)} · ${c.rfc}</option>`).join("");
   }
