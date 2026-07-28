@@ -62,6 +62,17 @@ if (!configured) {
             el.textContent = perfilData.empresa.nombre;
           });
         }
+
+        // OT-0007 · Fase A: catálogo de clientes/productos desde Postgres.
+        // Mismo criterio: aditivo, nunca reemplaza el catálogo local/Firestore.
+        const respCat = await fetch(`${BACKEND}/api/catalogo`, {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        });
+        const catData = await respCat.json();
+        if (catData.ok && catData.fuente === "postgres") {
+          window.CONTATECK_CLIENTES_PG = catData.clientes || [];
+          window.CONTATECK_PRODUCTOS_PG = catData.productos || [];
+        }
       } catch (e) {
         // Silencioso a propósito: sin Postgres disponible, sigue el modo local.
       }
