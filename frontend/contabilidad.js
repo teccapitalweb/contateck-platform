@@ -1279,7 +1279,50 @@ ${ctas}
   // Tomar el control de la tabla de pólizas: antes app.js la pintaba con datos
   // de ejemplo; ahora cualquier refresh muestra las pólizas contables reales.
   if (window.CTRender) window.CTRender.polizas = function () { renderPolizasTabla(); };
-  function init() { renderTodo(); }
+  // ---- OT-0009: sincronizar pólizas desde Postgres (lectura de regreso) ----
+  // Hasta ahora solo se escribía hacia Postgres al crear/editar; nunca se
+  // volvía a leer de ahí. Esto causaba que el navegador se quedara con una
+  // versión vieja si la póliza se editaba desde otra sesión, o si un intento
+  // fallido (ej. antes del fix de CORS) dejó un dato local desincronizado.
+  // Reutiliza window.CONTATECK_POLIZAS_PG, ya traído por auth-guard.js vía
+  // /api/operacion (mismo mecanismo que ya usa Nómina).
+  async function esperarPolizasPostgres(maxMs) {
+    maxMs = maxMs || 4000;
+    const start = Date.now();
+    while (window.CONTATECK_POLIZAS_PG === undefined && Date.now() - start < maxMs) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  async function sincronizarPolizasDesdePostgres() {
+    await esperarPolizasPostgres();
+    const pg = window.CONTATECK_POLIZAS_PG;
+    if (!pg || !pg.length) return false;
+    const arr = leerPolizas();
+    let cambiado = false;
+    pg.forEach((p) => {
+      let local = arr.find((x) => x.pgId === p.id);
+      if (!local) local = arr.find((x) => x.folio === p.folio && !x.pgId);
+      if (local) {
+        if (local.tipo !== p.tipo || local.fecha !== p.fecha || local.concepto !== p.concepto || local.estado !== p.estado || local.pgId !== p.id) {
+          local.tipo = p.tipo; local.fecha = p.fecha; local.concepto = p.concepto; local.estado = p.estado; local.pgId = p.id;
+          cambiado = true;
+        }
+      } else {
+        // Póliza que existe en Postgres pero no en este navegador (ej. se
+        // creó desde otra sesión/dispositivo). Se agrega sin asientos —
+        // esos siguen siendo solo locales hasta aprobar poliza_partidas.
+        arr.push({ id: "pg-" + p.id, pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto, asientos: [], creada: Date.now(), origen: "postgres" });
+        cambiado = true;
+      }
+    });
+    if (cambiado) guardarPolizas(arr);
+    return cambiado;
+  }
+
+  function init() {
+    renderTodo();
+    sincronizarPolizasDesdePostgres().then((cambiado) => { if (cambiado) renderTodo(); });
+  }
   init();
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
 

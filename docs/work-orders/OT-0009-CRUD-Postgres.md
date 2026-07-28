@@ -77,19 +77,42 @@ Las políticas RLS definidas desde OT-0003 ya reflejaban decisiones de negocio q
 ### Plantilla de resultados
 
 ```
-Fecha de prueba:
-Probado por:
+Fecha de prueba: 28 julio 2026
+Probado por: Jorge (TEC CAPITAL Group)
 
-[ ] Prueba 1 — Crear póliza en Postgres: PASA / NO PASA
-[ ] Prueba 2 — Editar póliza en Postgres: PASA / NO PASA
-[ ] Prueba 3 — Eliminar póliza rechazado con mensaje: PASA / NO PASA
-[ ] Prueba 4 — Crear empleado en Postgres: PASA / NO PASA
-[ ] Prueba 5 — "Eliminar" empleado = baja (no se borra): PASA / NO PASA
-[ ] Prueba 6 — Vendedor bloqueado al crear/editar: PASA / NO PASA
-[ ] Prueba 7 — Cliente nuevo se crea en Postgres al facturar: PASA / NO PASA
-[ ] Prueba 8 — Sin duplicar por RFC: PASA / NO PASA
+[x] Prueba 1 — Crear póliza en Postgres: PASA — folio E-00005 confirmado en la tabla `polizas` de Supabase.
+[x] Prueba 2 — Editar póliza en Postgres: PASA — cambio de concepto a "pagos de renta" confirmado en Supabase.
+[x] Prueba 3 — Eliminar póliza rechazado con mensaje: PASA — alerta exacta "Las pólizas no se pueden eliminar, solo revisar o cancelar contablemente", registro sigue en la lista.
+[x] Prueba 4 — Crear empleado en Postgres: PASA (confirmado antes, sesión previa).
+[x] Prueba 5 — "Eliminar" empleado = baja (no se borra): PASA (confirmado antes).
+[x] Prueba 6 — Vendedor bloqueado al crear/editar: PASA — mensaje "No tienes permiso para esta acción (tu rol no lo permite)", sin cambios guardados ni local ni en Postgres tras el fix de divergencia.
+[x] Prueba 7 — Cliente nuevo se crea en Postgres al facturar: PASA (confirmado en sesión de OT-0007, mismo mecanismo).
+[x] Prueba 8 — Sin duplicar por RFC: PASA (confirmado en OT-0007).
 
-Conclusión: OT-0009 [ ] CERRADA  [ ] PENDIENTE
+Conclusión: OT-0009 [x] CERRADA  [ ] PENDIENTE
+```
+
+### Hallazgos y correcciones durante la validación (importante dejarlos escritos)
+
+1. **`contabilidad.js` tenía su propio sistema de pólizas, aislado en `localStorage`**, sin relación con `data-firestore.js`. El botón real "Nueva póliza" (`data-cont-nueva-pol`) nunca pasaba por el código genérico que se migró primero — hubo que reencaminar `savePoliza()`/`deletePoliza()` directamente en `contabilidad.js`. Empleados sí estaba bien conectado desde el inicio.
+2. **No existía función de "editar póliza" en la interfaz** — se agregó un botón "Editar" en el modal "Ver póliza" durante esta misma OT, precargando el formulario avanzado con los datos existentes.
+3. **CORS del backend solo permitía `GET`/`POST`**, bloqueando silenciosamente `PUT` y `DELETE` — por eso "editar" y "eliminar" fallaban con "Failed to fetch" hasta que se corrigió `corsOptions.methods` para incluir los 4 verbos.
+4. **Import roto de `firebaseBridge.js`** (resto de la estrategia OT-0008-B, descartada) impedía que el backend arrancara — se quitó esa importación.
+5. **`auth-guard.js` no exponía `window.CONTATECK_SUPABASE_TOKEN`** en el paquete que se entregó inicialmente — sin esto, `postgres-crud.js` no podía autenticar ninguna escritura. Se corrigió entregando el archivo completo actualizado.
+
+6. **Las pólizas nunca se leían de regreso desde Postgres** — solo se escribían hacia allá. Esto causaba que el navegador se quedara con datos desincronizados si una edición se hacía desde otra sesión, o si un intento fallido (antes del fix de CORS) dejó un cambio a medias solo en `localStorage`. Se agregó `sincronizarPolizasDesdePostgres()`, que al cargar el módulo trae la verdad de Postgres (reutilizando `window.CONTATECK_POLIZAS_PG`, ya disponible desde OT-0008) y actualiza el encabezado local (folio/tipo/fecha/concepto/estado) sin tocar los `asientos`.
+
+Ninguno de estos 6 hallazgos afecta las reglas de negocio ya aprobadas (RLS, roles, no-eliminación) — todos eran errores de conexión/empaquetado/sincronización de esta sesión de desarrollo, ya corregidos y confirmados con evidencia real.
+
+---
+
+## Conclusión de OT-0009
+
+**Las 8 pruebas de validación quedan confirmadas con evidencia real**, incluyendo la Prueba 6 (vendedor bloqueado al escribir pólizas, con mensaje claro) y la corrección de sincronización que evita que el navegador y Postgres diverjan silenciosamente.
+
+**OT-0009 se da por CERRADA** en lo que respecta a: acceso a Postgres, CRUD de clientes/productos/empleados, encabezado de pólizas (crear/editar/no-eliminar), restricciones por rol, y sincronización bidireccional del encabezado de pólizas.
+
+**Queda fuera de esta OT, por decisión explícita del equipo:** la tabla `poliza_partidas` (líneas de Debe/Haber en Postgres) — hoy esas líneas siguen siendo solo locales. Es la primera candidata para la siguiente OT, antes de avanzar a la migración de `cfdis`.
 ```
 
 ---
