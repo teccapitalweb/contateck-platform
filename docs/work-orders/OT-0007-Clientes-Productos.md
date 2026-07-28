@@ -57,15 +57,15 @@ Correr `database/seed_demo_ot0007.sql` (agrega un cliente y un producto a las em
 ### 3.3 Plantilla de resultados
 
 ```
-Fecha de prueba:
-Probado por:
+Fecha de prueba: 28 julio 2026
+Probado por: Jorge (TEC CAPITAL Group)
 
-[ ] Prueba 1 — Catálogo por empresa vía API: PASA / NO PASA
-[ ] Prueba 2 — Aislamiento RLS clientes/productos: PASA / NO PASA
-[ ] Prueba 3 — Respaldo local sin Postgres: PASA / NO PASA
-[ ] Prueba 4 — Sin duplicados: PASA / NO PASA
+[x] Prueba 1 — Catálogo por empresa vía API: PASA — con demo.director.c@contateck.mx, el selector de "Cliente guardado" en Timbrar CFDI mostró "Cliente Demo C" (backend local + Postgres conectado).
+[x] Prueba 2 — Aislamiento RLS clientes/productos: PASA — impersonando demo.vendedor@contateck.mx (empresa 0001) en Supabase, la tabla clientes mostró solo el registro de su propia empresa, sin ver Cliente Demo B ni Cliente Demo C.
+[x] Prueba 3 — Respaldo local sin Postgres: PASA — con app-config.js apuntando a producción (sin backend local), el modal de Timbrar CFDI siguió funcionando igual que siempre (catálogo local vacío, mismo comportamiento previo a esta OT, sin errores nuevos).
+[x] Prueba 4 — Sin duplicados: PASA — no se observaron registros repetidos en el selector.
 
-Conclusión: OT-0007 [ ] CERRADA  [ ] PENDIENTE
+Conclusión: OT-0007 [x] CERRADA  [ ] PENDIENTE
 ```
 
 ---
