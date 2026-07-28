@@ -23,8 +23,8 @@ export async function obtenerEmpleadosYPolizas(accessToken, log = console) {
 
   try {
     const [{ data: empleados, error: errEmp }, { data: polizas, error: errPol }] = await Promise.all([
-      supabase.from('empleados').select('nombre, puesto, sueldo, estado'),
-      supabase.from('polizas').select('folio, tipo, fecha, concepto, monto, estado'),
+      supabase.from('empleados').select('id, nombre, puesto, sueldo, estado'),
+      supabase.from('polizas').select('id, folio, tipo, fecha, concepto, monto, estado'),
     ]);
 
     // errEmp puede ser normal si el rol del usuario no tiene permiso de
