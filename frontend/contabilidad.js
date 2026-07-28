@@ -118,25 +118,55 @@
   function getPolizas() {
     return leerPolizas().slice().sort((a, b) => (b.creada || 0) - (a.creada || 0));
   }
-  function savePoliza(poliza) {
+  async function savePoliza(poliza) {
     const arr = leerPolizas();
     poliza = poliza || {};
+    // OT-0009: el encabezado (folio/tipo/fecha/concepto/monto) va a Postgres.
+    // Los `asientos` (líneas Debe/Haber) siguen en localStorage hasta que se
+    // apruebe la tabla `poliza_partidas` — por eso el monto se calcula como
+    // la suma del Debe (o Haber, ya cuadrada) de los asientos.
+    const monto = round2((poliza.asientos || []).reduce((s, a) => s + num(a.debe), 0));
+    let pgError = null;
     if (!poliza.id) {
       poliza.id = "p" + Date.now() + Math.floor(Math.random() * 1000);
       poliza.creada = Date.now();
       if (!poliza.folio) poliza.folio = siguienteFolio(poliza.tipo);
+      if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+        try {
+          const r = await window.CTPostgres.crear("polizas", {
+            folio: poliza.folio, tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, monto, estado: "ok",
+          });
+          if (r.ok) { poliza.pgId = r.registro.id; poliza.origen = "postgres"; }
+          else { pgError = r.error; poliza.origen = "local"; }
+        } catch (e) { pgError = e.message; poliza.origen = "local"; }
+      } else { poliza.origen = "local"; }
       arr.push(poliza);
     } else {
       const i = arr.findIndex((p) => p.id === poliza.id);
+      const existente = i >= 0 ? arr[i] : null;
+      if (existente && existente.pgId && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+        try {
+          const r = await window.CTPostgres.actualizar("polizas", existente.pgId, {
+            tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, monto,
+          });
+          if (!r.ok) pgError = r.error;
+        } catch (e) { pgError = e.message; }
+      }
       if (i >= 0) arr[i] = { ...arr[i], ...poliza };
       else arr.push(poliza);
     }
     guardarPolizas(arr);
-    return poliza;
+    return { poliza, pgError };
   }
-  function deletePoliza(id) {
-    const arr = leerPolizas().filter((p) => p.id !== id);
-    return guardarPolizas(arr);
+  async function deletePoliza(id) {
+    const arr = leerPolizas();
+    const existente = arr.find((p) => p.id === id);
+    if (existente && existente.pgId && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+      const r = await window.CTPostgres.eliminar("polizas", existente.pgId);
+      if (!r.ok) return { ok: false, error: r.error };
+    }
+    guardarPolizas(arr.filter((p) => p.id !== id));
+    return { ok: true };
   }
 
   /* ---------- Cálculos contables ---------- */
@@ -870,7 +900,7 @@ ${ctas}
       </div>`;
     const mi = cbody.querySelector("#rap-monto"); if (mi) mi.focus();
   }
-  function guardarRapido(tipoId) {
+  async function guardarRapido(tipoId) {
     const monto = num(cbody.querySelector("#rap-monto").value);
     const concepto = cbody.querySelector("#rap-concepto").value.trim();
     const fecha = cbody.querySelector("#rap-fecha").value || hoyISO();
@@ -880,7 +910,10 @@ ${ctas}
     if (!concepto) { msg.innerHTML = `<div class="cont-err">Escribe de qué fue el movimiento.</div>`; return; }
     const pol = plantillaAPoliza(tipoId, monto, concepto, conIva, fecha);
     if (!pol) { msg.innerHTML = `<div class="cont-err">No se pudo crear el movimiento.</div>`; return; }
-    savePoliza(pol); closeModal(); renderTodo();
+    const btn = cbody.querySelector("[data-rapido-guardar]"); if (btn) btn.disabled = true;
+    const { pgError } = await savePoliza(pol);
+    if (pgError) { msg.innerHTML = `<div class="cont-err">Guardado localmente, pero no en Postgres (${pgError}).</div>`; }
+    closeModal(); renderTodo();
   }
   function renderModoAvanzado() {
     cbody.querySelector("[data-modo-body]").innerHTML = `
@@ -927,7 +960,7 @@ ${ctas}
     else target.querySelector(".cont-as-debe").value = Math.abs(dif).toFixed(2);
     recalcCuadre();
   }
-  function guardarPolizaForm() {
+  async function guardarPolizaForm() {
     const tipo = cbody.querySelector("#pol-tipo").value;
     const fecha = cbody.querySelector("#pol-fecha").value || hoyISO();
     const concepto = cbody.querySelector("#pol-concepto").value.trim();
@@ -947,7 +980,9 @@ ${ctas}
     if (asientos.length < 2) { msg.innerHTML = `<div class="cont-err">Una póliza necesita al menos 2 movimientos.</div>`; return; }
     if (Math.abs(round2(debe - haber)) >= 0.01) { msg.innerHTML = `<div class="cont-err">La póliza no cuadra: Debe ≠ Haber.</div>`; return; }
     if (round2(debe) <= 0) { msg.innerHTML = `<div class="cont-err">El importe debe ser mayor a cero.</div>`; return; }
-    savePoliza({ tipo, fecha, concepto, asientos });
+    const btn = cbody.querySelector("[data-cont-guardar-pol]"); if (btn) btn.disabled = true;
+    const { pgError } = await savePoliza({ tipo, fecha, concepto, asientos });
+    if (pgError) { msg.innerHTML = `<div class="cont-err">Guardado localmente, pero no en Postgres (${pgError}).</div>`; return; }
     closeModal(); renderTodo();
   }
 
@@ -1161,7 +1196,13 @@ ${ctas}
     if (ver) { verPoliza(ver.getAttribute("data-cont-ver")); return; }
     const delPol = e.target.closest("[data-cont-del-pol]");
     if (delPol) {
-      if (confirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.")) { deletePoliza(delPol.getAttribute("data-cont-del-pol")); renderTodo(); }
+      if (confirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.")) {
+        const id = delPol.getAttribute("data-cont-del-pol");
+        deletePoliza(id).then((r) => {
+          if (!r.ok) { alert("No se pudo eliminar: " + (r.error || "motivo desconocido")); return; }
+          renderTodo();
+        });
+      }
       return;
     }
     const editCta = e.target.closest("[data-cont-edit-cta]");
