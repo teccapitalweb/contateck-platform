@@ -10,11 +10,42 @@ import { Router } from 'express';
 import { getFiscalapi, unwrap } from '../fiscalapi.js';
 import { verifyAuth } from '../supabaseAuth.js';
 import { saveCfdi, markCfdiCancelled } from '../firebase.js';
+import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario } from '../supabaseCfdis.js';
 import { construirFactura, construirNotaCredito, construirREP, EMISOR_PRUEBA } from '../demo-data.js';
 import { generarPdfCfdi } from '../pdf-cfdi.js';
 
 export const invoicesRouter = Router();
 invoicesRouter.use(verifyAuth);
+
+// OT-0011 (Opción A): Postgres es el destino principal del registro de
+// CFDIs. Firestore queda SOLO como respaldo de emergencia — un CFDI ya
+// timbrado ante el SAT es válido exista o no nuestro registro interno,
+// así que si Postgres fallara (ej. caída de red), igual se intenta
+// guardar en Firestore para no perder el dato por completo, y se deja
+// bien marcado en el log para revisión manual.
+async function guardarConRespaldo(req, resumen, rawData, log = console) {
+  const r = await guardarCfdi(req.token, resumen, rawData, log);
+  if (r.ok) return r;
+  log.error('[OT-0011] Postgres rechazó/falló al guardar el CFDI, usando respaldo Firestore:', r.error);
+  const idFirestore = await saveCfdi({ ...resumen, raw: rawData }, log);
+  return { ok: !!idFirestore, respaldoFirestore: true, error: r.error };
+}
+
+// OT-0011 · aprobado: solo director/admin/contador pueden iniciar timbrado
+// o cancelación — mismo criterio que las políticas RLS de insert/update en
+// `cfdis`. Corta ANTES de llamar a Fiscalapi/SAT, para no generar un CFDI
+// real que después no se pudiera registrar bien en Postgres.
+const ROLES_FACTURACION = ['director', 'admin', 'contador'];
+async function requireRolFacturacion(req, res, next) {
+  if (!req.user || !req.token) {
+    return res.status(401).json({ ok: false, error: 'Falta autenticación.' });
+  }
+  const rol = await obtenerRolUsuario(req.token);
+  if (!rol || !ROLES_FACTURACION.includes(rol)) {
+    return res.status(403).json({ ok: false, error: 'No tienes permiso para timbrar o cancelar CFDIs (tu rol no lo permite).' });
+  }
+  next();
+}
 
 // Extrae los campos clave de una factura timbrada (defensivo: la API
 // puede nombrar el UUID de varias formas según el modo).
@@ -48,7 +79,7 @@ function resumenCfdi(data, user) {
 // ---------- FACTURAR (desde el frontend: recibe datos simples) ----------
 // El frontend manda solo receptor + conceptos; el backend agrega el emisor
 // y su CSD de forma segura, arma el CFDI y lo timbra.
-invoicesRouter.post('/facturar', async (req, res) => {
+invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
   const datos = req.body || {};
   if (!datos.receptor || !datos.receptor.rfc) {
     return res.status(400).json({ ok: false, error: 'Falta el RFC del receptor.' });
@@ -71,7 +102,7 @@ invoicesRouter.post('/facturar', async (req, res) => {
     }
 
     const resumen = resumenCfdi(r.data, req.user);
-    const savedId = await saveCfdi({ ...resumen, raw: r.data });
+    const savedId = await guardarConRespaldo(req, resumen, r.data);
 
     return res.json({
       ok: true,
@@ -89,7 +120,7 @@ invoicesRouter.post('/facturar', async (req, res) => {
 
 // ---------- NOTA DE CRÉDITO (CFDI de Egreso, tipo "E") ----------
 // Recibe el UUID de la factura original + los conceptos del descuento/devolución.
-invoicesRouter.post('/nota-credito', async (req, res) => {
+invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => {
   const datos = req.body || {};
   if (!datos.uuidRelacionado) {
     return res.status(400).json({ ok: false, error: 'Falta el UUID de la factura original a la que se aplica la nota de crédito.' });
@@ -115,7 +146,7 @@ invoicesRouter.post('/nota-credito', async (req, res) => {
     const resumen = resumenCfdi(r.data, req.user);
     resumen.tipo = 'E';
     resumen.relacionadoCon = datos.uuidRelacionado;
-    const savedId = await saveCfdi({ ...resumen, raw: r.data });
+    const savedId = await guardarConRespaldo(req, resumen, r.data);
 
     return res.json({
       ok: true,
@@ -133,7 +164,7 @@ invoicesRouter.post('/nota-credito', async (req, res) => {
 
 // ---------- REP · Complemento de Pago (CFDI de Pago, tipo "P") ----------
 // Recibe los datos de la factura PPD pagada y el monto del pago recibido.
-invoicesRouter.post('/rep', async (req, res) => {
+invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
   const datos = req.body || {};
   const f = datos.facturaPagada || {};
   if (!f.uuid) {
@@ -162,7 +193,7 @@ invoicesRouter.post('/rep', async (req, res) => {
     resumen.tipo = 'P';
     resumen.pagoDe = f.uuid;
     resumen.total = monto;
-    const savedId = await saveCfdi({ ...resumen, raw: r.data });
+    const savedId = await guardarConRespaldo(req, resumen, r.data);
 
     return res.json({
       ok: true,
@@ -237,7 +268,7 @@ invoicesRouter.get('/catalogo/:nombre/:q', async (req, res) => {
 });
 
 // ---------- TIMBRAR (avanzado: recibe el invoice ya armado) ----------
-invoicesRouter.post('/timbrar', async (req, res) => {
+invoicesRouter.post('/timbrar', requireRolFacturacion, async (req, res) => {
   const invoice = req.body?.invoice ?? req.body;
   if (!invoice || typeof invoice !== 'object') {
     return res.status(400).json({ ok: false, error: 'Falta el objeto "invoice" en el body.' });
@@ -256,8 +287,8 @@ invoicesRouter.post('/timbrar', async (req, res) => {
     }
 
     const resumen = resumenCfdi(r.data, req.user);
-    // Guarda en Firestore (no-op si no está configurado). Conserva el bruto por si acaso.
-    const savedId = await saveCfdi({ ...resumen, raw: r.data });
+    // OT-0011: Postgres primero, Firestore solo como respaldo de emergencia.
+    const savedId = await guardarConRespaldo(req, resumen, r.data);
 
     return res.json({
       ok: true,
@@ -273,7 +304,7 @@ invoicesRouter.post('/timbrar', async (req, res) => {
 });
 
 // ---------- CANCELAR ----------
-invoicesRouter.post('/cancelar', async (req, res) => {
+invoicesRouter.post('/cancelar', requireRolFacturacion, async (req, res) => {
   const { id, invoiceUuid, cancellationReasonCode, replacementUuid } = req.body || {};
   if (!cancellationReasonCode) {
     return res
@@ -309,7 +340,15 @@ invoicesRouter.post('/cancelar', async (req, res) => {
         .json({ ok: false, error: r.message || 'No se pudo cancelar.', details: r.details || '', diagnostico: r.data });
     }
 
-    await markCfdiCancelled(id, { acuse: r.data?.base64CancellationAcknowledgement || null });
+    const cancelResultado = await marcarCfdiCancelado(
+      req.token,
+      { fiscalapiId: id, uuidSat: invoiceUuid },
+      { acuse: r.data?.base64CancellationAcknowledgement || null }
+    );
+    if (!cancelResultado.ok) {
+      console.error('[OT-0011] Postgres no pudo marcar cancelado, usando respaldo Firestore:', cancelResultado.error);
+      await markCfdiCancelled(id, { acuse: r.data?.base64CancellationAcknowledgement || null });
+    }
 
     return res.json({ ok: true, mensaje: 'CFDI cancelado.', resultado: r.data });
   } catch (err) {

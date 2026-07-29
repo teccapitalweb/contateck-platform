@@ -55,6 +55,7 @@ export async function verifyAuth(req, res, next) {
     const { data, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !data?.user) throw error || new Error('Usuario no encontrado');
     req.user = { uid: data.user.id, email: data.user.email };
+    req.token = token; // OT-0011: necesario para escribir en Postgres respetando RLS
     next();
   } catch (err) {
     if (config.requireAuth) {
