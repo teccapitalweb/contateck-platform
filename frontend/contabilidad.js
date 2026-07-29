@@ -118,25 +118,62 @@
   function getPolizas() {
     return leerPolizas().slice().sort((a, b) => (b.creada || 0) - (a.creada || 0));
   }
-  function savePoliza(poliza) {
+  async function savePoliza(poliza) {
     const arr = leerPolizas();
     poliza = poliza || {};
+    // OT-0010: ahora se manda la póliza COMPLETA (encabezado + partidas) a
+    // Postgres — el cuadre Debe=Haber lo valida la función de la base,
+    // no solo el frontend.
+    const asientos = poliza.asientos || [];
+    const partidasPayload = asientos.map((a, i) => ({
+      codigo: a.codigo, debe: num(a.debe), haber: num(a.haber), descripcion: a.descripcion || null, orden: i,
+    }));
+    let pgError = null;
     if (!poliza.id) {
       poliza.id = "p" + Date.now() + Math.floor(Math.random() * 1000);
       poliza.creada = Date.now();
       if (!poliza.folio) poliza.folio = siguienteFolio(poliza.tipo);
-      arr.push(poliza);
+      let rechazado = false;
+      if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+        try {
+          const r = await window.CTPostgres.crearPolizaCompleta({
+            folio: poliza.folio, tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
+          });
+          if (r.ok) { poliza.pgId = r.id; poliza.origen = "postgres"; }
+          else { pgError = r.error; rechazado = true; }
+        } catch (e) { pgError = e.message; poliza.origen = "local"; }
+      } else { poliza.origen = "local"; }
+      if (!rechazado) arr.push(poliza);
     } else {
       const i = arr.findIndex((p) => p.id === poliza.id);
-      if (i >= 0) arr[i] = { ...arr[i], ...poliza };
-      else arr.push(poliza);
+      const existente = i >= 0 ? arr[i] : null;
+      if (existente && existente.pgId && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+        try {
+          const r = await window.CTPostgres.actualizarPolizaCompleta(existente.pgId, {
+            tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
+          });
+          if (!r.ok) pgError = r.error;
+        } catch (e) { pgError = e.message; }
+      }
+      if (!pgError) {
+        if (i >= 0) arr[i] = { ...arr[i], ...poliza };
+        else arr.push(poliza);
+        guardarPolizas(arr);
+      }
+      return { poliza: pgError ? existente : poliza, pgError };
     }
     guardarPolizas(arr);
-    return poliza;
+    return { poliza, pgError };
   }
-  function deletePoliza(id) {
-    const arr = leerPolizas().filter((p) => p.id !== id);
-    return guardarPolizas(arr);
+  async function deletePoliza(id) {
+    const arr = leerPolizas();
+    const existente = arr.find((p) => p.id === id);
+    if (existente && existente.pgId && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+      const r = await window.CTPostgres.eliminar("polizas", existente.pgId);
+      if (!r.ok) return { ok: false, error: r.error };
+    }
+    guardarPolizas(arr.filter((p) => p.id !== id));
+    return { ok: true };
   }
 
   /* ---------- Cálculos contables ---------- */
@@ -833,7 +870,9 @@ ${ctas}
   }
 
   /* ---------- Modal: registrar movimiento (rápido + avanzado) ---------- */
+  let editandoId = null; // OT-0009: id de la póliza en edición, null si es nueva.
   function openPolizaForm() {
+    editandoId = null;
     openModal("Registrar movimiento");
     cbody.innerHTML = `
       <div class="cont-modo-tabs">
@@ -870,7 +909,7 @@ ${ctas}
       </div>`;
     const mi = cbody.querySelector("#rap-monto"); if (mi) mi.focus();
   }
-  function guardarRapido(tipoId) {
+  async function guardarRapido(tipoId) {
     const monto = num(cbody.querySelector("#rap-monto").value);
     const concepto = cbody.querySelector("#rap-concepto").value.trim();
     const fecha = cbody.querySelector("#rap-fecha").value || hoyISO();
@@ -880,18 +919,27 @@ ${ctas}
     if (!concepto) { msg.innerHTML = `<div class="cont-err">Escribe de qué fue el movimiento.</div>`; return; }
     const pol = plantillaAPoliza(tipoId, monto, concepto, conIva, fecha);
     if (!pol) { msg.innerHTML = `<div class="cont-err">No se pudo crear el movimiento.</div>`; return; }
-    savePoliza(pol); closeModal(); renderTodo();
+    const btn = cbody.querySelector("[data-rapido-guardar]"); if (btn) btn.disabled = true;
+    const { pgError } = await savePoliza(pol);
+    if (pgError) {
+      msg.innerHTML = `<div class="cont-err">${pgError}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    closeModal(); renderTodo();
   }
-  function renderModoAvanzado() {
+  function renderModoAvanzado(p) {
+    p = p || {};
+    const filas = (p.asientos && p.asientos.length) ? p.asientos.map((a) => asientoRow(a)).join("") : asientoRow() + asientoRow();
     cbody.querySelector("[data-modo-body]").innerHTML = `
       <div class="cont-grid3">
         <div class="field"><label>Tipo</label><select class="input" id="pol-tipo">
-          <option>Ingreso</option><option>Egreso</option><option selected>Diario</option></select></div>
-        <div class="field"><label>Fecha</label><input class="input" id="pol-fecha" type="date" value="${hoyISO()}"></div>
+          <option${p.tipo === "Ingreso" ? " selected" : ""}>Ingreso</option><option${p.tipo === "Egreso" ? " selected" : ""}>Egreso</option><option${!p.tipo || p.tipo === "Diario" ? " selected" : ""}>Diario</option></select></div>
+        <div class="field"><label>Fecha</label><input class="input" id="pol-fecha" type="date" value="${esc(p.fecha || hoyISO())}"></div>
       </div>
-      <div class="field"><label>Concepto</label><input class="input" id="pol-concepto" placeholder="Ej. Provisión de nómina 2a quincena"></div>
+      <div class="field"><label>Concepto</label><input class="input" id="pol-concepto" placeholder="Ej. Provisión de nómina 2a quincena" value="${esc(p.concepto || "")}"></div>
       <div class="cont-asientos-head"><span>Cuenta</span><span>Debe</span><span>Haber</span><span></span></div>
-      <div data-cont-asientos>${asientoRow()}${asientoRow()}</div>
+      <div data-cont-asientos>${filas}</div>
       <button class="btn btn--ghost btn--sm" data-cont-as-add style="margin-top:.4rem">+ Agregar línea</button>
       <div class="cont-totales">
         <div class="cont-totales-row"><span>Total Debe</span><b data-tot-debe>$0.00</b></div>
@@ -901,7 +949,7 @@ ${ctas}
       <div data-cont-msg></div>
       <div class="cont-foot">
         <button class="btn btn--ghost" data-cont-close>Cancelar</button>
-        <button class="btn btn--primary" data-cont-guardar-pol disabled>Guardar póliza</button></div>`;
+        <button class="btn btn--primary" data-cont-guardar-pol disabled>${editandoId ? "Guardar cambios" : "Guardar póliza"}</button></div>`;
     recalcCuadre();
   }
   // Pone la diferencia en una línea vacía para cuadrar al instante.
@@ -927,7 +975,7 @@ ${ctas}
     else target.querySelector(".cont-as-debe").value = Math.abs(dif).toFixed(2);
     recalcCuadre();
   }
-  function guardarPolizaForm() {
+  async function guardarPolizaForm() {
     const tipo = cbody.querySelector("#pol-tipo").value;
     const fecha = cbody.querySelector("#pol-fecha").value || hoyISO();
     const concepto = cbody.querySelector("#pol-concepto").value.trim();
@@ -947,8 +995,26 @@ ${ctas}
     if (asientos.length < 2) { msg.innerHTML = `<div class="cont-err">Una póliza necesita al menos 2 movimientos.</div>`; return; }
     if (Math.abs(round2(debe - haber)) >= 0.01) { msg.innerHTML = `<div class="cont-err">La póliza no cuadra: Debe ≠ Haber.</div>`; return; }
     if (round2(debe) <= 0) { msg.innerHTML = `<div class="cont-err">El importe debe ser mayor a cero.</div>`; return; }
-    savePoliza({ tipo, fecha, concepto, asientos });
+    const btn = cbody.querySelector("[data-cont-guardar-pol]"); if (btn) btn.disabled = true;
+    const payload = { tipo, fecha, concepto, asientos };
+    if (editandoId) payload.id = editandoId;
+    const { pgError } = await savePoliza(payload);
+    if (pgError) {
+      msg.innerHTML = `<div class="cont-err">${pgError}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    editandoId = null;
     closeModal(); renderTodo();
+  }
+
+  function abrirEditarPoliza(id) {
+    const p = getPolizas().find((x) => x.id === id);
+    if (!p) return;
+    editandoId = id;
+    openModal(`Editar póliza ${p.folio}`);
+    cbody.innerHTML = `<div data-modo-body></div>`;
+    renderModoAvanzado(p);
   }
 
   /* ---------- Modal: ver póliza ---------- */
@@ -973,7 +1039,9 @@ ${ctas}
       <tbody>${filas}</tbody>
       <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
         <td class="num" style="text-align:right">$${fmt(debe)}</td><td class="num" style="text-align:right">$${fmt(haber)}</td></tr></tfoot></table></div>
-      <div class="cont-foot"><button class="btn btn--ghost" data-cont-close>Cerrar</button></div>`;
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-cont-close>Cerrar</button>
+        <button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button></div>`;
   }
 
   /* ---------- Modal: Contabilizar CFDI emitidos (Bloque 1) ---------- */
@@ -1159,9 +1227,17 @@ ${ctas}
     if (e.target.closest("[data-cont-nueva-cta]")) { e.preventDefault(); openCuentaForm(); return; }
     const ver = e.target.closest("[data-cont-ver]");
     if (ver) { verPoliza(ver.getAttribute("data-cont-ver")); return; }
+    const editPol = e.target.closest("[data-cont-editar-pol]");
+    if (editPol) { abrirEditarPoliza(editPol.getAttribute("data-cont-editar-pol")); return; }
     const delPol = e.target.closest("[data-cont-del-pol]");
     if (delPol) {
-      if (confirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.")) { deletePoliza(delPol.getAttribute("data-cont-del-pol")); renderTodo(); }
+      if (confirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.")) {
+        const id = delPol.getAttribute("data-cont-del-pol");
+        deletePoliza(id).then((r) => {
+          if (!r.ok) { alert("No se pudo eliminar: " + (r.error || "motivo desconocido")); return; }
+          renderTodo();
+        });
+      }
       return;
     }
     const editCta = e.target.closest("[data-cont-edit-cta]");
@@ -1196,7 +1272,50 @@ ${ctas}
   // Tomar el control de la tabla de pólizas: antes app.js la pintaba con datos
   // de ejemplo; ahora cualquier refresh muestra las pólizas contables reales.
   if (window.CTRender) window.CTRender.polizas = function () { renderPolizasTabla(); };
-  function init() { renderTodo(); }
+  // ---- OT-0009: sincronizar pólizas desde Postgres (lectura de regreso) ----
+  // Hasta ahora solo se escribía hacia Postgres al crear/editar; nunca se
+  // volvía a leer de ahí. Esto causaba que el navegador se quedara con una
+  // versión vieja si la póliza se editaba desde otra sesión, o si un intento
+  // fallido (ej. antes del fix de CORS) dejó un dato local desincronizado.
+  // Reutiliza window.CONTATECK_POLIZAS_PG, ya traído por auth-guard.js vía
+  // /api/operacion (mismo mecanismo que ya usa Nómina).
+  async function esperarPolizasPostgres(maxMs) {
+    maxMs = maxMs || 4000;
+    const start = Date.now();
+    while (window.CONTATECK_POLIZAS_PG === undefined && Date.now() - start < maxMs) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  async function sincronizarPolizasDesdePostgres() {
+    await esperarPolizasPostgres();
+    const pg = window.CONTATECK_POLIZAS_PG;
+    if (!pg || !pg.length) return false;
+    const arr = leerPolizas();
+    let cambiado = false;
+    pg.forEach((p) => {
+      let local = arr.find((x) => x.pgId === p.id);
+      if (!local) local = arr.find((x) => x.folio === p.folio && !x.pgId);
+      if (local) {
+        if (local.tipo !== p.tipo || local.fecha !== p.fecha || local.concepto !== p.concepto || local.estado !== p.estado || local.pgId !== p.id) {
+          local.tipo = p.tipo; local.fecha = p.fecha; local.concepto = p.concepto; local.estado = p.estado; local.pgId = p.id;
+          cambiado = true;
+        }
+      } else {
+        // Póliza que existe en Postgres pero no en este navegador (ej. se
+        // creó desde otra sesión/dispositivo). Se agrega sin asientos —
+        // esos siguen siendo solo locales hasta aprobar poliza_partidas.
+        arr.push({ id: "pg-" + p.id, pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto, asientos: [], creada: Date.now(), origen: "postgres" });
+        cambiado = true;
+      }
+    });
+    if (cambiado) guardarPolizas(arr);
+    return cambiado;
+  }
+
+  function init() {
+    renderTodo();
+    sincronizarPolizasDesdePostgres().then((cambiado) => { if (cambiado) renderTodo(); });
+  }
   init();
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
 

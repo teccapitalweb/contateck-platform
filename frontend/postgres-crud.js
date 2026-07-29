@@ -33,5 +33,9 @@ window.CTPostgres = (function () {
     crear: function (tabla, body) { return llamar("POST", "/api/registro/" + tabla, body); },
     actualizar: function (tabla, id, body) { return llamar("PUT", "/api/registro/" + tabla + "/" + id, body); },
     eliminar: function (tabla, id) { return llamar("DELETE", "/api/registro/" + tabla + "/" + id); },
+    // OT-0010: póliza completa (encabezado + partidas), con validación
+    // de Debe=Haber garantizada del lado de Postgres.
+    crearPolizaCompleta: function (body) { return llamar("POST", "/api/polizas-completas", body); },
+    actualizarPolizaCompleta: function (id, body) { return llamar("PUT", "/api/polizas-completas/" + id, body); },
   };
 })();
