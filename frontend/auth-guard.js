@@ -45,6 +45,10 @@ if (!configured) {
       paintUser(displayName, "Cerrar sesión");
       if (app2) app2.style.visibility = "";
 
+      // OT-0008-B: se expone para que data-firestore.js pueda pedir el
+      // puente de Firebase Custom Token (ver /api/firebase-token).
+      window.CONTATECK_SUPABASE_TOKEN = data.session.access_token;
+
       // OT-0006 · Fase A: intenta traer empresa/perfil reales de Postgres.
       // Si no hay backend, no hay datos, o algo falla, NO se toca nada —
       // el selector de empresa sigue funcionando con EMPRESAS de data.js
