@@ -11,8 +11,8 @@ import { isPostgresDataReady } from './src/supabaseData.js';
 import { perfilRouter } from './src/routes/perfil.js';
 import { catalogoRouter } from './src/routes/catalogo.js';
 import { operacionRouter } from './src/routes/operacion.js';
-import { firebaseBridgeRouter } from './src/routes/firebaseBridge.js';
 import { crudRouter } from './src/routes/crud.js';
+import { polizasCompletasRouter } from './src/routes/polizasCompletas.js';
 import { invoicesRouter } from './src/routes/invoices.js';
 import { demoRouter } from './src/routes/demo.js';
 
@@ -21,7 +21,7 @@ const app = express();
 // ---- CORS ----
 const corsOptions = {
   origin: config.allowedOrigins.includes('*') ? true : config.allowedOrigins,
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 app.use(cors(corsOptions));
@@ -48,8 +48,8 @@ app.use('/api', invoicesRouter);
 app.use('/api', perfilRouter);
 app.use('/api', catalogoRouter);
 app.use('/api', operacionRouter);
-app.use('/api', firebaseBridgeRouter);
 app.use('/api', crudRouter);
+app.use('/api', polizasCompletasRouter);
 app.use('/api/demo', demoRouter);
 
 // ---- 404 ----
