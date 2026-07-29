@@ -58,16 +58,18 @@ Esto es más fuerte que validar solo en el navegador o solo en Express — ni si
 ### Plantilla de resultados
 
 ```
-Fecha de prueba:
-Probado por:
+Fecha de prueba: 29 julio 2026
+Probado por: Jorge (TEC CAPITAL Group)
 
-[ ] Prueba 1 — Crear póliza balanceada con líneas en Postgres: PASA / NO PASA
-[ ] Prueba 2 — Póliza desbalanceada rechazada sin dejar nada a medias: PASA / NO PASA
-[ ] Prueba 3 — Editar reemplaza las líneas correctamente: PASA / NO PASA
-[ ] Prueba 4 — updated_at se actualiza: PASA / NO PASA
-[ ] Prueba 5 — Vendedor bloqueado: PASA / NO PASA
+[x] Prueba 1 — Crear póliza balanceada con líneas en Postgres: PASA — encabezado y líneas confirmados en `polizas`/`poliza_partidas`, cada línea con `cuenta_id` real (no texto). Requirió sembrar el catálogo de cuentas contables faltante para las empresas Demo B y Demo C (`fix_cuentas_demo_bc.sql`), que nunca se había sembrado desde OT-0003.
+[x] Prueba 2 — Póliza desbalanceada rechazada sin dejar nada a medias: PASA — probado llamando la API directamente (sin pasar por el botón del frontend, para probar el candado real del backend): `Invoke-RestMethod` con Debe=100/Haber=50 regresó `{"ok":false,"error":"La póliza no cuadra: Debe (100.00) distinto de Haber (50.00)."}`, y el folio de prueba ("TEST-DESCUADRE") no aparece en absoluto en la tabla `polizas` de Supabase.
+[x] Prueba 3 — Editar reemplaza las líneas correctamente: PASA — se cambió un monto de una línea existente y no se generaron líneas duplicadas en `poliza_partidas`.
+[x] Prueba 4 — updated_at se actualiza: PASA — confirmado en Supabase (hora en UTC, coincide con la hora local restando el huso horario de Tehuacán/Puebla, UTC-6).
+[x] Prueba 5 — Vendedor bloqueado: PASA — mensaje exacto "No tienes permiso para crear pólizas." desde la función de Postgres.
 
-Conclusión: OT-0010 [ ] CERRADA  [ ] PENDIENTE
+Conclusión: OT-0010 [x] CERRADA  [ ] PENDIENTE
+
+Hallazgo adicional documentado: las empresas Demo B (0002) y Demo C (0003) nunca tuvieron catálogo de cuentas contables sembrado en Postgres (solo la empresa 0001 lo tenía desde el seed.sql original de OT-0003) — corregido con `fix_cuentas_demo_bc.sql`. El desplegable de cuentas del frontend seguía mostrando el catálogo local de `data.js` (19 cuentas), lo cual ocultaba visualmente esta falta de datos reales hasta que se intentó guardar contra Postgres.
 ```
 
 ---
