@@ -12,6 +12,19 @@
   // pruebas locales, sin tocar esta línea cada vez.
   const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
 
+  // OT-0011 fix: el backend exige Authorization: Bearer <token> cuando
+  // REQUIRE_AUTH=true (auth-guard.js ya guarda el token de sesión en
+  // window.CONTATECK_SUPABASE_TOKEN). Antes de este fix, facturacion.js
+  // nunca mandaba ese header y el backend rechazaba con 401 "Falta el
+  // token de autenticación" — el frontend lo mostraba mal como si fuera
+  // rechazo del PAC.
+  function headersConAuth() {
+    const h = { "Content-Type": "application/json" };
+    const token = window.CONTATECK_SUPABASE_TOKEN;
+    if (token) h.Authorization = `Bearer ${token}`;
+    return h;
+  }
+
   // Catálogo corto de Uso de CFDI (los más comunes).
   const USOS = [
     ["G03", "G03 · Gastos en general"],
@@ -443,7 +456,7 @@
     try {
       const resp = await fetch(BACKEND + "/api/facturar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headersConAuth(),
         body: JSON.stringify({ receptor: { rfc, nombre, usoCfdi, cp, regimen }, conceptos, metodoPago, formaPago, retenciones }),
       });
       const data = await resp.json();
@@ -594,7 +607,7 @@
     try {
       const resp = await fetch(BACKEND + "/api/cancelar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headersConAuth(),
         body: JSON.stringify({ invoiceUuid: uuid, cancellationReasonCode: motivo, replacementUuid: sustituto.trim() || undefined }),
       });
       const data = await resp.json();
@@ -693,7 +706,7 @@
     msg.innerHTML = "";
     try {
       const resp = await fetch(BACKEND + "/api/nota-credito", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: headersConAuth(),
         body: JSON.stringify({
           receptor: { rfc: f.receptorRfc || "EKU9003173C9", nombre: f.cliente || "ESCUELA KEMPER URGATE" },
           conceptos: [{ descripcion: desc, cantidad: 1, precioUnitario: monto }],
@@ -770,7 +783,7 @@
     const folio = String(f.folio || "1").split("-").pop();
     try {
       const resp = await fetch(BACKEND + "/api/rep", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: headersConAuth(),
         body: JSON.stringify({
           receptor: { rfc: f.receptorRfc || "EKU9003173C9", nombre: f.cliente || "ESCUELA KEMPER URGATE" },
           pago: { monto, formaPago: forma },
@@ -828,7 +841,7 @@
     msg.innerHTML = "";
     try {
       const resp = await fetch(BACKEND + "/api/enviar-correo", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: headersConAuth(),
         body: JSON.stringify({ id: cfdiId, email, base64Logo: cfg.logo || undefined, bandColor: cfg.color || undefined }),
       });
       const data = await resp.json();
@@ -861,7 +874,7 @@
     try {
       const resp = conMarca
         ? await fetch(`${BACKEND}/api/cfdi/${cfdiId}/pdf-pro`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
+            method: "POST", headers: headersConAuth(),
             body: JSON.stringify({ base64Logo: cfg.logo || undefined, bandColor: cfg.color || undefined, marcaNombre: cfg.nombre || undefined }),
           })
         : await fetch(`${BACKEND}/api/cfdi/${cfdiId}/pdf-pro`);
