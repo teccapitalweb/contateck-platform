@@ -95,6 +95,12 @@
       if (crumbTitle) crumbTitle.textContent = item.getAttribute("data-title") || item.textContent.trim();
       if (side) side.classList.remove("is-open"); if (scrim) scrim.classList.remove("is-open");
       window.scrollTo({ top: 0, behavior: "smooth" });
+      // OT-0013A: al volver a Dashboard, trae datos frescos (sin caché) en
+      // vez de quedarse con lo que se cargó la última vez que se abrió la página.
+      if (id === "dashboard" && window.dashboardService && typeof window.renderDashboardReal === "function") {
+        window.dashboardService.invalidarCache();
+        window.renderDashboardReal();
+      }
     });
   });
 
@@ -133,7 +139,7 @@
   /* ============================================================
      RENDER DASHBOARD
      ============================================================ */
-  if (document.querySelector("[data-dashboard]") && window.KPIS) {
+  if (document.querySelector("[data-dashboard]")) {
 
     /* Empresas en el selector */
     const empMenu = document.querySelector("[data-empresas]");
@@ -156,98 +162,129 @@
       document.querySelectorAll("[data-empresa-label]").forEach(function (l) { l.textContent = EMPRESAS[0].nombre; });
     }
 
-    /* KPIs */
-    const kpiWrap = document.querySelector("[data-kpis]");
-    if (kpiWrap) {
-      kpiWrap.innerHTML = KPIS.map(function (k) {
-        const up = k.delta >= 0;
-        const deltaClass = (k.id === "gastos") ? (up ? "delta--down" : "delta--up") : (up ? "delta--up" : "delta--down");
-        return '<div class="kpi rise">' +
-          '<div class="kpi__top"><span class="kpi__label">' + k.label + '</span>' +
-          '<span class="kpi__ico">' + (ICO_KPI[k.ico] || "") + '</span></div>' +
-          '<div class="kpi__val"><span class="cur">$</span>' + money(k.valor) + '</div>' +
-          '<div class="kpi__foot"><span class="delta ' + deltaClass + '">' +
-          (up ? ICON.up : ICON.down) + Math.abs(k.delta).toFixed(1) + '%</span>' +
-          '<span>vs mes anterior</span></div>' +
-          '<div class="spark">' + sparkline(k.serie, up ? "var(--up)" : "var(--down)") + '</div></div>';
-      }).join("");
+    /* ============================================================
+       OT-0013A: Dashboard real, vía dashboardService (sin globals).
+       ============================================================ */
+    function proximamente(motivo) {
+      return '<div class="dash-proximamente" style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' +
+        '<b style="display:block;color:var(--text);margin-bottom:.2rem">Próximamente</b>' + motivo + '</div>';
+    }
+    function kpiCard(label, valor, ico, spark, deltaTxt, deltaUp) {
+      return '<div class="kpi rise">' +
+        '<div class="kpi__top"><span class="kpi__label">' + label + '</span>' +
+        '<span class="kpi__ico">' + (ICO_KPI[ico] || "") + '</span></div>' +
+        '<div class="kpi__val"><span class="cur">$</span>' + money(valor) + '</div>' +
+        (deltaTxt ? '<div class="kpi__foot"><span class="delta ' + (deltaUp ? "delta--up" : "delta--down") + '">' +
+          (deltaUp ? ICON.up : ICON.down) + deltaTxt + '%</span><span>vs mes anterior</span></div>' :
+          '<div class="kpi__foot"><span>Mes en curso</span></div>') +
+        (spark ? '<div class="spark">' + sparkline(spark, deltaUp === false ? "var(--down)" : "var(--up)") + '</div>' : '') +
+        '</div>';
+    }
+    function lineChartReal(serie) {
+      const W = 720, H = 280, padL = 46, padR = 14, padT = 18, padB = 34;
+      const innerW = W - padL - padR, innerH = H - padT - padB;
+      const valores = serie.map(function (s) { return s.monto; });
+      const mx = Math.max.apply(null, valores.concat([1])) * 1.1, mn = 0;
+      const x = function (i) { return padL + (i / (serie.length - 1)) * innerW; };
+      const y = function (v) { return padT + innerH - ((v - mn) / (mx - mn)) * innerH; };
+      let grid = "", ylab = "";
+      for (let s = 0; s <= 4; s++) {
+        const val = (mx / 4) * s, yy = y(val);
+        grid += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>';
+        ylab += '<text x="' + (padL - 8) + '" y="' + (yy + 3).toFixed(1) + '" text-anchor="end" font-size="10" fill="var(--faint)" font-family="JetBrains Mono">' + moneyShort(val) + '</text>';
+      }
+      let xlab = "";
+      serie.forEach(function (s, i) {
+        xlab += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="10" fill="var(--faint)" font-family="JetBrains Mono">' + s.mes + '</text>';
+      });
+      const area = "M" + x(0).toFixed(1) + " " + (padT + innerH) + " " +
+        valores.map(function (v, i) { return "L" + x(i).toFixed(1) + " " + y(v).toFixed(1); }).join(" ") +
+        " L" + x(valores.length - 1).toFixed(1) + " " + (padT + innerH) + " Z";
+      const line = valores.map(function (v, i) { return (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); }).join(" ");
+      return '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Facturación real por mes">' +
+        "<defs><linearGradient id=\"gv\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0%\" stop-color=\"var(--brand)\" stop-opacity=\".30\"/><stop offset=\"100%\" stop-color=\"var(--brand)\" stop-opacity=\"0\"/></linearGradient></defs>" +
+        grid + ylab + xlab +
+        '<path d="' + area + '" fill="url(#gv)"/>' +
+        '<path d="' + line + '" fill="none" stroke="var(--brand)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+        valores.map(function (v, i) { return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3" fill="var(--ink-800)" stroke="var(--brand)" stroke-width="2"/>'; }).join("") +
+        "</svg>";
+    }
+    const ALERT_ICO = {
+      danger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+      warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>',
+      info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+    };
+    function alertHTML(a) {
+      return '<div class="alert alert--' + a.tipo + '"><div class="alert__ico">' + ALERT_ICO[a.tipo] + '</div>' +
+        '<div class="alert__body"><b>' + a.titulo + '</b><p>' + a.texto + '</p></div></div>';
     }
 
-    /* Ledger Debe/Haber (firma) */
-    const ledgerBar = document.querySelector("[data-ledger-bar]");
-    if (ledgerBar) {
-      const total = LEDGER.debe + LEDGER.haber;
-      ledgerBar.querySelector(".deb").style.width = (LEDGER.debe / total * 100) + "%";
-      ledgerBar.querySelector(".hab").style.width = (LEDGER.haber / total * 100) + "%";
-      document.querySelector("[data-debe]").textContent = "$" + money(LEDGER.debe);
-      document.querySelector("[data-haber]").textContent = "$" + money(LEDGER.haber);
-    }
+    async function renderDashboardReal() {
+      const kpiWrap = document.querySelector("[data-kpis]");
+      const chartHost = document.querySelector("[data-chart-main]");
+      const alertHost = document.querySelector("[data-alerts]");
+      const ledgerBar = document.querySelector("[data-ledger-bar]");
+      const donutHost = document.querySelector("[data-donut]");
+      const donutLegend = document.querySelector("[data-donut-legend]");
+      const balHost = document.querySelector("[data-balance]");
+      const fiscalHost = document.querySelector("[data-fiscal]");
+      const oblHost = document.querySelector("[data-obligaciones]");
 
-    /* Chart principal ventas vs gastos */
-    const chartHost = document.querySelector("[data-chart-main]");
-    if (chartHost) chartHost.innerHTML = areaChart(SERIE);
+      // Placeholders honestos mientras carga o si algo falla — nunca datos falsos.
+      if (ledgerBar) ledgerBar.innerHTML = proximamente("Balance General (pendiente de definir con el responsable contable).");
+      if (donutHost) donutHost.innerHTML = "";
+      if (donutLegend) donutLegend.innerHTML = proximamente("Composición de gastos (requiere clasificación contable).");
+      if (balHost) balHost.innerHTML = proximamente("Balance General — activos/pasivos/capital, pendiente de definición contable.");
+      if (fiscalHost) fiscalHost.innerHTML = proximamente("Estimados de IVA/ISR — pendiente de definición fiscal.");
+      if (oblHost) oblHost.innerHTML = '<tr><td colspan="5">' + proximamente("Calendario de obligaciones SAT.") + '</td></tr>';
 
-    /* Donut composición de gastos */
-    const donutHost = document.querySelector("[data-donut]");
-    if (donutHost) {
-      donutHost.innerHTML = donut(GASTOS_COMP);
-      const lg = document.querySelector("[data-donut-legend]");
-      const totalG = GASTOS_COMP.reduce(function (a, b) { return a + b.valor; }, 0);
-      lg.innerHTML = GASTOS_COMP.map(function (g) {
-        return '<li><span class="nm"><i style="background:' + g.color + '"></i>' + g.label + '</span>' +
-          '<span class="vl">' + (g.valor / totalG * 100).toFixed(0) + '%</span></li>';
-      }).join("");
-    }
+      const datos = await window.dashboardService.obtenerDatos();
 
-    /* Balance (comp bars) */
-    const balHost = document.querySelector("[data-balance]");
-    if (balHost) {
-      const max = Math.max.apply(null, BALANCE.map(function (b) { return b.valor; }));
-      balHost.innerHTML = BALANCE.map(function (b, i) {
-        return '<div class="comp__row"><div class="t"><span>' + b.label + '</span><b>$' + money(b.valor) + '</b></div>' +
-          '<div class="comp__track"><div class="comp__fill ' + (i === 1 ? "g" : "") + '" style="width:' + (b.valor / max * 100) + '%"></div></div></div>';
-      }).join("");
-    }
+      if (!datos.ok) {
+        if (kpiWrap) kpiWrap.innerHTML = proximamente("No se pudieron cargar los datos (" + (datos.error || "sin conexión") + ").");
+        if (chartHost) chartHost.innerHTML = "";
+        if (alertHost) alertHost.innerHTML = "";
+        return;
+      }
 
-    /* Indicadores fiscales */
-    const fiscalHost = document.querySelector("[data-fiscal]");
-    if (fiscalHost) {
-      fiscalHost.innerHTML = FISCAL.map(function (f) {
-        const pill = f.estado === "ok" ? "pill--ok" : "pill--pend";
-        const txt = f.estado === "ok" ? "Al día" : "Pendiente";
-        return '<div class="comp__row"><div class="t"><span>' + f.label + '</span>' +
-          '<b>$' + money(f.valor) + '</b></div>' +
-          '<div style="margin-top:.15rem"><span class="pill ' + pill + '">' + txt + '</span></div></div>';
-      }).join("");
-    }
+      const f = datos.facturacion || {};
+      const o = datos.operacion || {};
+      const serie = datos.serieMensual || [];
+      const montosSerie = serie.map(function (s) { return s.monto; });
+      const actual = montosSerie[montosSerie.length - 1] || 0;
+      const anterior = montosSerie[montosSerie.length - 2] || 0;
+      const deltaFact = anterior > 0 ? (((actual - anterior) / anterior) * 100) : null;
 
-    /* Alertas */
-    const alertHost = document.querySelector("[data-alerts]");
-    if (alertHost) {
-      const ai = {
-        danger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
-        warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>',
-        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
-      };
-      alertHost.innerHTML = ALERTAS.map(function (a) {
-        return '<div class="alert alert--' + a.tipo + '"><div class="alert__ico">' + ai[a.tipo] + '</div>' +
-          '<div class="alert__body"><b>' + a.titulo + '</b><p>' + a.texto + '</p>' +
-          '<span class="when">' + a.when + '</span></div></div>';
-      }).join("");
-    }
+      if (kpiWrap) {
+        kpiWrap.innerHTML =
+          kpiCard("Facturación del mes", f.montoMes || 0, "trend", montosSerie.length > 1 ? montosSerie : null,
+            deltaFact !== null ? Math.abs(deltaFact).toFixed(1) : null, deltaFact !== null ? deltaFact >= 0 : true) +
+          kpiCard("Ingresos (pólizas)", o.ingresosMes || 0, "trend", null, null, true) +
+          kpiCard("Egresos (pólizas)", o.egresosMes || 0, "down", null, null, false) +
+          kpiCard("Utilidad operativa", o.utilidadMes || 0, "wallet", null, null, (o.utilidadMes || 0) >= 0);
+      }
 
-    /* Obligaciones SAT */
-    const oblHost = document.querySelector("[data-obligaciones]");
-    if (oblHost) {
-      oblHost.innerHTML = OBLIGACIONES.map(function (o) {
-        const pillCls = o.estado === "ok" ? "pill--ok" : "pill--pend";
-        const pillTxt = o.estado === "ok" ? "Presentada" : "Pendiente";
-        return "<tr><td>" + o.obligacion + '</td><td class="num">' + o.periodo + "</td>" +
-          '<td class="num">' + o.vence + "</td>" +
-          '<td class="num">' + (o.monto ? "$" + money(o.monto) : "—") + "</td>" +
-          '<td><span class="pill ' + pillCls + '">' + pillTxt + "</span></td></tr>";
-      }).join("");
+      if (chartHost) chartHost.innerHTML = serie.length ? lineChartReal(serie) : proximamente("Aún no hay facturación registrada.");
+
+      // Alertas reales + info neutral de nómina/catálogo contable (transparencia,
+      // no clasificación — ver aprobación de OT-0013A).
+      const alertasReales = (datos.alertas || []).slice();
+      const n = datos.nomina || {};
+      alertasReales.push({
+        tipo: "info",
+        titulo: n.empleadosActivos + " empleado" + (n.empleadosActivos === 1 ? "" : "s") + " activo" + (n.empleadosActivos === 1 ? "" : "s") + " en nómina",
+        texto: "Nómina mensual estimada: $" + money(n.nominaMensualEstimada || 0),
+      });
+      const cc = datos.catalogoContable || {};
+      alertasReales.push({
+        tipo: "info",
+        titulo: (cc.totalCuentas || 0) + " cuentas en el catálogo contable",
+        texto: "Validación técnica (conteo), sin clasificación contable todavía.",
+      });
+      if (alertHost) alertHost.innerHTML = alertasReales.map(alertHTML).join("");
     }
+    window.renderDashboardReal = renderDashboardReal;
+    renderDashboardReal();
 
     /* Usuario */
     if (window.USER) {

@@ -15,6 +15,7 @@ import { crudRouter } from './src/routes/crud.js';
 import { polizasCompletasRouter } from './src/routes/polizasCompletas.js';
 import { invoicesRouter } from './src/routes/invoices.js';
 import { demoRouter } from './src/routes/demo.js';
+import { dashboardRouter } from './src/routes/dashboard.js';
 
 const app = express();
 
@@ -50,6 +51,7 @@ app.use('/api', catalogoRouter);
 app.use('/api', operacionRouter);
 app.use('/api', crudRouter);
 app.use('/api', polizasCompletasRouter);
+app.use('/api', dashboardRouter);
 app.use('/api/demo', demoRouter);
 
 // ---- 404 ----
