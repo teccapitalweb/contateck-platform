@@ -2,6 +2,7 @@
 //  CONTATECK · Backend · Rutas de facturación
 //    POST /api/timbrar           -> timbra un CFDI
 //    POST /api/cancelar          -> cancela un CFDI
+//    GET  /api/cfdis             -> lista CFDIs de la empresa (OT-0012)
 //    GET  /api/cfdi/:id/pdf      -> PDF (base64)
 //    GET  /api/cfdi/:id/xml      -> XML (base64)
 //    GET  /api/cfdi/:id/status   -> estatus ante el SAT
@@ -10,7 +11,7 @@ import { Router } from 'express';
 import { getFiscalapi, unwrap } from '../fiscalapi.js';
 import { verifyAuth } from '../supabaseAuth.js';
 import { saveCfdi, markCfdiCancelled } from '../firebase.js';
-import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario } from '../supabaseCfdis.js';
+import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis } from '../supabaseCfdis.js';
 import { construirFactura, construirNotaCredito, construirREP, EMISOR_PRUEBA } from '../demo-data.js';
 import { generarPdfCfdi } from '../pdf-cfdi.js';
 
@@ -468,6 +469,18 @@ invoicesRouter.post('/cfdi/:id/pdf-pro', async (req, res) => {
   } catch (err) {
     return res.status(err.status || 500).json({ ok: false, error: err.message, details: err.details || '', invoiceId: req.params.id, diagnostico: err.diagnostico });
   }
+});
+
+// ---------- LISTADO (OT-0012) ----------
+// Solo lectura, cualquier rol autenticado (vendedor incluido: "Solo lectura
+// de facturación y pólizas"). RLS filtra por empresa_id automáticamente.
+invoicesRouter.get('/cfdis', async (req, res) => {
+  if (!req.user || !req.token) {
+    return res.status(401).json({ ok: false, error: 'Falta autenticación.' });
+  }
+  const r = await listarCfdis(req.token);
+  if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+  return res.json({ ok: true, cfdis: r.cfdis });
 });
 
 // ---------- ESTATUS SAT ----------

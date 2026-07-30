@@ -40,7 +40,7 @@ function toast(msg, type = "info", ms = 3200) {
 let localSeq = 0;
 const state = {
   polizas: (window.POLIZAS || []).slice(),
-  cfdis: (window.CFDIS || []).slice(),
+  cfdis: [], // OT-0012: se llena solo con datos reales de Postgres (ver cargarCfdisPostgres)
   empleados: (window.EMPLEADOS || []).slice(),
   clientes: [],   // catálogo de clientes guardados por el usuario
   productos: [],  // catálogo de productos/servicios guardados
@@ -74,16 +74,10 @@ const SCHEMAS = {
     fix: (o) => { o.folio = "IPC-" + (o.tipo || "D").charAt(0) + "-" + pad5(143 + state.polizas.length); return o; },
     fill: (o) => ({ tipo: o.tipo, concepto: o.concepto, monto: o.monto }),
   },
-  cfdi: {
-    title: "CFDI 4.0", coll: "cfdis",
-    fields: [
-      { k: "cliente", label: "Cliente (receptor)", type: "text", ph: "Razón social del cliente", req: true },
-      { k: "total", label: "Total (MXN)", type: "money", ph: "0.00", req: true },
-    ],
-    editable: (v) => ({ cliente: v.cliente.trim(), total: parseMoney(v.total) }),
-    meta: () => ({ folio: "A-" + (1044 + state.cfdis.length), uuid: uuidShort(), fecha: hoyCorto(), estado: "ok", createdAt: Date.now() }),
-    fill: (o) => ({ cliente: o.cliente, total: o.total }),
-  },
+  // OT-0012: se quitó el schema genérico "cfdi" — permitía crear/editar
+  // "facturas" a mano (solo cliente + total) directo en Firestore, sin
+  // pasar por Fiscalapi/SAT. Un CFDI real solo se crea vía /api/facturar
+  // (facturacion.js) y solo se cancela vía /api/cancelar.
   empleado: {
     title: "empleado", coll: "empleados",
     fields: [
@@ -96,7 +90,7 @@ const SCHEMAS = {
     fill: (o) => ({ nombre: o.nombre, puesto: o.puesto, sueldo: o.sueldo }),
   },
 };
-const COLL2KEY = { polizas: "poliza", cfdis: "cfdi", empleados: "empleado" };
+const COLL2KEY = { polizas: "poliza", empleados: "empleado" };
 function labelOf(coll, o) { return coll === "empleados" ? o.nombre : o.folio; }
 
 /* ---------- Modal ---------- */
@@ -345,16 +339,15 @@ if (configured) {
       return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
     }
 
-    const [pol, cf, emp, cli, prod] = await Promise.all([
+    const [pol, emp, cli, prod] = await Promise.all([
       loadColl("polizas", window.POLIZAS),
-      loadColl("cfdis", window.CFDIS),
       loadColl("empleados", window.EMPLEADOS),
       loadColl("clientes", null),
       loadColl("productos", null),
     ]);
-    state.polizas = pol; state.cfdis = cf; state.empleados = emp;
+    state.polizas = pol; state.empleados = emp;
     state.clientes = cli; state.productos = prod;
-    refresh("polizas"); refresh("cfdis"); refresh("empleados");
+    refresh("polizas"); refresh("empleados");
     toast("Datos sincronizados con Firestore", "ok", 2400);
   } catch (e) {
     toast("Firestore no disponible (" + (e.code || e.message || "error") + "). Mostrando datos demo.", "warn", 4800);
@@ -406,36 +399,81 @@ try {
   console.warn("[CONTATECK][OT-0008] No se pudo mezclar empleados/pólizas de Postgres:", e);
 }
 
+/* ---- OT-0012: CFDIs reales desde Postgres (reemplazo total, no mezcla) ----
+   A diferencia de empleados/pólizas, aquí NO se combina con nada local ni
+   con Firestore — Postgres es la única fuente de verdad para Facturación. */
+function formatFechaCorta(iso) {
+  if (!iso) return hoyCorto();
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return hoyCorto();
+  return String(d.getDate()).padStart(2, "0") + " " + MESES[d.getMonth()];
+}
+function mapCfdiPostgres(r) {
+  const uuidFull = r.uuid_sat || "";
+  return {
+    id: r.id,
+    folio: r.folio || r.serie || r.fiscalapi_id || "—",
+    uuid: uuidFull ? (uuidFull.slice(0, 8) + "…" + uuidFull.slice(-4)) : "—",
+    uuidFull: uuidFull,
+    cliente: r.receptor_nombre || r.receptor_rfc || "—",
+    fecha: formatFechaCorta(r.fecha || r.created_at),
+    total: typeof r.total === "number" ? r.total : parseMoney(r.total || 0),
+    estado: r.estatus === "cancelado" ? "cancelada" : "ok",
+    cfdiId: r.fiscalapi_id || null,
+    tipo: r.tipo || "I",
+    // metodoPago/saldo no se guardan hoy en Postgres (ver `raw`); se dejan
+    // sin definir a propósito para que el botón de REP no se muestre por
+    // error — más seguro ocultarlo que asumir mal. Pendiente si se necesita
+    // el flujo de REP sobre CFDIs ya existentes en una vuelta futura.
+  };
+}
+async function esperarCfdisPostgres(maxMs = 5000) {
+  const start = Date.now();
+  while (window.CONTATECK_CFDIS_PG === undefined && Date.now() - start < maxMs) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+function cargarCfdisPostgres() {
+  const pg = window.CONTATECK_CFDIS_PG;
+  if (!Array.isArray(pg)) return; // sin backend/sesión: la tabla queda vacía, sin datos falsos
+  state.cfdis = pg.map(mapCfdiPostgres);
+  refresh("cfdis");
+}
+try {
+  await esperarCfdisPostgres();
+  cargarCfdisPostgres();
+  setTimeout(cargarCfdisPostgres, 3000);
+} catch (e) {
+  console.warn("[CONTATECK][OT-0012] No se pudieron cargar los CFDIs de Postgres:", e);
+}
+
 /* ============================================================
    API pública para otros módulos (facturacion.js).
-   Agrega un CFDI ya timbrado a la tabla y lo guarda en Firestore.
+   OT-0012: el backend ya guardó el CFDI en Postgres como parte de la
+   respuesta de /api/facturar — aquí ya NO se escribe nada a Firestore.
+   Solo se agrega a la tabla en memoria para que se vea al instante, sin
+   esperar el siguiente refresh de /api/cfdis.
    ============================================================ */
 async function addCfdiTimbrado(parcial) {
   parcial = parcial || {};
   const uuidFull = String(parcial.uuid || "");
   const obj = {
+    id: "local-" + (++localSeq), // temporal hasta el próximo refresh real de Postgres
     folio: parcial.folio || ((parcial.serie || "CT") + "-" + (1044 + state.cfdis.length)),
     uuid: uuidFull ? (uuidFull.slice(0, 8) + "…" + uuidFull.slice(-4)) : "—",
-    uuidFull: uuidFull, // folio fiscal completo (para copiar/buscar)
+    uuidFull: uuidFull,
     cliente: parcial.cliente || "—",
     total: typeof parcial.total === "number" ? parcial.total : parseMoney(parcial.total || 0),
     fecha: parcial.fecha || hoyCorto(),
     estado: parcial.estado || "ok",
-    cfdiId: parcial.cfdiId || null,         // id interno de Fiscalapi (para PDF/XML/cancelar)
-    metodoPago: parcial.metodoPago || "PUE", // PUE o PPD (PPD habilita el REP)
-    tipo: parcial.tipo || "I",               // I factura, E nota de crédito, P pago (REP)
-    receptorRfc: parcial.receptorRfc || "",  // RFC del cliente (para nota de crédito / REP en producción)
-    perfilId: parcial.perfilId || "",        // marca/consultora usada (perfil de branding)
-    saldo: typeof parcial.total === "number" ? parcial.total : parseMoney(parcial.total || 0), // saldo pendiente (para REP parcial)
+    cfdiId: parcial.cfdiId || null,
+    metodoPago: parcial.metodoPago || "PUE",
+    tipo: parcial.tipo || "I",
+    receptorRfc: parcial.receptorRfc || "",
+    perfilId: parcial.perfilId || "",
+    saldo: typeof parcial.total === "number" ? parcial.total : parseMoney(parcial.total || 0),
     createdAt: Date.now(),
   };
-  try {
-    if (db) { const ref = await _addDoc(_collection(db, "cfdis"), obj); obj.id = ref.id; }
-    else obj.id = "local-" + (++localSeq);
-  } catch (e) {
-    obj.id = "local-" + (++localSeq);
-    toast("Timbrada, pero no se guardó en Firestore (" + (e.code || e.message || "error") + ")", "warn", 4800);
-  }
   state.cfdis.unshift(obj);
   refresh("cfdis");
   return obj;
@@ -444,18 +482,13 @@ async function addCfdiTimbrado(parcial) {
 window.CTData = window.CTData || {};
 window.CTData.addCfdi = addCfdiTimbrado;
 
-// Marca un CFDI como cancelado en la tabla y en Firestore (rowId = id del documento).
+// OT-0012: /api/cancelar ya actualizó estatus='cancelado' en Postgres del
+// lado del backend. Aquí solo se refleja en la tabla en memoria, sin
+// ninguna escritura a Firestore.
 async function markCfdiCancelledLocal(rowId) {
   const f = state.cfdis.find((x) => x.id === rowId);
   if (!f) return null;
   f.estado = "cancelada";
-  try {
-    if (db && rowId && String(rowId).indexOf("local-") !== 0) {
-      await _updateDoc(_doc(db, "cfdis", rowId), { estado: "cancelada" });
-    }
-  } catch (e) {
-    toast("Cancelada en el SAT, pero no se actualizó la tabla (" + (e.code || e.message || "error") + ")", "warn", 4800);
-  }
   refresh("cfdis");
   return f;
 }
@@ -519,14 +552,14 @@ window.CTData.saveProducto = saveProductoLocal;
 /* ---------- Lectura de CFDIs y saldos (para nota de crédito / REP) ---------- */
 window.CTData.getCfdis = () => state.cfdis.slice();
 
-// Actualiza el saldo pendiente de una factura tras registrar un pago (REP parcial).
+// OT-0012: actualiza el saldo pendiente (REP parcial) solo en memoria —
+// ya no escribe a Firestore. El saldo real no se persiste todavía en
+// Postgres (columna pendiente para cuando se retome el flujo de REP a
+// fondo); esto es una limitación conocida, no un bug nuevo de este fix.
 async function updateCfdiSaldoLocal(rowId, nuevoSaldo) {
   const f = state.cfdis.find((x) => x.id === rowId);
   if (!f) return;
   f.saldo = Number(nuevoSaldo);
-  try {
-    if (db && !String(rowId).startsWith("local-")) await _updateDoc(_doc(db, "cfdis", rowId), { saldo: f.saldo });
-  } catch (e) { /* el saldo local ya quedó actualizado */ }
   refresh("cfdis");
 }
 window.CTData.updateCfdiSaldo = updateCfdiSaldoLocal;

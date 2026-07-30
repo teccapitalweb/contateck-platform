@@ -87,6 +87,16 @@ if (!configured) {
           window.CONTATECK_EMPLEADOS_PG = opData.empleados || [];
           window.CONTATECK_POLIZAS_PG = opData.polizas || [];
         }
+
+        // OT-0012: CFDIs reales desde Postgres (reemplaza el arreglo
+        // estático window.CFDIS del listado de Facturación).
+        const respCfdis = await fetch(`${BACKEND}/api/cfdis`, {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        });
+        const cfdisData = await respCfdis.json();
+        if (cfdisData.ok) {
+          window.CONTATECK_CFDIS_PG = cfdisData.cfdis || [];
+        }
       } catch (e) {
         // Silencioso a propósito: sin Postgres disponible, sigue el modo local.
       }

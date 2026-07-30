@@ -493,7 +493,10 @@
       } else {
         btn.disabled = false;
         btn.innerHTML = "Timbrar factura";
-        msg.innerHTML = `<div class="fac-err"><b>El PAC rechazó la factura:</b><br>${data.error || "Error desconocido"}${data.details ? "<br><small>" + String(data.details).slice(0, 300) + "</small>" : ""}</div>`;
+        // OT-0012: antes decía siempre "El PAC rechazó la factura", aunque el
+        // rechazo viniera de auth (401), de rol (403) o de validación (400)
+        // propia — nunca del PAC. Título neutral, igual que cancelar/nota-crédito.
+        msg.innerHTML = errBox("No se pudo timbrar", data);
       }
     } catch (err) {
       btn.disabled = false;

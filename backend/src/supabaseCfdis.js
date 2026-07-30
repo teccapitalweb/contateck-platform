@@ -82,6 +82,27 @@ export async function guardarCfdi(accessToken, resumen, raw, log = console) {
   return { ok: true, registro: data };
 }
 
+// OT-0012: lectura real para el listado del panel de Facturación
+// (reemplaza el arreglo estático window.CFDIS del frontend). RLS filtra
+// automáticamente por empresa_id del usuario autenticado — no hace
+// falta filtrar aquí a mano.
+export async function listarCfdis(accessToken, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  const { data, error } = await supabase
+    .from('cfdis')
+    .select('id, fiscalapi_id, uuid_sat, serie, folio, tipo, total, fecha, receptor_rfc, receptor_nombre, estatus, created_at')
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) {
+    log.warn('[postgres] listarCfdis:', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, cfdis: data || [] };
+}
+
 // Busca por fiscalapi_id o por uuid_sat (la cancelación puede venir con
 // cualquiera de los dos, según cómo se haya solicitado).
 export async function marcarCfdiCancelado(accessToken, { fiscalapiId, uuidSat }, extra = {}, log = console) {
