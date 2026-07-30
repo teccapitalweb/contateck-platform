@@ -324,13 +324,16 @@
         if (f.uuidFull && ok && esFactura && f.metodoPago === "PPD" && conSaldo) btns += '<button class="ract" data-rep-cfdi="' + f.uuidFull + "::" + f.id + '" title="Registrar pago (REP)" style="color:#34D399">' + ICO_REP + "</button>";
         // Cancelar ante el SAT
         if (f.uuidFull && ok) btns += '<button class="ract" data-cancelar-cfdi="' + f.uuidFull + "::" + f.id + '" title="Cancelar ante el SAT" style="color:#FB7185">' + ICO_BAN + "</button>";
+        // OT-0012: sin rowAct() aquí a propósito — un CFDI real no se edita
+        // ni se borra de forma genérica (eso viviría solo en Firestore,
+        // sin tocar el SAT). Las únicas acciones válidas son las de arriba
+        // (PDF, correo, nota de crédito, REP, cancelar ante el SAT).
         return '<tr><td class="num">' + f.folio + '</td><td class="num" style="color:var(--faint)">' + f.uuid +
           "</td><td>" + f.cliente + '</td><td class="num">' + f.fecha + '</td><td class="num" style="text-align:right">$' + money(f.total) +
-          '</td><td><span class="pill ' + (ok ? "pill--ok" : "pill--late") + '">' + (ok ? "Vigente" : "Cancelada") + "</span></td>" + rowAct("cfdis", f.id, btns) + "</tr>";
+          '</td><td><span class="pill ' + (ok ? "pill--ok" : "pill--late") + '">' + (ok ? "Vigente" : "Cancelada") + "</span></td><td class=\"row-act\">" + btns + "</td></tr>";
       }).join(""));
     }
     window.CTRender.cfdis = renderCfdis;
-    if (window.CFDIS) renderCfdis(CFDIS);
 
     /* ---------- Módulo 08 · Nómina ---------- */
     if (window.NOMINA_RESUMEN) {
