@@ -55,10 +55,21 @@ if (!configured) {
       // exactamente como antes. Esto es un agregado, no un reemplazo.
       try {
         const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
-        const resp = await fetch(`${BACKEND}/api/perfil`, {
-          headers: { Authorization: `Bearer ${data.session.access_token}` },
-        });
-        const perfilData = await resp.json();
+        const authHeader = { Authorization: `Bearer ${data.session.access_token}` };
+
+        // OT-0014: estas 4 llamadas son independientes entre sí (ninguna
+        // necesita el resultado de otra), así que antes no había motivo
+        // para esperarlas una por una — eso sumaba los tiempos de red en
+        // vez de dejarlos correr al mismo tiempo. Con Promise.all, el
+        // tiempo total baja al de la más lenta de las 4, no a la suma.
+        const [perfilData, catData, opData, cfdisData] = await Promise.all([
+          fetch(`${BACKEND}/api/perfil`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/catalogo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/operacion`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/cfdis`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+        ]);
+
+        // OT-0006 · Fase A: empresa/perfil reales de Postgres.
         if (perfilData.ok && perfilData.fuente === "postgres" && perfilData.empresa) {
           window.CONTATECK_EMPRESA_PG = perfilData.empresa;
           window.CONTATECK_PERFIL_PG = perfilData.perfil;
@@ -67,33 +78,19 @@ if (!configured) {
           });
         }
 
-        // OT-0007 · Fase A: catálogo de clientes/productos desde Postgres.
-        // Mismo criterio: aditivo, nunca reemplaza el catálogo local/Firestore.
-        const respCat = await fetch(`${BACKEND}/api/catalogo`, {
-          headers: { Authorization: `Bearer ${data.session.access_token}` },
-        });
-        const catData = await respCat.json();
+        // OT-0007 · Fase A: catálogo de clientes/productos.
         if (catData.ok && catData.fuente === "postgres") {
           window.CONTATECK_CLIENTES_PG = catData.clientes || [];
           window.CONTATECK_PRODUCTOS_PG = catData.productos || [];
         }
 
-        // OT-0008 · Fase A: empleados/pólizas desde Postgres (aditivo).
-        const respOp = await fetch(`${BACKEND}/api/operacion`, {
-          headers: { Authorization: `Bearer ${data.session.access_token}` },
-        });
-        const opData = await respOp.json();
+        // OT-0008 · Fase A: empleados/pólizas.
         if (opData.ok && opData.fuente === "postgres") {
           window.CONTATECK_EMPLEADOS_PG = opData.empleados || [];
           window.CONTATECK_POLIZAS_PG = opData.polizas || [];
         }
 
-        // OT-0012: CFDIs reales desde Postgres (reemplaza el arreglo
-        // estático window.CFDIS del listado de Facturación).
-        const respCfdis = await fetch(`${BACKEND}/api/cfdis`, {
-          headers: { Authorization: `Bearer ${data.session.access_token}` },
-        });
-        const cfdisData = await respCfdis.json();
+        // OT-0012: CFDIs reales.
         if (cfdisData.ok) {
           window.CONTATECK_CFDIS_PG = cfdisData.cfdis || [];
         }

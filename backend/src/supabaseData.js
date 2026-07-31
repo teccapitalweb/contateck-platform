@@ -25,6 +25,18 @@ function clienteComoUsuario(accessToken) {
   });
 }
 
+// Extrae el "sub" (user id) del JWT sin depender de una llamada de red
+// extra a Supabase Auth — el token ya lo trae, solo hay que leerlo.
+function idDeToken(accessToken) {
+  try {
+    const payload = accessToken.split('.')[1];
+    const json = Buffer.from(payload, 'base64').toString('utf8');
+    return JSON.parse(json).sub || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Devuelve { empresa, perfil } leídos de Postgres para el usuario dueño
 // del accessToken, o null si Postgres no está configurado, el usuario
 // no tiene perfil todavía, o algo falla (nunca lanza error hacia arriba:
@@ -33,10 +45,17 @@ export async function obtenerEmpresaYPerfil(accessToken, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase || !accessToken) return null;
 
+  // BUG (encontrado en OT-0014): la RLS de `perfiles` permite ver a
+  // cualquiera de tu misma empresa, no solo tu propia fila. Sin este
+  // filtro explícito, .single() truena en cuanto una empresa tiene 2+
+  // usuarios reales (encuentra más de 1 fila y se cae a modo "local").
+  const miId = idDeToken(accessToken);
+
   try {
     const { data: perfil, error: errPerfil } = await supabase
       .from('perfiles')
       .select('id, nombre, email, empresa_id, rol_id, roles ( nombre )')
+      .eq('id', miId)
       .single();
 
     if (errPerfil || !perfil) {
