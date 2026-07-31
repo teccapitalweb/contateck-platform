@@ -19,8 +19,23 @@ function clienteComoUsuario(accessToken) {
   });
 }
 
-async function obtenerEmpresaId(supabase) {
-  const { data, error } = await supabase.from('perfiles').select('empresa_id').single();
+// Extrae el "sub" (user id) del JWT sin llamada de red extra.
+function idDeToken(accessToken) {
+  try {
+    const json = Buffer.from(accessToken.split('.')[1], 'base64').toString('utf8');
+    return JSON.parse(json).sub || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// BUG encontrado en OT-0014: la RLS de `perfiles` permite ver a
+// cualquiera de tu misma empresa, no solo tu propia fila. Sin filtrar
+// explícitamente por id, .single() truena en cuanto la empresa tiene
+// 2+ usuarios reales (encuentra más de 1 fila -> error -> cae en falso
+// "no se encontró tu perfil").
+async function obtenerEmpresaId(supabase, accessToken) {
+  const { data, error } = await supabase.from('perfiles').select('empresa_id').eq('id', idDeToken(accessToken)).single();
   if (error || !data) return null;
   return data.empresa_id;
 }
@@ -34,6 +49,7 @@ export async function obtenerRolUsuario(accessToken, log = console) {
   const { data, error } = await supabase
     .from('perfiles')
     .select('roles ( nombre )')
+    .eq('id', idDeToken(accessToken))
     .single();
   if (error || !data) {
     log.warn('[postgres] obtenerRolUsuario:', error?.message);
@@ -49,7 +65,7 @@ export async function guardarCfdi(accessToken, resumen, raw, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  const empresaId = await obtenerEmpresaId(supabase);
+  const empresaId = await obtenerEmpresaId(supabase, accessToken);
   if (!empresaId) return { ok: false, error: 'No se encontró tu perfil/empresa en Postgres.' };
 
   const { data, error } = await supabase

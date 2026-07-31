@@ -1,44 +1,65 @@
 // ============================================================
 //  CONTATECK · Módulo Ventas y Pagos
-//  - El vendedor registra la venta + sube comprobante -> "En revisión"
-//  - Administración valida (Confirmar / Rechazar) desde la bandeja
-//  - Alimenta comisiones, facturación y reporte semanal
-//  Datos en localStorage (clave contateck_ventas)
+//  OT-0014 · Épica 2 — Ya NO usa localStorage.
+//  - El vendedor registra la venta (nace en "pendiente") + sube
+//    comprobante a Supabase Storage.
+//  - Un validador (contador/admin/director, nunca quien la
+//    registró) la "Toma para revisión" de forma manual -> "revision".
+//  - Desde "revision": Confirmar -> "confirmado" | Rechazar -> "rechazado".
+//  Todo el CRUD real vive en el backend (/api/ventas); el archivo
+//  se sube directo a Supabase Storage (bucket "documentos").
 // ============================================================
 (function () {
   "use strict";
 
-  const K_VENTAS = "contateck_ventas";
   const METODOS = ["SPEI / Transferencia", "Efectivo", "Tarjeta de crédito", "Tarjeta de débito", "Depósito en efectivo", "Otro"];
   const BANCOS = ["BBVA", "Santander", "Banorte", "Citibanamex", "HSBC", "Scotiabank", "Banco Azteca", "Otro"];
   const ESTADOS = {
+    pendiente: { txt: "Pendiente", cls: "v-badge--warn" },
     revision: { txt: "En revisión", cls: "v-badge--warn" },
     confirmado: { txt: "Confirmado", cls: "v-badge--ok" },
     rechazado: { txt: "Rechazado", cls: "v-badge--bad" },
   };
+  const ROLES_VALIDADORES = ["contador", "admin", "director"];
 
-  // ---------- Datos ----------
-  function load() { try { return JSON.parse(localStorage.getItem(K_VENTAS) || "[]"); } catch (e) { return []; } }
-  function save(arr) { localStorage.setItem(K_VENTAS, JSON.stringify(arr)); }
-  function uid() { return "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  // ---------- Backend / sesión ----------
+  function backendUrl() {
+    return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+  }
+  function authHeaders(conJson) {
+    const h = conJson ? { "Content-Type": "application/json" } : {};
+    const t = window.CONTATECK_SUPABASE_TOKEN;
+    if (t) h.Authorization = "Bearer " + t;
+    return h;
+  }
+  function miPerfil() { return window.CONTATECK_PERFIL_PG || null; }
+  function miEmpresa() { return window.CONTATECK_EMPRESA_PG || null; }
+  async function esperarPerfil(maxMs = 5000) {
+    const start = Date.now();
+    while ((!window.CONTATECK_PERFIL_PG || !window.CONTATECK_EMPRESA_PG) && Date.now() - start < maxMs) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return window.CONTATECK_PERFIL_PG || null;
+  }
+  function miId() { const p = miPerfil(); return p ? p.id : null; }
+  function miRol() { const p = miPerfil(); return p ? p.rol : null; }
+  function esValidador() { return ROLES_VALIDADORES.indexOf(miRol()) !== -1; }
+
   function money(n) { return "$" + Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function hoy() { return new Date().toISOString().slice(0, 10); }
-  function nextFolio() {
-    const arr = load();
-    let max = 0;
-    arr.forEach((v) => { const n = parseInt(String(v.folio || "").replace(/\D/g, ""), 10); if (n > max) max = n; });
-    return "P-" + String(max + 1).padStart(4, "0");
-  }
-  function vendedorActual() {
-    const el = document.querySelector("[data-user-name]");
-    if (el && el.textContent) return el.textContent.split("·")[0].trim();
-    return "Vendedor";
-  }
   function fmtFecha(f) {
     if (!f) return "—";
     const d = new Date(f + (f.length === 10 ? "T12:00:00" : ""));
     if (isNaN(d)) return f;
     return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
+  }
+  function idCorto(id) { return id ? String(id).slice(0, 8) + "…" : "—"; }
+  function uuidCliente() {
+    if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+      const r = (Math.random() * 16) | 0, v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
   }
 
   // ---------- Toast ----------
@@ -51,9 +72,58 @@
     setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, 2600);
   }
 
+  // ---------- Supabase Storage (directo, sin pasar por el backend) ----------
+  function storageCfg() { return window.SUPABASE_CONFIG || null; }
+  async function subirComprobante(file, empresaId) {
+    const cfg = storageCfg();
+    const t = window.CONTATECK_SUPABASE_TOKEN;
+    if (!cfg || !t) throw new Error("Sesión o configuración de Storage no disponible.");
+    const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+    const path = empresaId + "/ventas/" + uuidCliente() + "/comprobante." + ext;
+    const resp = await fetch(cfg.url + "/storage/v1/object/documentos/" + path, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey, "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error("No se pudo subir el comprobante (" + resp.status + "). " + txt.slice(0, 200));
+    }
+    return path;
+  }
+  async function urlFirmadaComprobante(path) {
+    const cfg = storageCfg();
+    const t = window.CONTATECK_SUPABASE_TOKEN;
+    if (!cfg || !t) return null;
+    try {
+      const resp = await fetch(cfg.url + "/storage/v1/object/sign/documentos/" + path, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresIn: 3600 }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.signedURL) return null;
+      return cfg.url + "/storage/v1" + data.signedURL;
+    } catch (e) { return null; }
+  }
+
+  // ---------- Datos (backend real) ----------
+  let ventasCache = [];
+  async function cargarVentas() {
+    try {
+      const resp = await fetch(backendUrl() + "/api/ventas", { headers: authHeaders(false) });
+      const data = await resp.json();
+      ventasCache = data.ok ? (data.ventas || []) : [];
+      if (!data.ok) toast("No se pudieron cargar las ventas (" + (data.error || "error") + ")", "warn");
+    } catch (e) {
+      ventasCache = [];
+      toast("Sin conexión con el backend.", "warn");
+    }
+  }
+
   // ---------- Render principal ----------
   let filtroActual = "todos";
-  function render() {
+  async function render() {
     const root = document.querySelector("[data-ventas-root]");
     if (!root) return;
     root.innerHTML = `
@@ -69,6 +139,7 @@
           <h3>Bandeja de pagos</h3>
           <div class="v-filtros" data-v-filtros>
             <button class="v-chip is-on" data-f="todos">Todos</button>
+            <button class="v-chip" data-f="pendiente">Pendientes</button>
             <button class="v-chip" data-f="revision">En revisión</button>
             <button class="v-chip" data-f="confirmado">Confirmados</button>
             <button class="v-chip" data-f="rechazado">Rechazados</button>
@@ -76,11 +147,12 @@
         </div>
         <div style="overflow-x:auto">
           <table class="tbl v-tbl">
-            <thead><tr><th>Folio</th><th>Alumno</th><th>Curso</th><th>Consultora</th><th style="text-align:right">Importe</th><th>Vendedor</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Folio</th><th>Cliente</th><th>Concepto</th><th>Consultora</th><th style="text-align:right">Importe</th><th>Vendedor</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
             <tbody data-v-rows></tbody>
           </table>
         </div>
       </div>`;
+    await Promise.all([cargarVentas(), esperarPerfil()]);
     renderKpis();
     renderRows();
   }
@@ -88,43 +160,52 @@
   function renderKpis() {
     const cont = document.querySelector("[data-v-kpis]");
     if (!cont) return;
-    const arr = load();
+    const arr = ventasCache;
+    const pend = arr.filter((v) => v.estado === "pendiente");
     const enRev = arr.filter((v) => v.estado === "revision");
     const conf = arr.filter((v) => v.estado === "confirmado");
     const montoConf = conf.reduce((s, v) => s + Number(v.importe || 0), 0);
-    const montoRev = enRev.reduce((s, v) => s + Number(v.importe || 0), 0);
+    const montoPend = pend.concat(enRev).reduce((s, v) => s + Number(v.importe || 0), 0);
     cont.innerHTML = `
-      <div class="v-kpi"><span class="v-kpi__l">En revisión</span><b class="v-kpi__n">${enRev.length}</b><span class="v-kpi__s">${money(montoRev)} por validar</span></div>
+      <div class="v-kpi"><span class="v-kpi__l">Pendientes + en revisión</span><b class="v-kpi__n">${pend.length + enRev.length}</b><span class="v-kpi__s">${money(montoPend)} por validar</span></div>
       <div class="v-kpi"><span class="v-kpi__l">Confirmados</span><b class="v-kpi__n">${conf.length}</b><span class="v-kpi__s">${money(montoConf)} ingresado</span></div>
-      <div class="v-kpi"><span class="v-kpi__l">Total registros</span><b class="v-kpi__n">${arr.length}</b><span class="v-kpi__s">esta operación</span></div>
+      <div class="v-kpi"><span class="v-kpi__l">Total registros</span><b class="v-kpi__n">${arr.length}</b><span class="v-kpi__s">esta empresa</span></div>
       <div class="v-kpi v-kpi--accent"><span class="v-kpi__l">Ingreso confirmado</span><b class="v-kpi__n">${money(montoConf)}</b><span class="v-kpi__s">pagos validados</span></div>`;
+  }
+
+  function accionesFila(v) {
+    let acciones = `<button class="v-mini" data-v-ver="${v.id}">Ver</button>`;
+    const soyCreador = v.created_by === miId();
+    if (!esValidador() || soyCreador) return acciones; // sin permiso o es su propio registro
+    if (v.estado === "pendiente") {
+      acciones += `<button class="v-mini v-mini--ok" data-v-tomar="${v.id}">Tomar para revisión</button>`;
+    } else if (v.estado === "revision") {
+      acciones += `<button class="v-mini v-mini--ok" data-v-conf="${v.id}">Confirmar</button><button class="v-mini v-mini--bad" data-v-rech="${v.id}">Rechazar</button>`;
+    }
+    return acciones;
   }
 
   function renderRows() {
     const tb = document.querySelector("[data-v-rows]");
     if (!tb) return;
-    let arr = load().sort((a, b) => (b.creado || 0) - (a.creado || 0));
+    let arr = ventasCache.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     if (filtroActual !== "todos") arr = arr.filter((v) => v.estado === filtroActual);
     if (!arr.length) {
       tb.innerHTML = `<tr><td colspan="9" class="v-empty">Sin pagos registrados. Da clic en "Nueva venta" para empezar.</td></tr>`;
       return;
     }
     tb.innerHTML = arr.map((v) => {
-      const e = ESTADOS[v.estado] || ESTADOS.revision;
-      let acciones = `<button class="v-mini" data-v-ver="${v.id}">Ver</button>`;
-      if (v.estado === "revision") {
-        acciones += `<button class="v-mini v-mini--ok" data-v-conf="${v.id}">Confirmar</button><button class="v-mini v-mini--bad" data-v-rech="${v.id}">Rechazar</button>`;
-      }
+      const e = ESTADOS[v.estado] || ESTADOS.pendiente;
       return `<tr>
         <td><b>${v.folio}</b></td>
-        <td>${v.alumno || "—"}</td>
-        <td>${v.curso || "—"}</td>
-        <td>${v.consultora || "—"}</td>
+        <td>${v.cliente || "—"}</td>
+        <td>${v.concepto || "—"}</td>
+        <td>${v.consultora_id ? idCorto(v.consultora_id) : "—"}</td>
         <td style="text-align:right">${money(v.importe)}</td>
-        <td>${v.vendedor || "—"}</td>
-        <td>${fmtFecha(v.fechaPago)}</td>
+        <td>${v.vendedor_id ? idCorto(v.vendedor_id) : "—"}</td>
+        <td>${fmtFecha(v.fecha_pago)}</td>
         <td><span class="v-badge ${e.cls}">${e.txt}</span></td>
-        <td><div class="v-acc">${acciones}</div></td>
+        <td><div class="v-acc">${accionesFila(v)}</div></td>
       </tr>`;
     }).join("");
   }
@@ -144,15 +225,15 @@
   function closeModal() { if (modal) modal.classList.remove("show"); }
 
   // ---------- Nueva venta ----------
-  let comprobanteB64 = null;
+  let archivoSeleccionado = null;
   function openNuevaVenta() {
-    comprobanteB64 = null;
+    archivoSeleccionado = null;
     openModal(`
       <h2 class="v-h2">Nueva venta / Registro de pago</h2>
-      <p class="v-sub">El pago quedará <b>En revisión</b> hasta que administración lo confirme.</p>
+      <p class="v-sub">El pago quedará <b>Pendiente</b> hasta que alguien de administración lo tome para revisión.</p>
       <div class="v-grid2">
-        <div class="v-field"><label>Alumno</label><input class="v-inp" id="v-alumno" placeholder="Nombre del alumno" list="v-alumnos-dl"></div>
-        <div class="v-field"><label>Curso</label><input class="v-inp" id="v-curso" placeholder="Nombre del curso"></div>
+        <div class="v-field"><label>Cliente</label><input class="v-inp" id="v-cliente" placeholder="Nombre del cliente"></div>
+        <div class="v-field"><label>Concepto</label><input class="v-inp" id="v-concepto" placeholder="Servicio, curso o concepto"></div>
       </div>
       <div class="v-grid2">
         <div class="v-field"><label>Consultora</label><input class="v-inp" id="v-consultora" placeholder="Ej. IMDAC"></div>
@@ -166,7 +247,6 @@
         <div class="v-field"><label>Referencia / Folio</label><input class="v-inp" id="v-ref" placeholder="0001234567"></div>
         <div class="v-field"><label>Banco emisor</label><select class="v-inp" id="v-banco">${BANCOS.map((b) => `<option>${b}</option>`).join("")}</select></div>
       </div>
-      <div class="v-field"><label>Vendedor</label><input class="v-inp" id="v-vendedor" value="${vendedorActual()}"></div>
       <div class="v-field">
         <label>Comprobante (imagen o PDF)</label>
         <div class="v-file" data-v-file><svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/></svg><span data-v-file-txt>Adjuntar imagen, PDF o captura</span><input type="file" id="v-comprobante" accept="image/*,application/pdf" hidden></div>
@@ -175,83 +255,120 @@
       <div class="v-modal__foot">
         <button class="btn btn--ghost" data-v-close>Cancelar</button>
         <button class="btn btn--primary" data-v-guardar>Guardar registro</button>
-      </div>
-      <datalist id="v-alumnos-dl">${[...new Set(load().map((v) => v.alumno).filter(Boolean))].map((a) => `<option value="${a}">`).join("")}</datalist>`);
+      </div>`);
   }
 
-  function guardarVenta() {
+  async function guardarVenta() {
     const g = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
-    const alumno = g("v-alumno"), curso = g("v-curso"), importe = parseFloat(g("v-importe")) || 0;
-    if (!alumno) { toast("Captura el nombre del alumno", "warn"); return; }
+    const cliente = g("v-cliente"), concepto = g("v-concepto"), importe = parseFloat(g("v-importe")) || 0;
+    if (!cliente) { toast("Captura el nombre del cliente", "warn"); return; }
+    if (!concepto) { toast("Captura el concepto o servicio", "warn"); return; }
     if (!importe) { toast("Captura el importe del pago", "warn"); return; }
-    const arr = load();
-    arr.push({
-      id: uid(), folio: nextFolio(), alumno, curso, consultora: g("v-consultora"),
-      importe, fechaPago: g("v-fecha"), metodoPago: g("v-metodo"), referencia: g("v-ref"),
-      banco: g("v-banco"), vendedor: g("v-vendedor"), notas: g("v-notas"),
-      comprobante: comprobanteB64, estado: "revision", creado: Date.now(),
-    });
-    save(arr);
-    closeModal();
-    toast("Pago registrado · queda En revisión");
-    renderKpis(); renderRows();
+
+    const btn = document.querySelector("[data-v-guardar]");
+    if (btn) { btn.disabled = true; btn.textContent = "Guardando..."; }
+
+    try {
+      let comprobantePath = null;
+      const perfil = await esperarPerfil();
+      const empresa = miEmpresa();
+      const empresaId = empresa && empresa.id;
+      if (archivoSeleccionado && !empresaId) {
+        toast("No se pudo determinar tu empresa todavía; el comprobante NO se subió. Espera unos segundos, recarga la página e inténtalo de nuevo.", "warn");
+      } else if (archivoSeleccionado && empresaId) {
+        comprobantePath = await subirComprobante(archivoSeleccionado, empresaId);
+      }
+
+      const resp = await fetch(backendUrl() + "/api/ventas", {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          cliente, concepto,
+          consultoraId: null, // OT-0014: consultora sigue como texto por ahora
+          importe,
+          fechaPago: g("v-fecha"),
+          metodoPago: g("v-metodo"),
+          referencia: g("v-ref"),
+          banco: g("v-banco"),
+          notas: g("v-notas"),
+          comprobantePath,
+        }),
+      });
+      const data = await resp.json();
+      if (!data.ok) { toast("No se pudo guardar: " + (data.error || "error"), "warn"); return; }
+
+      closeModal();
+      toast("Pago registrado · queda Pendiente");
+      await render();
+    } catch (e) {
+      toast("Error al guardar: " + e.message, "warn");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Guardar registro"; }
+    }
   }
 
   // ---------- Ver detalle ----------
-  function verDetalle(id) {
-    const v = load().find((x) => x.id === id);
+  async function verDetalle(id) {
+    const v = ventasCache.find((x) => x.id === id);
     if (!v) return;
-    const e = ESTADOS[v.estado] || ESTADOS.revision;
-    let evidencia = `<p class="v-noevi">Sin comprobante adjunto</p>`;
-    if (v.comprobante) {
-      if (v.comprobante.startsWith("data:application/pdf")) {
-        evidencia = `<a class="btn btn--ghost" href="${v.comprobante}" target="_blank">Abrir comprobante PDF</a>`;
-      } else {
-        evidencia = `<img class="v-evi" src="${v.comprobante}" alt="comprobante">`;
-      }
-    }
+    const e = ESTADOS[v.estado] || ESTADOS.pendiente;
+    let evidencia = `<p class="v-noevi">Cargando comprobante...</p>`;
     let acciones = "";
-    if (v.estado === "revision") {
-      acciones = `<button class="btn btn--ghost v-btn-bad" data-v-rech="${v.id}">Rechazar</button><button class="btn btn--primary" data-v-conf="${v.id}">Confirmar pago</button>`;
+    const soyCreador = v.created_by === miId();
+    if (esValidador() && !soyCreador) {
+      if (v.estado === "pendiente") acciones = `<button class="btn btn--primary" data-v-tomar="${v.id}">Tomar para revisión</button>`;
+      else if (v.estado === "revision") acciones = `<button class="btn btn--ghost v-btn-bad" data-v-rech="${v.id}">Rechazar</button><button class="btn btn--primary" data-v-conf="${v.id}">Confirmar pago</button>`;
     }
     openModal(`
       <h2 class="v-h2">Pago ${v.folio}</h2>
       <span class="v-badge ${e.cls}" style="margin-bottom:.8rem;display:inline-block">${e.txt}</span>
       <div class="v-det">
-        ${detRow("Alumno", v.alumno)}${detRow("Curso", v.curso)}${detRow("Consultora", v.consultora)}
-        ${detRow("Importe", money(v.importe))}${detRow("Fecha de pago", fmtFecha(v.fechaPago))}${detRow("Método", v.metodoPago)}
-        ${detRow("Referencia", v.referencia)}${detRow("Banco", v.banco)}${detRow("Vendedor", v.vendedor)}
+        ${detRow("Cliente", v.cliente)}${detRow("Concepto", v.concepto)}${detRow("Consultora", v.consultora_id ? idCorto(v.consultora_id) : "")}
+        ${detRow("Importe", money(v.importe))}${detRow("Fecha de pago", fmtFecha(v.fecha_pago))}${detRow("Método", v.metodo_pago)}
+        ${detRow("Referencia", v.referencia)}${detRow("Banco", v.banco)}
         ${v.notas ? detRow("Notas", v.notas) : ""}
       </div>
-      <div class="v-evi-wrap"><label class="v-evi-lbl">Comprobante</label>${evidencia}</div>
+      <div class="v-evi-wrap"><label class="v-evi-lbl">Comprobante</label><div data-v-evi>${evidencia}</div></div>
       <div class="v-modal__foot">${acciones || '<button class="btn btn--ghost" data-v-close>Cerrar</button>'}</div>`);
+
+    // Comprobante: carga la URL firmada aparte (no bloquea el resto del modal)
+    if (v.comprobante_path) {
+      const url = await urlFirmadaComprobante(v.comprobante_path);
+      const host = document.querySelector("[data-v-evi]");
+      if (host) {
+        if (!url) host.innerHTML = `<p class="v-noevi">No se pudo cargar el comprobante</p>`;
+        else if (v.comprobante_path.toLowerCase().endsWith(".pdf")) host.innerHTML = `<a class="btn btn--ghost" href="${url}" target="_blank">Abrir comprobante PDF</a>`;
+        else host.innerHTML = `<img class="v-evi" src="${url}" alt="comprobante">`;
+      }
+    } else {
+      const host = document.querySelector("[data-v-evi]");
+      if (host) host.innerHTML = `<p class="v-noevi">Sin comprobante adjunto</p>`;
+    }
   }
   function detRow(k, v) { return `<div class="v-det__row"><span>${k}</span><b>${v || "—"}</b></div>`; }
 
-  function confirmar(id) {
-    const arr = load(); const v = arr.find((x) => x.id === id);
-    if (!v) return;
-    v.estado = "confirmado"; v.validado = Date.now();
-    save(arr); closeModal();
-    toast("Pago confirmado ✓");
-    renderKpis(); renderRows();
-    // Notificar a otros módulos (comisiones/reporte) que hubo cambio
-    document.dispatchEvent(new CustomEvent("contateck:ventas-cambio"));
+  // ---------- Transiciones ----------
+  async function accionVenta(endpoint, id, msgOk) {
+    try {
+      const resp = await fetch(backendUrl() + "/api/ventas/" + id + "/" + endpoint, { method: "POST", headers: authHeaders(true) });
+      const data = await resp.json();
+      if (!data.ok) { toast(data.error || "No se pudo completar la acción", "warn"); return; }
+      closeModal();
+      toast(msgOk);
+      await render();
+      document.dispatchEvent(new CustomEvent("contateck:ventas-cambio"));
+    } catch (e) {
+      toast("Error: " + e.message, "warn");
+    }
   }
-  function rechazar(id) {
-    const arr = load(); const v = arr.find((x) => x.id === id);
-    if (!v) return;
-    v.estado = "rechazado"; v.validado = Date.now();
-    save(arr); closeModal();
-    toast("Pago rechazado", "warn");
-    renderKpis(); renderRows();
-    document.dispatchEvent(new CustomEvent("contateck:ventas-cambio"));
-  }
+  function tomar(id) { return accionVenta("tomar", id, "Venta tomada para revisión"); }
+  function confirmar(id) { return accionVenta("confirmar", id, "Pago confirmado ✓"); }
+  function rechazar(id) { return accionVenta("rechazar", id, "Pago rechazado"); }
 
   // ---------- API pública para otros módulos ----------
   window.CTVentas = {
-    getVentas: () => load(),
-    getConfirmadas: () => load().filter((v) => v.estado === "confirmado"),
+    getVentas: () => ventasCache.slice(),
+    getConfirmadas: () => ventasCache.filter((v) => v.estado === "confirmado"),
   };
 
   // ---------- Eventos ----------
@@ -259,6 +376,7 @@
     if (e.target.closest("[data-v-nueva]")) { openNuevaVenta(); return; }
     if (e.target.closest("[data-v-guardar]")) { guardarVenta(); return; }
     const ver = e.target.closest("[data-v-ver]"); if (ver) { verDetalle(ver.getAttribute("data-v-ver")); return; }
+    const tom = e.target.closest("[data-v-tomar]"); if (tom) { tomar(tom.getAttribute("data-v-tomar")); return; }
     const conf = e.target.closest("[data-v-conf]"); if (conf) { confirmar(conf.getAttribute("data-v-conf")); return; }
     const rech = e.target.closest("[data-v-rech]"); if (rech) { rechazar(rech.getAttribute("data-v-rech")); return; }
     const chip = e.target.closest("[data-f]");
@@ -277,13 +395,9 @@
       const f = e.target.files[0];
       if (!f) return;
       if (f.size > 3 * 1024 * 1024) { toast("El archivo no debe pasar de 3 MB", "warn"); e.target.value = ""; return; }
-      const reader = new FileReader();
-      reader.onload = () => {
-        comprobanteB64 = reader.result;
-        const txt = document.querySelector("[data-v-file-txt]");
-        if (txt) txt.textContent = f.name + " ✓";
-      };
-      reader.readAsDataURL(f);
+      archivoSeleccionado = f;
+      const txt = document.querySelector("[data-v-file-txt]");
+      if (txt) txt.textContent = f.name + " ✓";
     }
   });
 
