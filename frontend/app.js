@@ -372,32 +372,48 @@
     }
     window.CTRender.cfdis = renderCfdis;
 
-    /* ---------- Módulo 08 · Nómina ---------- */
-    if (window.NOMINA_RESUMEN) {
-      const n = NOMINA_RESUMEN;
+    /* ---------- Módulo 08 · Nómina (Parte A — OT-0017) ---------- */
+    // El cálculo real (percepciones/deducciones/ISR/IMSS) requiere reglas
+    // que debe definir el responsable contable — mientras tanto, honesto:
+    // "Próximamente", nunca una cifra inventada.
+    (function () {
+      const cont = document.querySelector("[data-nom-desglose]");
       const setT = function (sel, v) { const e = document.querySelector(sel); if (e) e.textContent = v; };
-      setT("[data-nom-periodo]", n.periodo);
-      setT("[data-nom-perc]", "$" + money(n.percepciones));
-      setT("[data-nom-ded]", "$" + money(n.deducciones));
-      setT("[data-nom-neto]", "$" + money(n.neto));
-      const max = Math.max.apply(null, n.desglose.map(function (d) { return d.valor; }));
-      fill("[data-nom-desglose]", n.desglose.map(function (d) {
-        const col = d.tipo === "perc" ? "var(--up)" : "var(--down)";
-        return '<div class="comp__row"><div class="t"><span>' + d.label + "</span><b>$" + money(d.valor) +
-          '</b></div><div class="comp__track"><div class="comp__fill" style="width:' + (d.valor / max * 100) + "%;background:" + col + '"></div></div></div>';
-      }).join(""));
+      setT("[data-nom-periodo]", "Pendiente de definir");
+      setT("[data-nom-perc]", "—");
+      setT("[data-nom-ded]", "—");
+      setT("[data-nom-neto]", "—");
+      if (cont) {
+        cont.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' +
+          '<b style="display:block;color:var(--text);margin-bottom:.2rem">Próximamente</b>' +
+          "Cálculo de nómina (percepciones, deducciones, ISR, IMSS) — pendiente de definir con el responsable contable.</div>";
+      }
+    })();
+
+    const ROLES_ESCRIBEN_EMPLEADOS = ["rh", "admin", "director"];
+    function miRolActual() {
+      const p = window.CONTATECK_PERFIL_PG;
+      return p ? p.rol : null;
     }
+    function puedeEscribirEmpleados() { return ROLES_ESCRIBEN_EMPLEADOS.indexOf(miRolActual()) !== -1; }
+
     function renderEmpleados(arr) {
       arr = arr || [];
       const ec = document.querySelector("[data-emp-count]"); if (ec) ec.textContent = arr.length + " registrados";
+      const puedeEscribir = puedeEscribirEmpleados();
+      const btnNuevo = document.querySelector('[data-new="empleado"]');
+      if (btnNuevo) btnNuevo.style.display = puedeEscribir ? "" : "none";
       fill("[data-empleados]", arr.map(function (e) {
         const ok = e.estado === "ok";
-        return "<tr><td>" + e.nombre + "</td><td>" + e.puesto + '</td><td class="num" style="text-align:right">$' + money(e.sueldo) +
-          '</td><td><span class="pill ' + (ok ? "pill--ok" : "pill--late") + '">' + (ok ? "Activo" : "Baja") + "</span></td>" + rowAct("empleados", e.id) + "</tr>";
+        // Nómina Parte A: el rol auditor no recibe "sueldo" del backend
+        // (columnas restringidas) — se muestra "—", nunca un valor falso.
+        const sueldoTxt = e.sueldo == null ? "—" : "$" + money(e.sueldo);
+        return "<tr><td>" + e.nombre + "</td><td>" + (e.puesto || "—") + '</td><td class="num" style="text-align:right">' + sueldoTxt +
+          '</td><td><span class="pill ' + (ok ? "pill--ok" : "pill--late") + '">' + (ok ? "Activo" : "Baja") + "</span></td>" +
+          (puedeEscribir ? rowAct("empleados", e.id) : "<td></td>") + "</tr>";
       }).join(""));
     }
     window.CTRender.empleados = renderEmpleados;
-    if (window.EMPLEADOS) renderEmpleados(EMPLEADOS);
 
     /* ---------- Módulo 02 · SAT y Fiscal ---------- */
     if (window.SAT_STATS) setStats("[data-sat-stats]", SAT_STATS);

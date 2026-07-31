@@ -62,11 +62,12 @@ if (!configured) {
         // para esperarlas una por una — eso sumaba los tiempos de red en
         // vez de dejarlos correr al mismo tiempo. Con Promise.all, el
         // tiempo total baja al de la más lenta de las 4, no a la suma.
-        const [perfilData, catData, opData, cfdisData] = await Promise.all([
+        const [perfilData, catData, opData, cfdisData, empleadosData] = await Promise.all([
           fetch(`${BACKEND}/api/perfil`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/catalogo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/operacion`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/cfdis`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/empleados`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
         ]);
 
         // OT-0006 · Fase A: empresa/perfil reales de Postgres.
@@ -93,6 +94,13 @@ if (!configured) {
         // OT-0012: CFDIs reales.
         if (cfdisData.ok) {
           window.CONTATECK_CFDIS_PG = cfdisData.cfdis || [];
+        }
+
+        // Nómina Parte A (OT-0017): empleados reales (columnas según rol).
+        if (empleadosData.ok) {
+          window.CONTATECK_EMPLEADOS_REAL_PG = empleadosData.empleados || [];
+        } else {
+          window.CONTATECK_EMPLEADOS_REAL_PG = []; // sin permiso o error: tabla vacía, nunca datos falsos
         }
       } catch (e) {
         // Silencioso a propósito: sin Postgres disponible, sigue el modo local.

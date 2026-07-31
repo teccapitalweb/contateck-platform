@@ -41,7 +41,7 @@ let localSeq = 0;
 const state = {
   polizas: (window.POLIZAS || []).slice(),
   cfdis: [], // OT-0012: se llena solo con datos reales de Postgres (ver cargarCfdisPostgres)
-  empleados: (window.EMPLEADOS || []).slice(),
+  empleados: [], // Nómina Parte A (OT-0017): se llena solo con datos reales de Postgres (ver cargarEmpleadosPostgres)
   clientes: [],   // catálogo de clientes guardados por el usuario
   productos: [],  // catálogo de productos/servicios guardados
 };
@@ -83,11 +83,26 @@ const SCHEMAS = {
     fields: [
       { k: "nombre", label: "Nombre completo", type: "text", ph: "Nombre del empleado", req: true },
       { k: "puesto", label: "Puesto", type: "text", ph: "Ej. Contadora", req: true },
+      { k: "departamento", label: "Departamento", type: "text", ph: "Ej. Contabilidad" },
+      { k: "fecha_ingreso", label: "Fecha de ingreso", type: "text", ph: "AAAA-MM-DD" },
       { k: "sueldo", label: "Sueldo mensual (MXN)", type: "money", ph: "0.00", req: true },
+      { k: "rfc", label: "RFC", type: "text", ph: "Opcional" },
+      { k: "curp", label: "CURP", type: "text", ph: "Opcional" },
+      { k: "nss", label: "NSS (IMSS)", type: "text", ph: "Opcional" },
+      { k: "cuenta_bancaria", label: "Cuenta bancaria / CLABE", type: "text", ph: "Opcional" },
     ],
-    editable: (v) => ({ nombre: v.nombre.trim(), puesto: v.puesto.trim(), sueldo: parseMoney(v.sueldo) }),
+    editable: (v) => ({
+      nombre: v.nombre.trim(), puesto: v.puesto.trim(), sueldo: parseMoney(v.sueldo),
+      departamento: (v.departamento || "").trim() || null,
+      fecha_ingreso: (v.fecha_ingreso || "").trim() || null,
+      rfc: (v.rfc || "").trim() || null, curp: (v.curp || "").trim() || null,
+      nss: (v.nss || "").trim() || null, cuenta_bancaria: (v.cuenta_bancaria || "").trim() || null,
+    }),
     meta: () => ({ estado: "ok", createdAt: Date.now() }),
-    fill: (o) => ({ nombre: o.nombre, puesto: o.puesto, sueldo: o.sueldo }),
+    fill: (o) => ({
+      nombre: o.nombre, puesto: o.puesto, sueldo: o.sueldo, departamento: o.departamento,
+      fecha_ingreso: o.fecha_ingreso, rfc: o.rfc, curp: o.curp, nss: o.nss, cuenta_bancaria: o.cuenta_bancaria,
+    }),
   },
 };
 const COLL2KEY = { polizas: "poliza", empleados: "empleado" };
@@ -339,15 +354,14 @@ if (configured) {
       return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
     }
 
-    const [pol, emp, cli, prod] = await Promise.all([
+    const [pol, cli, prod] = await Promise.all([
       loadColl("polizas", window.POLIZAS),
-      loadColl("empleados", window.EMPLEADOS),
       loadColl("clientes", null),
       loadColl("productos", null),
     ]);
-    state.polizas = pol; state.empleados = emp;
+    state.polizas = pol;
     state.clientes = cli; state.productos = prod;
-    refresh("polizas"); refresh("empleados");
+    refresh("polizas");
     toast("Datos sincronizados con Firestore", "ok", 2400);
   } catch (e) {
     toast("Firestore no disponible (" + (e.code || e.message || "error") + "). Mostrando datos demo.", "warn", 4800);
@@ -372,18 +386,14 @@ async function esperarOperacionPostgres(maxMs = 5000) {
 }
 
 function mezclarOperacionPostgres() {
-  const pgEmp = window.CONTATECK_EMPLEADOS_PG || [];
   const pgPol = window.CONTATECK_POLIZAS_PG || [];
-  if (!pgEmp.length && !pgPol.length) return;
-  const nombresLocal = new Set(state.empleados.map((e) => e.nombre));
-  const nuevosEmp = pgEmp.filter((e) => !nombresLocal.has(e.nombre));
+  if (!pgPol.length) return;
   const foliosLocal = new Set(state.polizas.map((p) => p.folio));
   const nuevasPol = pgPol.filter((p) => !foliosLocal.has(p.folio));
-  if (nuevosEmp.length) state.empleados = state.empleados.concat(nuevosEmp);
   if (nuevasPol.length) state.polizas = state.polizas.concat(nuevasPol);
-  if (nuevosEmp.length || nuevasPol.length) {
-    ensureIds("empleados"); ensureIds("polizas");
-    refresh("empleados"); refresh("polizas");
+  if (nuevasPol.length) {
+    ensureIds("polizas");
+    refresh("polizas");
   }
 }
 
@@ -445,6 +455,33 @@ try {
   setTimeout(cargarCfdisPostgres, 3000);
 } catch (e) {
   console.warn("[CONTATECK][OT-0012] No se pudieron cargar los CFDIs de Postgres:", e);
+}
+
+/* ---- Nómina Parte A (OT-0017): empleados reales desde Postgres ----
+   Reemplazo total (no mezcla) — igual criterio que CFDIs: nada de
+   datos demo mezclados con reales. Las columnas ya vienen recortadas
+   por el backend según el rol (auditor no recibe sueldo/rfc/curp/nss/
+   cuenta_bancaria, así que esos campos llegan undefined y se muestran
+   como "—", nunca inventados). */
+async function esperarEmpleadosPostgres(maxMs = 5000) {
+  const start = Date.now();
+  while (window.CONTATECK_EMPLEADOS_REAL_PG === undefined && Date.now() - start < maxMs) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+function cargarEmpleadosPostgres() {
+  const pg = window.CONTATECK_EMPLEADOS_REAL_PG;
+  if (!Array.isArray(pg)) return; // sin backend/sesión/permiso: la tabla queda vacía, sin datos falsos
+  state.empleados = pg;
+  ensureIds("empleados");
+  refresh("empleados");
+}
+try {
+  await esperarEmpleadosPostgres();
+  cargarEmpleadosPostgres();
+  setTimeout(cargarEmpleadosPostgres, 3000);
+} catch (e) {
+  console.warn("[CONTATECK][OT-0017] No se pudieron cargar los empleados de Postgres:", e);
 }
 
 /* ============================================================
