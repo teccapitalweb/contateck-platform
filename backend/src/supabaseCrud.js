@@ -14,10 +14,26 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
 
+// Extrae el "sub" (user id) del JWT sin llamada de red extra.
+function idDeToken(accessToken) {
+  try {
+    const json = Buffer.from(accessToken.split('.')[1], 'base64').toString('utf8');
+    return JSON.parse(json).sub || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 const TABLAS = {
   clientes: { campos: ['nombre', 'rfc', 'email', 'uso_cfdi', 'cp', 'regimen'], permiteEliminar: true },
   productos: { campos: ['descripcion', 'clave_prod_serv', 'clave_unidad', 'precio_unitario'], permiteEliminar: true },
-  empleados: { campos: ['nombre', 'puesto', 'sueldo', 'estado'], permiteEliminar: false }, // soft-delete
+  // Nómina · Parte A (OT-0017): campos ampliados. rfc/curp/nss/
+  // cuenta_bancaria son sensibles — el rol auditor nunca los ve
+  // (columnas ocultas en supabaseEmpleados.js, no aquí).
+  empleados: {
+    campos: ['nombre', 'puesto', 'departamento', 'fecha_ingreso', 'sueldo', 'rfc', 'curp', 'nss', 'cuenta_bancaria', 'estado'],
+    permiteEliminar: false,
+  }, // soft-delete
   polizas: { campos: ['folio', 'tipo', 'fecha', 'concepto', 'monto', 'estado'], permiteEliminar: false }, // nunca se borra
 };
 
@@ -40,8 +56,8 @@ function limpiarCampos(tabla, body) {
   return limpio;
 }
 
-async function obtenerEmpresaId(supabase) {
-  const { data, error } = await supabase.from('perfiles').select('empresa_id').single();
+async function obtenerEmpresaId(supabase, accessToken) {
+  const { data, error } = await supabase.from('perfiles').select('empresa_id').eq('id', idDeToken(accessToken)).single();
   if (error || !data) return null;
   return data.empresa_id;
 }
@@ -50,10 +66,11 @@ export async function crear(tabla, accessToken, body, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  const empresaId = await obtenerEmpresaId(supabase);
+  const empresaId = await obtenerEmpresaId(supabase, accessToken);
   if (!empresaId) return { ok: false, error: 'No se encontró tu perfil/empresa en Postgres.' };
 
   const datos = { ...limpiarCampos(tabla, body), empresa_id: empresaId };
+  if (tabla === 'empleados') datos.created_by = idDeToken(accessToken);
   const { data, error } = await supabase.from(tabla).insert(datos).select().single();
   if (error) {
     log.warn(`[postgres] crear ${tabla}:`, error.message);

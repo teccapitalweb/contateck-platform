@@ -17,6 +17,7 @@ import { invoicesRouter } from './src/routes/invoices.js';
 import { demoRouter } from './src/routes/demo.js';
 import { dashboardRouter } from './src/routes/dashboard.js';
 import { ventasRouter } from './src/routes/ventas.js';
+import { empleadosRouter } from './src/routes/empleados.js';
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use('/api', crudRouter);
 app.use('/api', polizasCompletasRouter);
 app.use('/api', dashboardRouter);
 app.use('/api', ventasRouter);
+app.use('/api', empleadosRouter);
 app.use('/api/demo', demoRouter);
 
 // ---- 404 ----
