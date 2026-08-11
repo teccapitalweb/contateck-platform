@@ -40,8 +40,8 @@ function toast(msg, type = "info", ms = 3200) {
 let localSeq = 0;
 const state = {
   polizas: (window.POLIZAS || []).slice(),
-  cfdis: (window.CFDIS || []).slice(),
-  empleados: (window.EMPLEADOS || []).slice(),
+  cfdis: [], // OT-0012: se llena solo con datos reales de Postgres (ver cargarCfdisPostgres)
+  empleados: [], // Nómina Parte A (OT-0017): se llena solo con datos reales de Postgres (ver cargarEmpleadosPostgres)
   clientes: [],   // catálogo de clientes guardados por el usuario
   productos: [],  // catálogo de productos/servicios guardados
 };
@@ -74,29 +74,38 @@ const SCHEMAS = {
     fix: (o) => { o.folio = "IPC-" + (o.tipo || "D").charAt(0) + "-" + pad5(143 + state.polizas.length); return o; },
     fill: (o) => ({ tipo: o.tipo, concepto: o.concepto, monto: o.monto }),
   },
-  cfdi: {
-    title: "CFDI 4.0", coll: "cfdis",
-    fields: [
-      { k: "cliente", label: "Cliente (receptor)", type: "text", ph: "Razón social del cliente", req: true },
-      { k: "total", label: "Total (MXN)", type: "money", ph: "0.00", req: true },
-    ],
-    editable: (v) => ({ cliente: v.cliente.trim(), total: parseMoney(v.total) }),
-    meta: () => ({ folio: "A-" + (1044 + state.cfdis.length), uuid: uuidShort(), fecha: hoyCorto(), estado: "ok", createdAt: Date.now() }),
-    fill: (o) => ({ cliente: o.cliente, total: o.total }),
-  },
+  // OT-0012: se quitó el schema genérico "cfdi" — permitía crear/editar
+  // "facturas" a mano (solo cliente + total) directo en Firestore, sin
+  // pasar por Fiscalapi/SAT. Un CFDI real solo se crea vía /api/facturar
+  // (facturacion.js) y solo se cancela vía /api/cancelar.
   empleado: {
     title: "empleado", coll: "empleados",
     fields: [
       { k: "nombre", label: "Nombre completo", type: "text", ph: "Nombre del empleado", req: true },
       { k: "puesto", label: "Puesto", type: "text", ph: "Ej. Contadora", req: true },
+      { k: "departamento", label: "Departamento", type: "text", ph: "Ej. Contabilidad" },
+      { k: "fecha_ingreso", label: "Fecha de ingreso", type: "text", ph: "AAAA-MM-DD" },
       { k: "sueldo", label: "Sueldo mensual (MXN)", type: "money", ph: "0.00", req: true },
+      { k: "rfc", label: "RFC", type: "text", ph: "Opcional" },
+      { k: "curp", label: "CURP", type: "text", ph: "Opcional" },
+      { k: "nss", label: "NSS (IMSS)", type: "text", ph: "Opcional" },
+      { k: "cuenta_bancaria", label: "Cuenta bancaria / CLABE", type: "text", ph: "Opcional" },
     ],
-    editable: (v) => ({ nombre: v.nombre.trim(), puesto: v.puesto.trim(), sueldo: parseMoney(v.sueldo) }),
+    editable: (v) => ({
+      nombre: v.nombre.trim(), puesto: v.puesto.trim(), sueldo: parseMoney(v.sueldo),
+      departamento: (v.departamento || "").trim() || null,
+      fecha_ingreso: (v.fecha_ingreso || "").trim() || null,
+      rfc: (v.rfc || "").trim() || null, curp: (v.curp || "").trim() || null,
+      nss: (v.nss || "").trim() || null, cuenta_bancaria: (v.cuenta_bancaria || "").trim() || null,
+    }),
     meta: () => ({ estado: "ok", createdAt: Date.now() }),
-    fill: (o) => ({ nombre: o.nombre, puesto: o.puesto, sueldo: o.sueldo }),
+    fill: (o) => ({
+      nombre: o.nombre, puesto: o.puesto, sueldo: o.sueldo, departamento: o.departamento,
+      fecha_ingreso: o.fecha_ingreso, rfc: o.rfc, curp: o.curp, nss: o.nss, cuenta_bancaria: o.cuenta_bancaria,
+    }),
   },
 };
-const COLL2KEY = { polizas: "poliza", cfdis: "cfdi", empleados: "empleado" };
+const COLL2KEY = { polizas: "poliza", empleados: "empleado" };
 function labelOf(coll, o) { return coll === "empleados" ? o.nombre : o.folio; }
 
 /* ---------- Modal ---------- */
@@ -192,17 +201,28 @@ async function saveCurrent() {
   const v = readForm(s); if (!v) return;
   const patch = s.editable(v);
   if (mSave) { mSave.disabled = true; mSave.textContent = "Guardando…"; }
+  // OT-0008-C: polizas/empleados escriben en Postgres, no en Firestore.
+  const usaPostgres = (current.coll === "polizas" || current.coll === "empleados") && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN;
   try {
     if (current.mode === "create") {
       let obj = Object.assign(s.meta(), patch);
       if (s.fix) obj = s.fix(obj);
-      if (db) { const ref = await _addDoc(_collection(db, current.coll), obj); obj.id = ref.id; }
+      if (usaPostgres) {
+        const r = await window.CTPostgres.crear(current.coll, patch);
+        if (!r.ok) throw new Error(r.error || "No se pudo guardar en Postgres");
+        obj = Object.assign(obj, r.registro);
+      } else if (db) { const ref = await _addDoc(_collection(db, current.coll), obj); obj.id = ref.id; }
       else obj.id = "local-" + (++localSeq);
       state[current.coll].unshift(obj);
       refresh(current.coll);
-      toast(db ? "Guardado en Firestore" : "Guardado localmente", db ? "ok" : "warn");
+      toast(usaPostgres ? "Guardado en Postgres" : (db ? "Guardado en Firestore" : "Guardado localmente"), usaPostgres || db ? "ok" : "warn");
     } else { // edit
-      if (db) await _updateDoc(_doc(db, current.coll, current.id), patch);
+      if (usaPostgres && current.id && !String(current.id).startsWith("local-")) {
+        const r = await window.CTPostgres.actualizar(current.coll, current.id, patch);
+        if (!r.ok) throw new Error(r.error || "No se pudo actualizar en Postgres");
+      } else if (db) {
+        await _updateDoc(_doc(db, current.coll, current.id), patch);
+      }
       Object.assign(current.obj, patch);
       refresh(current.coll);
       toast("Cambios guardados", "ok");
@@ -220,8 +240,24 @@ async function doDelete() {
   if (!current) return;
   const { coll, id } = current;
   if (mSave) { mSave.disabled = true; mSave.textContent = "Eliminando…"; }
+  // OT-0008-C: polizas/empleados se eliminan (o dan de baja) en Postgres.
+  const usaPostgres = (coll === "polizas" || coll === "empleados") && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN && id && !String(id).startsWith("local-");
   try {
-    if (db) await _deleteDoc(_doc(db, coll, id));
+    if (usaPostgres) {
+      const r = await window.CTPostgres.eliminar(coll, id);
+      if (!r.ok) throw new Error(r.error || "No se pudo eliminar en Postgres");
+      if (r.softDelete) {
+        // Empleados: no se borra el registro, solo se marca "baja".
+        const row = state[coll].find((x) => x.id === id);
+        if (row) row.estado = "baja";
+        refresh(coll);
+        toast("Empleado marcado como baja", "ok");
+        closeModal();
+        return;
+      }
+    } else if (db) {
+      await _deleteDoc(_doc(db, coll, id));
+    }
     state[coll] = state[coll].filter((x) => x.id !== id);
     refresh(coll);
     toast("Registro eliminado", "ok");
@@ -273,6 +309,38 @@ if (configured) {
     db = getFirestore(app);
     _collection = collection; _addDoc = addDoc; _doc = doc; _updateDoc = updateDoc; _deleteDoc = deleteDoc;
 
+    /* ---- OT-0008-B: puente Supabase Auth → Firebase Auth ----
+       Las reglas de Firestore exigen request.auth != null (de Firebase).
+       Desde que el login real es con Supabase (OT-0004), Firestore
+       rechazaba todo con "permission-denied". Aquí se pide al backend
+       un Firebase Custom Token (usando la sesión de Supabase ya
+       verificada) y se inicia sesión también en Firebase, sin pedirle
+       nada nuevo al usuario. Si algo de esto falla, se sigue de largo:
+       las lecturas de Firestore fallarán igual que antes (con su
+       propio try/catch), no se rompe el resto del panel. */
+    try {
+      const start = Date.now();
+      while (window.CONTATECK_SUPABASE_TOKEN === undefined && Date.now() - start < 4000) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      const supaToken = window.CONTATECK_SUPABASE_TOKEN;
+      if (supaToken) {
+        const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+        const resp = await fetch(`${BACKEND}/api/firebase-token`, {
+          headers: { Authorization: `Bearer ${supaToken}` },
+        });
+        const data = await resp.json();
+        if (data.ok && data.token) {
+          const authMod = await import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-auth.js`);
+          const { getAuth, signInWithCustomToken } = authMod;
+          await signInWithCustomToken(getAuth(app), data.token);
+        }
+      }
+    } catch (e) {
+      // Sin puente de Firebase disponible: las lecturas de abajo
+      // fallarán con permission-denied, igual que ya pasaba antes.
+    }
+
     async function loadColl(name, seed) {
       const snap = await getDocs(query(collection(db, name), orderBy("createdAt", "desc")));
       if (snap.empty && seed && seed.length) {
@@ -286,52 +354,163 @@ if (configured) {
       return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
     }
 
-    const [pol, cf, emp, cli, prod] = await Promise.all([
+    const [pol, cli, prod] = await Promise.all([
       loadColl("polizas", window.POLIZAS),
-      loadColl("cfdis", window.CFDIS),
-      loadColl("empleados", window.EMPLEADOS),
       loadColl("clientes", null),
       loadColl("productos", null),
     ]);
-    state.polizas = pol; state.cfdis = cf; state.empleados = emp;
+    state.polizas = pol;
     state.clientes = cli; state.productos = prod;
-    refresh("polizas"); refresh("cfdis"); refresh("empleados");
+    refresh("polizas");
     toast("Datos sincronizados con Firestore", "ok", 2400);
   } catch (e) {
     toast("Firestore no disponible (" + (e.code || e.message || "error") + "). Mostrando datos demo.", "warn", 4800);
   }
 }
 
+/* ---- OT-0008 · Fase A: mezclar empleados/pólizas de Postgres (aditivo) ----
+   auth-guard.js trae estos datos en paralelo vía /api/operacion; como los
+   dos scripts son módulos que arrancan casi al mismo tiempo, esperamos un
+   momento corto a que window.CONTATECK_EMPLEADOS_PG/POLIZAS_PG existan
+   antes de decidir si hay algo que mezclar. Si nunca llegan (sin Postgres,
+   sin sesión, etc.), no pasa nada — el panel sigue con lo de Firestore. */
+async function esperarOperacionPostgres(maxMs = 5000) {
+  const start = Date.now();
+  while (
+    window.CONTATECK_EMPLEADOS_PG === undefined &&
+    window.CONTATECK_POLIZAS_PG === undefined &&
+    Date.now() - start < maxMs
+  ) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+
+function mezclarOperacionPostgres() {
+  const pgPol = window.CONTATECK_POLIZAS_PG || [];
+  if (!pgPol.length) return;
+  const foliosLocal = new Set(state.polizas.map((p) => p.folio));
+  const nuevasPol = pgPol.filter((p) => !foliosLocal.has(p.folio));
+  if (nuevasPol.length) state.polizas = state.polizas.concat(nuevasPol);
+  if (nuevasPol.length) {
+    ensureIds("polizas");
+    refresh("polizas");
+  }
+}
+
+try {
+  await esperarOperacionPostgres();
+  mezclarOperacionPostgres();
+  // Red de seguridad: si el backend tardó más de los 5s de arriba (ej.
+  // arranque en frío), reintenta una vez más pasados unos segundos.
+  setTimeout(mezclarOperacionPostgres, 3000);
+} catch (e) {
+  // No debe romper el resto del panel si algo falla aquí; se deja como
+  // warning silencioso (no error) para diagnóstico futuro si hiciera falta.
+  console.warn("[CONTATECK][OT-0008] No se pudo mezclar empleados/pólizas de Postgres:", e);
+}
+
+/* ---- OT-0012: CFDIs reales desde Postgres (reemplazo total, no mezcla) ----
+   A diferencia de empleados/pólizas, aquí NO se combina con nada local ni
+   con Firestore — Postgres es la única fuente de verdad para Facturación. */
+function formatFechaCorta(iso) {
+  if (!iso) return hoyCorto();
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return hoyCorto();
+  return String(d.getDate()).padStart(2, "0") + " " + MESES[d.getMonth()];
+}
+function mapCfdiPostgres(r) {
+  const uuidFull = r.uuid_sat || "";
+  return {
+    id: r.id,
+    folio: r.folio || r.serie || r.fiscalapi_id || "—",
+    uuid: uuidFull ? (uuidFull.slice(0, 8) + "…" + uuidFull.slice(-4)) : "—",
+    uuidFull: uuidFull,
+    cliente: r.receptor_nombre || r.receptor_rfc || "—",
+    fecha: formatFechaCorta(r.fecha || r.created_at),
+    total: typeof r.total === "number" ? r.total : parseMoney(r.total || 0),
+    estado: r.estatus === "cancelado" ? "cancelada" : "ok",
+    cfdiId: r.fiscalapi_id || null,
+    tipo: r.tipo || "I",
+    // metodoPago/saldo no se guardan hoy en Postgres (ver `raw`); se dejan
+    // sin definir a propósito para que el botón de REP no se muestre por
+    // error — más seguro ocultarlo que asumir mal. Pendiente si se necesita
+    // el flujo de REP sobre CFDIs ya existentes en una vuelta futura.
+  };
+}
+async function esperarCfdisPostgres(maxMs = 5000) {
+  const start = Date.now();
+  while (window.CONTATECK_CFDIS_PG === undefined && Date.now() - start < maxMs) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+function cargarCfdisPostgres() {
+  const pg = window.CONTATECK_CFDIS_PG;
+  if (!Array.isArray(pg)) return; // sin backend/sesión: la tabla queda vacía, sin datos falsos
+  state.cfdis = pg.map(mapCfdiPostgres);
+  refresh("cfdis");
+}
+try {
+  await esperarCfdisPostgres();
+  cargarCfdisPostgres();
+  setTimeout(cargarCfdisPostgres, 3000);
+} catch (e) {
+  console.warn("[CONTATECK][OT-0012] No se pudieron cargar los CFDIs de Postgres:", e);
+}
+
+/* ---- Nómina Parte A (OT-0017): empleados reales desde Postgres ----
+   Reemplazo total (no mezcla) — igual criterio que CFDIs: nada de
+   datos demo mezclados con reales. Las columnas ya vienen recortadas
+   por el backend según el rol (auditor no recibe sueldo/rfc/curp/nss/
+   cuenta_bancaria, así que esos campos llegan undefined y se muestran
+   como "—", nunca inventados). */
+async function esperarEmpleadosPostgres(maxMs = 5000) {
+  const start = Date.now();
+  while (window.CONTATECK_EMPLEADOS_REAL_PG === undefined && Date.now() - start < maxMs) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+function cargarEmpleadosPostgres() {
+  const pg = window.CONTATECK_EMPLEADOS_REAL_PG;
+  if (!Array.isArray(pg)) return; // sin backend/sesión/permiso: la tabla queda vacía, sin datos falsos
+  state.empleados = pg;
+  ensureIds("empleados");
+  refresh("empleados");
+}
+try {
+  await esperarEmpleadosPostgres();
+  cargarEmpleadosPostgres();
+  setTimeout(cargarEmpleadosPostgres, 3000);
+} catch (e) {
+  console.warn("[CONTATECK][OT-0017] No se pudieron cargar los empleados de Postgres:", e);
+}
+
 /* ============================================================
    API pública para otros módulos (facturacion.js).
-   Agrega un CFDI ya timbrado a la tabla y lo guarda en Firestore.
+   OT-0012: el backend ya guardó el CFDI en Postgres como parte de la
+   respuesta de /api/facturar — aquí ya NO se escribe nada a Firestore.
+   Solo se agrega a la tabla en memoria para que se vea al instante, sin
+   esperar el siguiente refresh de /api/cfdis.
    ============================================================ */
 async function addCfdiTimbrado(parcial) {
   parcial = parcial || {};
   const uuidFull = String(parcial.uuid || "");
   const obj = {
+    id: "local-" + (++localSeq), // temporal hasta el próximo refresh real de Postgres
     folio: parcial.folio || ((parcial.serie || "CT") + "-" + (1044 + state.cfdis.length)),
     uuid: uuidFull ? (uuidFull.slice(0, 8) + "…" + uuidFull.slice(-4)) : "—",
-    uuidFull: uuidFull, // folio fiscal completo (para copiar/buscar)
+    uuidFull: uuidFull,
     cliente: parcial.cliente || "—",
     total: typeof parcial.total === "number" ? parcial.total : parseMoney(parcial.total || 0),
     fecha: parcial.fecha || hoyCorto(),
     estado: parcial.estado || "ok",
-    cfdiId: parcial.cfdiId || null,         // id interno de Fiscalapi (para PDF/XML/cancelar)
-    metodoPago: parcial.metodoPago || "PUE", // PUE o PPD (PPD habilita el REP)
-    tipo: parcial.tipo || "I",               // I factura, E nota de crédito, P pago (REP)
-    receptorRfc: parcial.receptorRfc || "",  // RFC del cliente (para nota de crédito / REP en producción)
-    perfilId: parcial.perfilId || "",        // marca/consultora usada (perfil de branding)
-    saldo: typeof parcial.total === "number" ? parcial.total : parseMoney(parcial.total || 0), // saldo pendiente (para REP parcial)
+    cfdiId: parcial.cfdiId || null,
+    metodoPago: parcial.metodoPago || "PUE",
+    tipo: parcial.tipo || "I",
+    receptorRfc: parcial.receptorRfc || "",
+    perfilId: parcial.perfilId || "",
+    saldo: typeof parcial.total === "number" ? parcial.total : parseMoney(parcial.total || 0),
     createdAt: Date.now(),
   };
-  try {
-    if (db) { const ref = await _addDoc(_collection(db, "cfdis"), obj); obj.id = ref.id; }
-    else obj.id = "local-" + (++localSeq);
-  } catch (e) {
-    obj.id = "local-" + (++localSeq);
-    toast("Timbrada, pero no se guardó en Firestore (" + (e.code || e.message || "error") + ")", "warn", 4800);
-  }
   state.cfdis.unshift(obj);
   refresh("cfdis");
   return obj;
@@ -340,18 +519,13 @@ async function addCfdiTimbrado(parcial) {
 window.CTData = window.CTData || {};
 window.CTData.addCfdi = addCfdiTimbrado;
 
-// Marca un CFDI como cancelado en la tabla y en Firestore (rowId = id del documento).
+// OT-0012: /api/cancelar ya actualizó estatus='cancelado' en Postgres del
+// lado del backend. Aquí solo se refleja en la tabla en memoria, sin
+// ninguna escritura a Firestore.
 async function markCfdiCancelledLocal(rowId) {
   const f = state.cfdis.find((x) => x.id === rowId);
   if (!f) return null;
   f.estado = "cancelada";
-  try {
-    if (db && rowId && String(rowId).indexOf("local-") !== 0) {
-      await _updateDoc(_doc(db, "cfdis", rowId), { estado: "cancelada" });
-    }
-  } catch (e) {
-    toast("Cancelada en el SAT, pero no se actualizó la tabla (" + (e.code || e.message || "error") + ")", "warn", 4800);
-  }
   refresh("cfdis");
   return f;
 }
@@ -372,7 +546,13 @@ async function saveClienteLocal(c) {
   const existe = state.clientes.find((x) => x.rfc === obj.rfc);
   if (existe) return existe; // no duplicar por RFC
   try {
-    if (db) { const ref = await _addDoc(_collection(db, "clientes"), obj); obj.id = ref.id; }
+    // OT-0008-C: clientes/productos ahora se crean en Postgres primero.
+    if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+      const r = await window.CTPostgres.crear("clientes", { nombre: obj.nombre, rfc: obj.rfc, uso_cfdi: obj.usoCfdi });
+      if (r.ok) obj.id = r.registro.id;
+      else if (db) { const ref = await _addDoc(_collection(db, "clientes"), obj); obj.id = ref.id; }
+      else obj.id = "local-" + (++localSeq);
+    } else if (db) { const ref = await _addDoc(_collection(db, "clientes"), obj); obj.id = ref.id; }
     else obj.id = "local-" + (++localSeq);
   } catch (e) { obj.id = "local-" + (++localSeq); }
   state.clientes.unshift(obj);
@@ -389,7 +569,12 @@ async function saveProductoLocal(p) {
   const existe = state.productos.find((x) => x.descripcion === obj.descripcion && x.precioUnitario === obj.precioUnitario);
   if (existe) return existe;
   try {
-    if (db) { const ref = await _addDoc(_collection(db, "productos"), obj); obj.id = ref.id; }
+    if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
+      const r = await window.CTPostgres.crear("productos", { descripcion: obj.descripcion, precio_unitario: obj.precioUnitario });
+      if (r.ok) obj.id = r.registro.id;
+      else if (db) { const ref = await _addDoc(_collection(db, "productos"), obj); obj.id = ref.id; }
+      else obj.id = "local-" + (++localSeq);
+    } else if (db) { const ref = await _addDoc(_collection(db, "productos"), obj); obj.id = ref.id; }
     else obj.id = "local-" + (++localSeq);
   } catch (e) { obj.id = "local-" + (++localSeq); }
   state.productos.unshift(obj);
@@ -404,14 +589,14 @@ window.CTData.saveProducto = saveProductoLocal;
 /* ---------- Lectura de CFDIs y saldos (para nota de crédito / REP) ---------- */
 window.CTData.getCfdis = () => state.cfdis.slice();
 
-// Actualiza el saldo pendiente de una factura tras registrar un pago (REP parcial).
+// OT-0012: actualiza el saldo pendiente (REP parcial) solo en memoria —
+// ya no escribe a Firestore. El saldo real no se persiste todavía en
+// Postgres (columna pendiente para cuando se retome el flujo de REP a
+// fondo); esto es una limitación conocida, no un bug nuevo de este fix.
 async function updateCfdiSaldoLocal(rowId, nuevoSaldo) {
   const f = state.cfdis.find((x) => x.id === rowId);
   if (!f) return;
   f.saldo = Number(nuevoSaldo);
-  try {
-    if (db && !String(rowId).startsWith("local-")) await _updateDoc(_doc(db, "cfdis", rowId), { saldo: f.saldo });
-  } catch (e) { /* el saldo local ya quedó actualizado */ }
   refresh("cfdis");
 }
 window.CTData.updateCfdiSaldo = updateCfdiSaldoLocal;

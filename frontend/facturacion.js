@@ -7,8 +7,23 @@
 (function () {
   "use strict";
 
-  // URL del backend de timbrado en Railway.
-  const BACKEND = "https://contateck-backend-production.up.railway.app";
+  // URL del backend de timbrado. Por default, producción (Railway).
+  // OT-0005: ahora se puede sobreescribir desde app-config.js para
+  // pruebas locales, sin tocar esta línea cada vez.
+  const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+
+  // OT-0011 fix: el backend exige Authorization: Bearer <token> cuando
+  // REQUIRE_AUTH=true (auth-guard.js ya guarda el token de sesión en
+  // window.CONTATECK_SUPABASE_TOKEN). Antes de este fix, facturacion.js
+  // nunca mandaba ese header y el backend rechazaba con 401 "Falta el
+  // token de autenticación" — el frontend lo mostraba mal como si fuera
+  // rechazo del PAC.
+  function headersConAuth() {
+    const h = { "Content-Type": "application/json" };
+    const token = window.CONTATECK_SUPABASE_TOKEN;
+    if (token) h.Authorization = `Bearer ${token}`;
+    return h;
+  }
 
   // Catálogo corto de Uso de CFDI (los más comunes).
   const USOS = [
@@ -188,9 +203,23 @@
 
   const money = (n) => "$" + Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // ---- Catálogo de clientes/productos guardados (desde Firestore) ----
-  function getClientesList() { return (window.CTData && window.CTData.getClientes) ? window.CTData.getClientes() : []; }
-  function getProductosList() { return (window.CTData && window.CTData.getProductos) ? window.CTData.getProductos() : []; }
+  // ---- Catálogo de clientes/productos (Firestore local + Postgres OT-0007) ----
+  // OT-0007 · Fase A: si hay datos en window.CONTATECK_CLIENTES_PG/PRODUCTOS_PG
+  // (llenados por auth-guard.js desde /api/catalogo), se agregan al catálogo
+  // local sin duplicar por RFC/descripción. Si no hay Postgres, el
+  // comportamiento es idéntico al de antes de esta OT.
+  function getClientesList() {
+    const local = (window.CTData && window.CTData.getClientes) ? window.CTData.getClientes() : [];
+    const pg = window.CONTATECK_CLIENTES_PG || [];
+    const rfcsLocal = new Set(local.map((c) => c.rfc));
+    return local.concat(pg.filter((c) => !rfcsLocal.has(c.rfc)));
+  }
+  function getProductosList() {
+    const local = (window.CTData && window.CTData.getProductos) ? window.CTData.getProductos() : [];
+    const pg = window.CONTATECK_PRODUCTOS_PG || [];
+    const descLocal = new Set(local.map((p) => p.descripcion));
+    return local.concat(pg.filter((p) => !descLocal.has(p.descripcion)));
+  }
   function clienteOptions() {
     return getClientesList().map((c, i) => `<option value="${i}">${(c.nombre || "").slice(0, 40)} · ${c.rfc}</option>`).join("");
   }
@@ -427,7 +456,7 @@
     try {
       const resp = await fetch(BACKEND + "/api/facturar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headersConAuth(),
         body: JSON.stringify({ receptor: { rfc, nombre, usoCfdi, cp, regimen }, conceptos, metodoPago, formaPago, retenciones }),
       });
       const data = await resp.json();
@@ -464,7 +493,10 @@
       } else {
         btn.disabled = false;
         btn.innerHTML = "Timbrar factura";
-        msg.innerHTML = `<div class="fac-err"><b>El PAC rechazó la factura:</b><br>${data.error || "Error desconocido"}${data.details ? "<br><small>" + String(data.details).slice(0, 300) + "</small>" : ""}</div>`;
+        // OT-0012: antes decía siempre "El PAC rechazó la factura", aunque el
+        // rechazo viniera de auth (401), de rol (403) o de validación (400)
+        // propia — nunca del PAC. Título neutral, igual que cancelar/nota-crédito.
+        msg.innerHTML = errBox("No se pudo timbrar", data);
       }
     } catch (err) {
       btn.disabled = false;
@@ -578,7 +610,7 @@
     try {
       const resp = await fetch(BACKEND + "/api/cancelar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headersConAuth(),
         body: JSON.stringify({ invoiceUuid: uuid, cancellationReasonCode: motivo, replacementUuid: sustituto.trim() || undefined }),
       });
       const data = await resp.json();
@@ -677,7 +709,7 @@
     msg.innerHTML = "";
     try {
       const resp = await fetch(BACKEND + "/api/nota-credito", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: headersConAuth(),
         body: JSON.stringify({
           receptor: { rfc: f.receptorRfc || "EKU9003173C9", nombre: f.cliente || "ESCUELA KEMPER URGATE" },
           conceptos: [{ descripcion: desc, cantidad: 1, precioUnitario: monto }],
@@ -754,7 +786,7 @@
     const folio = String(f.folio || "1").split("-").pop();
     try {
       const resp = await fetch(BACKEND + "/api/rep", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: headersConAuth(),
         body: JSON.stringify({
           receptor: { rfc: f.receptorRfc || "EKU9003173C9", nombre: f.cliente || "ESCUELA KEMPER URGATE" },
           pago: { monto, formaPago: forma },
@@ -812,7 +844,7 @@
     msg.innerHTML = "";
     try {
       const resp = await fetch(BACKEND + "/api/enviar-correo", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: headersConAuth(),
         body: JSON.stringify({ id: cfdiId, email, base64Logo: cfg.logo || undefined, bandColor: cfg.color || undefined }),
       });
       const data = await resp.json();
@@ -845,7 +877,7 @@
     try {
       const resp = conMarca
         ? await fetch(`${BACKEND}/api/cfdi/${cfdiId}/pdf-pro`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
+            method: "POST", headers: headersConAuth(),
             body: JSON.stringify({ base64Logo: cfg.logo || undefined, bandColor: cfg.color || undefined, marcaNombre: cfg.nombre || undefined }),
           })
         : await fetch(`${BACKEND}/api/cfdi/${cfdiId}/pdf-pro`);
