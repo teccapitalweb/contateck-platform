@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bienvenido · CONTATECK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<main class="auth">
+  <aside class="auth__brand">
+    <a href="index.html" class="brand">
+      <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
+      <span class="brand__word">Conta<b class="t">teck</b></span>
+    </a>
+    <div class="auth__pitch">
+      <span class="eyebrow">Un paso más</span>
+      <h2>Vamos a preparar tu cuenta.</h2>
+      <p>Solo necesitamos saber a qué empresa perteneces.</p>
+    </div>
+  </aside>
+
+  <section class="auth__form">
+    <div class="auth__card">
+      <a href="index.html" class="brand">
+        <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
+        <span class="brand__word">Conta<b class="t">teck</b></span>
+      </a>
+
+      <div id="obEsperando">
+        <h1>Un momento…</h1>
+        <p class="sub">Estamos revisando tu cuenta.</p>
+      </div>
+
+      <div id="obCrearEmpresa" style="display:none">
+        <h1>Crea tu empresa</h1>
+        <p class="sub">Serás el <b>director</b> de esta cuenta — podrás invitar a tu equipo después.</p>
+        <div class="field">
+          <label for="obNombreEmpresa">Nombre de tu empresa</label>
+          <div class="input-wrap">
+            <input class="input" id="obNombreEmpresa" type="text" placeholder="Ej. Consultora Ejemplo SA de CV">
+          </div>
+        </div>
+        <div class="field">
+          <label for="obNombrePersona">Tu nombre</label>
+          <div class="input-wrap">
+            <input class="input" id="obNombrePersona" type="text" placeholder="Ej. Jimena Villa">
+          </div>
+        </div>
+        <p id="obError" class="form-error"></p>
+        <button class="btn btn--primary btn--block btn--lg" id="obBtnCrear">Crear mi empresa</button>
+      </div>
+
+      <div id="obSinInvitacion" style="display:none">
+        <h1>Aún no tienes acceso</h1>
+        <p class="sub">No encontramos ninguna invitación vigente para tu correo. Si crees que es un error, contacta a quien te invitó — o crea tu propia empresa si apenas empiezas.</p>
+        <button class="btn btn--ghost btn--block btn--lg" id="obBtnCrearAlt">Crear mi propia empresa</button>
+        <p class="auth__foot"><a href="login.html" class="link">Cerrar sesión e intentar con otro correo</a></p>
+      </div>
+
+      <div id="obInactivo" style="display:none">
+        <h1>Tu cuenta está dada de baja</h1>
+        <p class="sub">Ya no tienes acceso activo a esta empresa. Si crees que es un error, contacta a tu Director, Administrador o RH para que te reactiven.</p>
+        <p class="auth__foot"><a href="login.html" class="link">Cerrar sesión</a></p>
+      </div>
+
+      <div id="obErrorConexion" style="display:none">
+        <h1>No pudimos conectar</h1>
+        <p class="sub">Tu sesión está bien, pero no logramos comunicarnos con el servidor en este momento. Puede ser algo pasajero — intenta de nuevo.</p>
+        <button class="btn btn--primary btn--block btn--lg" id="obBtnReintentar">Reintentar</button>
+      </div>
+
+    </div>
+  </section>
+</main>
+
+<script src="supabase-config.js?v=2"></script>
+<script src="app-config.js?v=1"></script>
+<script type="module">
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+  const cfg = window.SUPABASE_CONFIG || {};
+  const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+  const supabase = createClient(cfg.url, cfg.anonKey, { auth: { persistSession: true, detectSessionInUrl: true, autoRefreshToken: true } });
+
+  const $ = (id) => document.getElementById(id);
+  const vistas = { esperando: $("obEsperando"), crear: $("obCrearEmpresa"), sin: $("obSinInvitacion"), inactivo: $("obInactivo"), error: $("obErrorConexion") };
+  function mostrar(v) { Object.values(vistas).forEach((el) => el.style.display = "none"); vistas[v].style.display = ""; }
+  function errCrear(msg) { const e = $("obError"); if (e) e.textContent = msg || ""; }
+
+  async function main() {
+    const { data } = await supabase.auth.getSession();
+    if (!data || !data.session) { window.location.replace("login.html"); return; }
+    const token = data.session.access_token;
+
+    // Hasta 3 intentos (con una pequeña pausa) antes de rendirse — un
+    // backend recién reiniciado puede tardar unos segundos en responder,
+    // y eso no significa que la persona no tenga perfil.
+    let estado = null;
+    for (let intento = 1; intento <= 3; intento++) {
+      try {
+        const resp = await fetch(BACKEND + "/api/onboarding/estado", { headers: { Authorization: "Bearer " + token } });
+        estado = await resp.json();
+        break;
+      } catch (e) {
+        if (intento === 3) { mostrar("error"); return; } // de verdad no hay conexión: nunca asumir "crear empresa" por esto
+        await new Promise((r) => setTimeout(r, 800 * intento));
+      }
+    }
+
+    if (!estado.ok) { mostrar("error"); return; }
+
+    if (estado.tienePerfil) {
+      if (estado.activo === false) { mostrar("inactivo"); return; }
+      window.location.replace("dashboard.html"); return;
+    }
+
+    if (estado.invitacionPendiente) {
+      const r2 = await fetch(BACKEND + "/api/onboarding/aceptar-invitacion", { method: "POST", headers: { Authorization: "Bearer " + token } });
+      const data2 = await r2.json();
+      if (data2.ok) { window.location.replace("dashboard.html"); return; }
+      mostrar("sin"); // invitación no se pudo aceptar (expiró justo ahora, etc.)
+      return;
+    }
+
+    mostrar("sin");
+  }
+
+  async function crearEmpresa() {
+    const nombreEmpresa = ($("obNombreEmpresa").value || "").trim();
+    const nombrePersona = ($("obNombrePersona").value || "").trim();
+    if (!nombreEmpresa) { errCrear("Captura el nombre de tu empresa."); return; }
+    errCrear("");
+    const btn = $("obBtnCrear");
+    btn.disabled = true; btn.textContent = "Creando…";
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session.access_token;
+      const resp = await fetch(BACKEND + "/api/onboarding/crear-empresa", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ nombreEmpresa, nombrePersona }),
+      });
+      const r = await resp.json();
+      if (!r.ok) { errCrear(r.error || "No se pudo crear tu empresa."); btn.disabled = false; btn.textContent = "Crear mi empresa"; return; }
+      window.location.replace("dashboard.html");
+    } catch (e) {
+      errCrear("Sin conexión con el backend."); btn.disabled = false; btn.textContent = "Crear mi empresa";
+    }
+  }
+
+  $("obBtnCrear").addEventListener("click", crearEmpresa);
+  $("obBtnCrearAlt").addEventListener("click", () => mostrar("crear"));
+  $("obBtnReintentar").addEventListener("click", () => { mostrar("esperando"); main(); });
+
+  mostrar("esperando");
+  main();
+</script>
+</body>
+</html>

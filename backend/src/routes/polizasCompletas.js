@@ -22,11 +22,14 @@ function obtenerToken(req) {
 polizasCompletasRouter.post('/polizas-completas', async (req, res) => {
   const token = obtenerToken(req);
   if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
-  const { folio, tipo, fecha, concepto, partidas } = req.body || {};
-  if (!folio || !tipo || !fecha || !concepto || !Array.isArray(partidas)) {
+  // OT-0012: el folio ya NO lo manda el cliente — lo genera Postgres de
+  // forma atómica dentro de crear_poliza_completa, para que dos capturas
+  // simultáneas (dos dispositivos, dos usuarios) nunca repitan folio.
+  const { tipo, fecha, concepto, partidas } = req.body || {};
+  if (!tipo || !fecha || !concepto || !Array.isArray(partidas)) {
     return res.status(400).json({ ok: false, error: 'Faltan datos de la póliza.' });
   }
-  const resultado = await crearPolizaCompleta(token, { folio, tipo, fecha, concepto, partidas });
+  const resultado = await crearPolizaCompleta(token, { tipo, fecha, concepto, partidas });
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });
 
