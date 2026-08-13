@@ -94,14 +94,20 @@
     try { localStorage.setItem(K_POLIZAS, JSON.stringify(arr || [])); return true; }
     catch (e) { return false; }
   }
-  function siguienteFolio(tipo) {
+  // OT-0012: el folio "de verdad" ahora lo genera Postgres de forma atómica
+  // dentro de crear_poliza_completa (ver siguiente_folio en la base) —
+  // así dos dispositivos/usuarios de la misma empresa nunca repiten folio.
+  // Esta función local queda SOLO como respaldo cuando no hay sesión de
+  // Postgres (modo local puro): el prefijo LOCAL- deja claro que ese
+  // folio no es definitivo y no debe usarse para reportes fiscales.
+  function siguienteFolioLocal(tipo) {
     let folios = {};
     try { folios = JSON.parse(localStorage.getItem(K_FOLIOS) || "{}") || {}; } catch (e) {}
     const letra = tipo === "Ingreso" ? "I" : tipo === "Egreso" ? "E" : "D";
     const n = (folios[letra] || 0) + 1;
     folios[letra] = n;
     try { localStorage.setItem(K_FOLIOS, JSON.stringify(folios)); } catch (e) {}
-    return `${letra}-${String(n).padStart(5, "0")}`;
+    return `LOCAL-${letra}-${String(n).padStart(5, "0")}`;
   }
 
   /* ---------- API de datos ---------- */
@@ -147,17 +153,21 @@
     if (!poliza.id) {
       poliza.id = "p" + Date.now() + Math.floor(Math.random() * 1000);
       poliza.creada = Date.now();
-      if (!poliza.folio) poliza.folio = siguienteFolio(poliza.tipo);
       let rechazado = false;
       if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
         try {
+          // OT-0012: NO se manda folio — Postgres lo genera de forma
+          // atómica y lo regresa junto con el id.
           const r = await window.CTPostgres.crearPolizaCompleta({
-            folio: poliza.folio, tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
+            tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
           });
-          if (r.ok) { poliza.pgId = r.id; poliza.origen = "postgres"; }
+          if (r.ok) { poliza.pgId = r.id; poliza.folio = r.folio; poliza.origen = "postgres"; }
           else { pgError = r.error; rechazado = true; }
         } catch (e) { pgError = e.message; poliza.origen = "local"; }
       } else { poliza.origen = "local"; }
+      // Solo cae al folio local (marcado LOCAL-) si de plano no hubo
+      // sesión de Postgres — nunca como fallback silencioso de un error.
+      if (!poliza.folio) poliza.folio = siguienteFolioLocal(poliza.tipo);
       if (!rechazado) arr.push(poliza);
     } else {
       const i = arr.findIndex((p) => p.id === poliza.id);
