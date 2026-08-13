@@ -707,7 +707,7 @@ ${ctas}
     pane.innerHTML = `<div class="card">
       <div class="cont-mayor-head">
         <div class="field fac-sat-field" style="margin:0;max-width:360px"><label>Cuenta</label>
-          <input class="input mayor-cuenta-busca" placeholder="Escribe para buscar…" autocomplete="off" value="${ctaSel ? esc(ctaSel.codigo + " · " + ctaSel.nombre) : ""}">
+          <input class="input cuenta-busca mayor-cuenta-busca" placeholder="Escribe para buscar…" autocomplete="off" value="${ctaSel ? esc(ctaSel.codigo + " · " + ctaSel.nombre) : ""}">
           <input type="hidden" data-mayor-cuenta value="${esc(sel)}">
           <div class="fac-sat-results"></div>
         </div>
@@ -901,14 +901,18 @@ ${ctas}
   }
 
   /* ---------- Modal: póliza ---------- */
-  function cuentaOptions(sel) {
-    return `<option value="">— cuenta —</option>` + getCuentasAfectables()
-      .map((c) => `<option value="${c.codigo}"${c.codigo === sel ? " selected" : ""}>${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join("");
-  }
+  // OT-0018: la línea de asiento ya no usa <select> plano — usa el mismo
+  // buscador tipo autocomplete que Captura Rápida y Libro Mayor, para que
+  // las 3 pantallas de Contabilidad se sientan del mismo sistema.
   function asientoRow(a) {
     a = a || {};
+    const ctaSel = a.codigo ? getCuentaPorCodigo(a.codigo) : null;
     return `<div class="cont-asiento">
-      <select class="input cont-as-cta">${cuentaOptions(a.codigo)}</select>
+      <div class="field fac-sat-field" style="margin:0">
+        <input class="input cuenta-busca" placeholder="Buscar cuenta…" autocomplete="off" value="${ctaSel ? esc(ctaSel.codigo + " · " + ctaSel.nombre) : ""}">
+        <input type="hidden" class="cont-as-cta" value="${esc(a.codigo || "")}">
+        <div class="fac-sat-results"></div>
+      </div>
       <input class="input cont-as-debe" type="number" min="0" step="0.01" placeholder="0.00" value="${a.debe || ""}">
       <input class="input cont-as-haber" type="number" min="0" step="0.01" placeholder="0.00" value="${a.haber || ""}">
       <button class="cont-as-x" data-cont-as-del title="Quitar línea">✕</button></div>`;
@@ -1000,7 +1004,7 @@ ${ctas}
         </div>` : ""}
         <div class="field"><label>Fecha</label><input class="input" id="rap-fecha" type="date" value="${hoyISO()}"></div>
         <div class="field fac-sat-field"><label>¿A qué cuenta entró/salió el dinero?</label>
-          <input class="input rap-cuenta-busca" placeholder="Escribe para buscar… (ej. bancos, caja)" autocomplete="off" value="${bancoDefault ? esc(bancoDefault.codigo + " · " + bancoDefault.nombre) : ""}">
+          <input class="input cuenta-busca" placeholder="Escribe para buscar… (ej. bancos, caja)" autocomplete="off" value="${bancoDefault ? esc(bancoDefault.codigo + " · " + bancoDefault.nombre) : ""}">
           <input type="hidden" id="rap-cuenta" value="${bancoDefault ? esc(bancoDefault.codigo) : ""}">
           <div class="fac-sat-results"></div>
         </div>
@@ -1011,20 +1015,6 @@ ${ctas}
           <button class="btn btn--primary" data-rapido-guardar="${tipoId}">Guardar movimiento</button></div>
       </div>`;
     const mi = cbody.querySelector("#rap-monto"); if (mi) mi.focus();
-  }
-
-  // ---------- Buscador de cuenta (Banco/Caja) dentro de Captura rápida ----------
-  function buscarRapCuenta(input) {
-    const field = input.closest(".fac-sat-field");
-    if (!field) return;
-    const box = field.querySelector(".fac-sat-results");
-    const q = input.value.trim().toLowerCase();
-    const ctas = getCuentasAfectables();
-    const filtradas = q ? ctas.filter((c) => c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)) : ctas;
-    box.innerHTML = filtradas.length
-      ? filtradas.map((c) => `<div class="fac-sat-opt" data-codigo="${esc(c.codigo)}" data-txt="${esc(c.codigo + " · " + c.nombre)}"><b>${esc(c.codigo)}</b> · ${esc(c.nombre)}</div>`).join("")
-      : `<div class="fac-sat-hint">Sin resultados para "${esc(input.value)}".</div>`;
-    box.classList.add("is-open");
   }
 
   // ---------- Buscador de cliente (opcional) dentro de Captura rápida ----------
@@ -1440,7 +1430,11 @@ ${ctas}
   });
 
   // ---------- Buscador inteligente: Libro Mayor ----------
-  function buscarMayorCuenta(input) {
+  // OT-0018: buscador de cuenta ÚNICO y compartido — antes había una copia
+  // casi idéntica de esta función por cada pantalla (Libro Mayor, Captura
+  // Rápida, y ahora también Modo Avanzado). Cualquier campo con clase
+  // "cuenta-busca" dentro de un ".fac-sat-field" usa esta misma lógica.
+  function buscarCuenta(input) {
     const field = input.closest(".fac-sat-field");
     if (!field) return;
     const box = field.querySelector(".fac-sat-results");
@@ -1455,8 +1449,7 @@ ${ctas}
   let clienteBuscaTimer = null;
   document.addEventListener("input", (e) => {
     if (!e.target.classList) return;
-    if (e.target.classList.contains("mayor-cuenta-busca")) buscarMayorCuenta(e.target);
-    if (e.target.classList.contains("rap-cuenta-busca")) buscarRapCuenta(e.target);
+    if (e.target.classList.contains("cuenta-busca")) buscarCuenta(e.target);
     if (e.target.classList.contains("rap-cliente-busca")) {
       clearTimeout(clienteBuscaTimer);
       const input = e.target;
@@ -1465,8 +1458,7 @@ ${ctas}
   });
   document.addEventListener("focusin", (e) => {
     if (!e.target.classList) return;
-    if (e.target.classList.contains("mayor-cuenta-busca")) buscarMayorCuenta(e.target);
-    if (e.target.classList.contains("rap-cuenta-busca")) buscarRapCuenta(e.target);
+    if (e.target.classList.contains("cuenta-busca")) buscarCuenta(e.target);
   });
   document.addEventListener("click", (e) => {
     const opt = e.target.closest(".fac-sat-field .fac-sat-opt");
@@ -1474,21 +1466,19 @@ ${ctas}
       const field = opt.closest(".fac-sat-field");
       const box = field.querySelector(".fac-sat-results");
 
-      if (field.querySelector(".mayor-cuenta-busca")) {
-        const input = field.querySelector(".mayor-cuenta-busca");
-        const hidden = field.querySelector("[data-mayor-cuenta]");
-        if (input) input.value = opt.getAttribute("data-txt");
+      // OT-0018: un solo camino para CUALQUIER buscador de cuenta (Libro
+      // Mayor, Captura Rápida, Modo Avanzado) — el hidden siempre vive
+      // como hermano dentro del mismo .fac-sat-field, sin importar la
+      // pantalla, así que no hace falta un caso por cada una.
+      const inputCuenta = field.querySelector(".cuenta-busca");
+      if (inputCuenta) {
+        const hidden = field.querySelector('input[type="hidden"]');
+        inputCuenta.value = opt.getAttribute("data-txt");
         if (hidden) hidden.value = opt.getAttribute("data-codigo");
         box.classList.remove("is-open");
-        renderMayor(opt.getAttribute("data-codigo"));
-        return;
-      }
-      if (field.querySelector(".rap-cuenta-busca")) {
-        const input = field.querySelector(".rap-cuenta-busca");
-        const hidden = document.getElementById("rap-cuenta");
-        if (input) input.value = opt.getAttribute("data-txt");
-        if (hidden) hidden.value = opt.getAttribute("data-codigo");
-        box.classList.remove("is-open");
+        // Único efecto extra: el Libro Mayor recarga el detalle de la
+        // cuenta elegida. Las demás pantallas no necesitan nada más.
+        if (inputCuenta.classList.contains("mayor-cuenta-busca")) renderMayor(opt.getAttribute("data-codigo"));
         return;
       }
       if (field.querySelector(".rap-cliente-busca")) {
