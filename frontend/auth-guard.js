@@ -62,21 +62,36 @@ if (!configured) {
         // para esperarlas una por una — eso sumaba los tiempos de red en
         // vez de dejarlos correr al mismo tiempo. Con Promise.all, el
         // tiempo total baja al de la más lenta de las 4, no a la suma.
-        const [perfilData, catData, opData, cfdisData, empleadosData] = await Promise.all([
+        const [perfilData, catData, opData, cfdisData, empleadosData, onbData] = await Promise.all([
           fetch(`${BACKEND}/api/perfil`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/catalogo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/operacion`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/cfdis`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/empleados`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/onboarding/estado`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
         ]);
 
-        // OT-0006 · Fase A: empresa/perfil reales de Postgres.
+        // Fase 1 (onboarding): confirma con el endpoint dedicado (preciso)
+        // si de verdad no hay perfil — /api/perfil no distingue bien entre
+        // "sin perfil" y "Postgres no configurado", así que no sirve para
+        // esta decisión.
+        if (onbData.ok && (onbData.tienePerfil === false || onbData.activo === false)) {
+          window.location.replace("onboarding.html");
+          return;
+        }
+
         if (perfilData.ok && perfilData.fuente === "postgres" && perfilData.empresa) {
           window.CONTATECK_EMPRESA_PG = perfilData.empresa;
           window.CONTATECK_PERFIL_PG = perfilData.perfil;
           document.querySelectorAll("[data-empresa-label]").forEach((el) => {
             el.textContent = perfilData.empresa.nombre;
           });
+          // Etiqueta de rol junto al nombre (ej. "Contador · Cerrar sesión"),
+          // para que cada quien sepa con qué rol está viendo el panel.
+          if (perfilData.perfil && perfilData.perfil.rol) {
+            const rolTxt = perfilData.perfil.rol[0].toUpperCase() + perfilData.perfil.rol.slice(1);
+            paintUser(displayName, rolTxt + " · Cerrar sesión");
+          }
         }
 
         // OT-0007 · Fase A: catálogo de clientes/productos.
@@ -109,7 +124,12 @@ if (!configured) {
     checkSession();
 
     supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) window.location.replace("login.html");
+      if (!session) { window.location.replace("login.html"); return; }
+      // Fix: sin esto, el token guardado nunca se actualizaba cuando
+      // Supabase lo renovaba por dentro (cada ~1 hora) — después de un
+      // rato, todas las llamadas al backend empezaban a fallar con
+      // "Token inválido o expirado" aunque la sesión siguiera activa.
+      window.CONTATECK_SUPABASE_TOKEN = session.access_token;
     });
 
     logoutEls.forEach((el) =>

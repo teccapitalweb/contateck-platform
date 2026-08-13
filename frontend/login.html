@@ -42,8 +42,8 @@
         <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
         <span class="brand__word">Conta<b class="t">teck</b></span>
       </a>
-      <h1>Iniciar sesión</h1>
-      <p class="sub">Accede al panel contable de tu empresa.</p>
+      <h1 id="authTitle">Iniciar sesión</h1>
+      <p class="sub" id="authSub">Accede al panel contable de tu empresa.</p>
 
       <div class="field">
         <label for="correo">Correo</label>
@@ -77,6 +77,7 @@
       <p id="loginError" class="form-error"></p>
 
       <button class="btn btn--primary btn--block btn--lg" id="btnLogin">Entrar al panel</button>
+      <button class="btn btn--primary btn--block btn--lg" id="btnRegistro" style="display:none">Crear cuenta</button>
 
       <div class="divider">o continúa con</div>
       <button class="btn--oauth" type="button" id="btnGoogle">
@@ -84,7 +85,7 @@
         Google
       </button>
 
-      <p class="auth__foot">¿Aún no tienes cuenta? <a href="#" class="link">Solicita acceso</a></p>
+      <p class="auth__foot" id="authToggleTxt">¿Aún no tienes cuenta? <a href="#" class="link" id="authToggleLink">Crea una aquí</a></p>
     </div>
   </section>
 </main>

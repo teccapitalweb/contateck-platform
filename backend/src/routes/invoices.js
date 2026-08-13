@@ -8,7 +8,7 @@
 //    GET  /api/cfdi/:id/status   -> estatus ante el SAT
 // ============================================================
 import { Router } from 'express';
-import { getFiscalapi, unwrap } from '../fiscalapi.js';
+import { getFiscalapi, unwrap, mensajeDeError } from '../fiscalapi.js';
 import { verifyAuth } from '../supabaseAuth.js';
 import { saveCfdi, markCfdiCancelled } from '../firebase.js';
 import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis } from '../supabaseCfdis.js';
@@ -115,7 +115,8 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
       cfdi: resumen,
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Error al timbrar.', details: err.message });
+    const m = mensajeDeError(err);
+    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar.', details: m.details });
   }
 });
 
@@ -159,7 +160,8 @@ invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => 
       cfdi: resumen,
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Error al timbrar la nota de crédito.', details: err.message });
+    const m = mensajeDeError(err);
+    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar la nota de crédito.', details: m.details });
   }
 });
 
@@ -206,7 +208,8 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
       cfdi: resumen,
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Error al timbrar el complemento de pago.', details: err.message });
+    const m = mensajeDeError(err);
+    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar el complemento de pago.', details: m.details });
   }
 });
 
@@ -237,19 +240,20 @@ invoicesRouter.post('/enviar-correo', async (req, res) => {
     }
     return res.json({ ok: true, mensaje: `Factura enviada a ${email}.` });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Error al enviar el correo.', details: err.message });
+    const m = mensajeDeError(err);
+    return res.status(m.status).json({ ok: false, error: m.error || 'Error al enviar el correo.', details: m.details });
   }
 });
 
 // ---------- CATÁLOGOS DEL SAT (búsqueda en vivo vía Fiscalapi) ----------
 // GET /api/catalogo/:nombre/:q  -> busca en un catálogo del SAT.
 // Catálogos útiles: SatProductCodes, SatUnitMeasurements, SatPaymentForms,
-// SatCfdiUses, SatTaxRegimes. La búsqueda requiere mínimo 3 caracteres.
+// SatCfdiUses, SatTaxRegimes. La búsqueda requiere mínimo 4 caracteres.
 invoicesRouter.get('/catalogo/:nombre/:q', async (req, res) => {
   const { nombre, q } = req.params;
   const texto = String(q || '').trim();
-  if (texto.length < 3) {
-    return res.status(400).json({ ok: false, error: 'Escribe al menos 3 caracteres para buscar.' });
+  if (texto.length < 4) {
+    return res.status(400).json({ ok: false, error: 'Escribe al menos 4 caracteres para buscar.' });
   }
   try {
     const fiscalapi = getFiscalapi();
@@ -264,7 +268,8 @@ invoicesRouter.get('/catalogo/:nombre/:q', async (req, res) => {
       items: items.map((it) => ({ clave: it.id ?? it.key ?? '', descripcion: it.description ?? it.descripcion ?? '' })),
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Error al buscar en el catálogo.', details: err.message });
+    const m = mensajeDeError(err);
+    return res.status(m.status).json({ ok: false, error: m.error || 'Error al buscar en el catálogo.', details: m.details });
   }
 });
 
@@ -300,7 +305,8 @@ invoicesRouter.post('/timbrar', requireRolFacturacion, async (req, res) => {
       cfdi: resumen,
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Error al timbrar.', details: err.message });
+    const m = mensajeDeError(err);
+    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar.', details: m.details });
   }
 });
 
@@ -353,7 +359,8 @@ invoicesRouter.post('/cancelar', requireRolFacturacion, async (req, res) => {
 
     return res.json({ ok: true, mensaje: 'CFDI cancelado.', resultado: r.data });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Error al cancelar.', details: err.message });
+    const m = mensajeDeError(err);
+    return res.status(m.status).json({ ok: false, error: m.error || 'Error al cancelar.', details: m.details });
   }
 });
 

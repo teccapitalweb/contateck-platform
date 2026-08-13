@@ -17,17 +17,20 @@ function clienteComoUsuario(accessToken) {
 }
 
 // partidas: [{ codigo, debe, haber, descripcion }, ...]
-export async function crearPolizaCompleta(accessToken, { folio, tipo, fecha, concepto, partidas }, log = console) {
+// OT-0012: crear_poliza_completa ya no recibe folio — lo genera Postgres
+// internamente (siguiente_folio) y lo regresa junto con el id.
+export async function crearPolizaCompleta(accessToken, { tipo, fecha, concepto, partidas }, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
   const { data, error } = await supabase.rpc('crear_poliza_completa', {
-    p_folio: folio, p_tipo: tipo, p_fecha: fecha, p_concepto: concepto, p_partidas: partidas,
+    p_tipo: tipo, p_fecha: fecha, p_concepto: concepto, p_partidas: partidas,
   });
   if (error) {
     log.warn('[postgres] crear_poliza_completa:', error.message);
     return { ok: false, error: error.message };
   }
-  return { ok: true, id: data };
+  // data ahora es {"id": "...", "folio": "I-00007"}
+  return { ok: true, id: data.id, folio: data.folio };
 }
 
 export async function actualizarPolizaCompleta(accessToken, polizaId, { tipo, fecha, concepto, partidas }, log = console) {

@@ -23,53 +23,65 @@
     return `${parseInt(p[2], 10)} ${m[parseInt(p[1], 10) - 1] || ""}`;
   };
 
-  /* ---------- Catálogo base (código agrupador SAT, simplificado) ---------- */
-  // nivel 1 = cuenta de mayor (acumula, no afectable) · nivel 2 = detalle (afectable)
-  const CATALOGO_BASE = [
-    { codigo: "100", nombre: "Activo",                  nat: "Deudora",   nivel: 1, padre: null  },
-    { codigo: "101", nombre: "Caja",                    nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "102", nombre: "Bancos",                  nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "105", nombre: "Clientes",                nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "115", nombre: "Inventarios",             nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "118", nombre: "IVA acreditable",         nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "151", nombre: "Equipo de cómputo",       nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "200", nombre: "Pasivo",                  nat: "Acreedora", nivel: 1, padre: null  },
-    { codigo: "201", nombre: "Proveedores",             nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "205", nombre: "Acreedores diversos",     nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "209", nombre: "IVA trasladado",          nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "213", nombre: "Impuestos por pagar",     nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "216", nombre: "Sueldos por pagar",       nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "300", nombre: "Capital contable",        nat: "Acreedora", nivel: 1, padre: null  },
-    { codigo: "301", nombre: "Capital social",          nat: "Acreedora", nivel: 2, padre: "300" },
-    { codigo: "305", nombre: "Resultado del ejercicio", nat: "Acreedora", nivel: 2, padre: "300" },
-    { codigo: "400", nombre: "Ingresos",                nat: "Acreedora", nivel: 1, padre: null  },
-    { codigo: "401", nombre: "Ventas y servicios",      nat: "Acreedora", nivel: 2, padre: "400" },
-    { codigo: "402", nombre: "Productos financieros",   nat: "Acreedora", nivel: 2, padre: "400" },
-    { codigo: "500", nombre: "Costos y gastos",         nat: "Deudora",   nivel: 1, padre: null  },
-    { codigo: "501", nombre: "Costo de ventas",         nat: "Deudora",   nivel: 2, padre: "500" },
-    { codigo: "601", nombre: "Gastos de operación",     nat: "Deudora",   nivel: 2, padre: "500" },
-    { codigo: "602", nombre: "Gastos de administración",nat: "Deudora",   nivel: 2, padre: "500" },
-    { codigo: "603", nombre: "Gastos de venta",         nat: "Deudora",   nivel: 2, padre: "500" },
-  ];
-
-  /* ---------- Persistencia (localStorage) ---------- */
-  const K_CUENTAS = "contateck_cuentas";
+  /* ---------- Persistencia ---------- */
+  // OT-Cuentas: el catálogo ya NO vive en localStorage — cada empresa
+  // tiene su propio catálogo real y compartido en Postgres (mismo
+  // patrón que ya usan las pólizas en este mismo archivo: un caché en
+  // memoria que se alimenta de Postgres al cargar, y cada escritura va
+  // directo al backend). localStorage solo queda como respaldo mientras
+  // carga la primera vez, para no mostrar la pantalla vacía un instante.
   const K_POLIZAS = "contateck_polizas";
   const K_FOLIOS  = "contateck_folios";
+  const K_CUENTAS_CACHE = "contateck_cuentas_cache"; // solo respaldo de lectura, nunca la fuente de verdad
+
+  let _cuentasCache = null; // null = todavía no ha cargado de Postgres
 
   function leerCuentas() {
+    if (_cuentasCache) return _cuentasCache;
     try {
-      const raw = JSON.parse(localStorage.getItem(K_CUENTAS) || "null");
+      const raw = JSON.parse(localStorage.getItem(K_CUENTAS_CACHE) || "null");
       if (Array.isArray(raw) && raw.length) return raw;
-    } catch (e) { /* siembra abajo */ }
-    // Primera vez: sembrar catálogo base con id.
-    const sembrado = CATALOGO_BASE.map((c, i) => ({ id: "c" + (i + 1), ...c }));
-    guardarCuentas(sembrado);
-    return sembrado;
+    } catch (e) {}
+    return [];
   }
   function guardarCuentas(arr) {
-    try { localStorage.setItem(K_CUENTAS, JSON.stringify(arr || [])); return true; }
-    catch (e) { return false; }
+    _cuentasCache = arr || [];
+    try { localStorage.setItem(K_CUENTAS_CACHE, JSON.stringify(_cuentasCache)); } catch (e) {}
+    return true;
+  }
+
+  // Convierte una fila de Postgres (snake_case, minúsculas) al formato
+  // que usa el resto de este archivo (nat: "Deudora"/"Acreedora"), e
+  // infiere "padre" por el primer dígito del código (100→mayor de 101,
+  // 102... — mismo Código Agrupador del SAT que ya usa el Dashboard).
+  function desdePostgres(filas) {
+    const mayores = filas.filter((c) => c.nivel === 1);
+    return filas.map((c) => {
+      const padre = c.nivel === 1 ? null : (mayores.find((m) => m.codigo[0] === c.codigo[0]) || {}).codigo || null;
+      return { id: c.id, codigo: c.codigo, nombre: c.nombre, nat: c.naturaleza === "deudora" ? "Deudora" : "Acreedora", nivel: c.nivel, padre, activo: c.activo !== false };
+    }).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "es", { numeric: true }));
+  }
+
+  async function cargarCatalogoReal() {
+    try {
+      // Espera a que auth-guard.js termine de poner el token de sesión —
+      // sin esto, si esta función corre antes de que la sesión cargue
+      // (variable de una recarga a otra), se rendía en silencio sin ni
+      // siquiera intentar preguntarle a Postgres.
+      const inicio = Date.now();
+      while (!window.CONTATECK_SUPABASE_TOKEN && Date.now() - inicio < 4000) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+      if (!cfg || !t) return false;
+      const resp = await fetch(cfg.url + "/rest/v1/cuentas_contables?select=*&order=codigo.asc", {
+        headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey },
+      });
+      const data = await resp.json();
+      if (!Array.isArray(data)) return false;
+      guardarCuentas(desdePostgres(data));
+      return true;
+    } catch (e) { return false; }
   }
   function leerPolizas() {
     try {
@@ -94,26 +106,29 @@
 
   /* ---------- API de datos ---------- */
   function getCuentas() { return leerCuentas().slice(); }
-  function getCuentasAfectables() { return getCuentas().filter((c) => c.nivel === 2); }
+  function getCuentasAfectables() { return getCuentas().filter((c) => c.nivel === 2 && c.activo !== false); }
   function getCuentaPorCodigo(codigo) { return getCuentas().find((c) => c.codigo === codigo) || null; }
-  function saveCuenta(cuenta) {
-    const arr = leerCuentas();
+  async function saveCuenta(cuenta) {
     cuenta = cuenta || {};
-    if (cuenta.id) {
-      const i = arr.findIndex((c) => c.id === cuenta.id);
-      if (i >= 0) arr[i] = { ...arr[i], ...cuenta };
-      else arr.push(cuenta);
-    } else {
-      cuenta.id = "c" + Date.now() + Math.floor(Math.random() * 1000);
-      arr.push(cuenta);
-    }
-    arr.sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "es", { numeric: true }));
-    guardarCuentas(arr);
-    return cuenta;
+    const payload = { codigo: cuenta.codigo, nombre: cuenta.nombre, naturaleza: cuenta.nat === "Deudora" ? "deudora" : "acreedora", nivel: cuenta.nivel };
+    let r;
+    if (cuenta.id) r = await window.CTPostgres.actualizar("cuentas_contables", cuenta.id, payload);
+    else r = await window.CTPostgres.crear("cuentas_contables", payload);
+    if (!r.ok) return { ok: false, error: r.error || "No se pudo guardar la cuenta." };
+    await cargarCatalogoReal(); // refresca el caché con lo que Postgres de verdad tiene
+    return { ok: true, cuenta: r.registro };
   }
-  function deleteCuenta(id) {
-    const arr = leerCuentas().filter((c) => c.id !== id);
-    return guardarCuentas(arr);
+  async function deleteCuenta(id) {
+    const r = await window.CTPostgres.eliminar("cuentas_contables", id);
+    if (!r.ok) return { ok: false, error: r.error || "No se pudo desactivar la cuenta." };
+    await cargarCatalogoReal();
+    return { ok: true };
+  }
+  async function reactivarCuenta(id) {
+    const r = await window.CTPostgres.reactivar("cuentas_contables", id);
+    if (!r.ok) return { ok: false, error: r.error || "No se pudo reactivar la cuenta." };
+    await cargarCatalogoReal();
+    return { ok: true };
   }
   function getPolizas() {
     return leerPolizas().slice().sort((a, b) => (b.creada || 0) - (a.creada || 0));
@@ -472,6 +487,15 @@ ${ctas}
 
   /* ---------- CSS ---------- */
   const css = `
+    .fac-sat-field{position:relative}
+    .fac-sat-results{display:none;position:absolute;top:100%;left:0;right:0;z-index:20;max-height:280px;overflow-y:auto;
+      background:var(--ink-800,#0d1322);border:1px solid var(--line,#1a2540);border-radius:10px;margin-top:.3rem;box-shadow:0 20px 50px -15px rgba(0,0,0,.6)}
+    .fac-sat-results.is-open{display:block}
+    .fac-sat-opt{padding:.55rem .75rem;cursor:pointer;font-size:.82rem;border-bottom:1px solid var(--line,#1a2540);line-height:1.3}
+    .fac-sat-opt:last-child{border-bottom:0}
+    .fac-sat-opt:hover,.fac-sat-opt.is-active{background:var(--brand-soft,rgba(110,139,255,.1))}
+    .fac-sat-opt b{color:var(--brand,#6E8BFF);font-family:var(--mono,monospace);font-size:.78rem}
+    .fac-sat-hint{padding:.55rem .75rem;font-size:.78rem;color:var(--faint,#5b6680)}
     .cont-modal{position:fixed;inset:0;z-index:120;display:none;align-items:center;justify-content:center;padding:1.2rem;background:rgba(2,6,15,.6);backdrop-filter:blur(4px)}
     .cont-modal.is-open{display:flex}
     .cont-modal__card{background:var(--ink-800,#0d1322);border:1px solid var(--line,#1a2540);border-radius:18px;
@@ -492,6 +516,8 @@ ${ctas}
     .cont-as-debe::-webkit-outer-spin-button,.cont-as-debe::-webkit-inner-spin-button,
     .cont-as-haber::-webkit-outer-spin-button,.cont-as-haber::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
     .cont-as-debe,.cont-as-haber{-moz-appearance:textfield;appearance:textfield}
+    .no-spin::-webkit-outer-spin-button,.no-spin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+    .no-spin{-moz-appearance:textfield;appearance:textfield}
     .cont-as-x{background:none;border:0;color:var(--down,#FB7185);cursor:pointer;font-size:1rem;border-radius:7px;height:38px}
     .cont-as-x:hover{background:rgba(251,113,133,.12)}
     .cont-totales{margin-top:1rem;padding:1rem;border:1px solid var(--line,#1a2540);border-radius:12px;background:var(--ink-900,rgba(255,255,255,.02))}
@@ -555,6 +581,43 @@ ${ctas}
   const openModal = (t) => { ctitle.textContent = t; modal.classList.add("is-open"); };
   const closeModal = () => modal.classList.remove("is-open");
 
+  // ---------- Confirmación/aviso propios (nunca el confirm()/alert() del
+  // navegador — se ven genéricos, muestran la URL técnica, y no combinan
+  // con el resto de la app) ----------
+  function ctConfirm(mensaje, textoBoton) {
+    return new Promise((resolve) => {
+      const el = document.createElement("div");
+      el.className = "cont-modal is-open";
+      el.innerHTML = `<div class="cont-modal__card" style="max-width:420px">
+        <div class="cont-modal__body" style="padding-top:1.4rem">
+          <p style="margin:0 0 1.3rem;color:var(--text,#e8ecf3);font-size:.95rem;line-height:1.5">${esc(mensaje)}</p>
+          <div class="cont-foot"><button class="btn btn--ghost" data-ct-no>Cancelar</button>
+            <button class="btn btn--primary" data-ct-si>${esc(textoBoton || "Aceptar")}</button></div>
+        </div></div>`;
+      document.body.appendChild(el);
+      const cerrar = (val) => { document.body.removeChild(el); resolve(val); };
+      el.addEventListener("click", (e) => {
+        if (e.target === el || e.target.closest("[data-ct-no]")) cerrar(false);
+        else if (e.target.closest("[data-ct-si]")) cerrar(true);
+      });
+    });
+  }
+  function ctAlert(mensaje) {
+    return new Promise((resolve) => {
+      const el = document.createElement("div");
+      el.className = "cont-modal is-open";
+      el.innerHTML = `<div class="cont-modal__card" style="max-width:420px">
+        <div class="cont-modal__body" style="padding-top:1.4rem">
+          <p style="margin:0 0 1.3rem;color:var(--text,#e8ecf3);font-size:.95rem;line-height:1.5">${esc(mensaje)}</p>
+          <div class="cont-foot"><button class="btn btn--primary" data-ct-ok>Entendido</button></div>
+        </div></div>`;
+      document.body.appendChild(el);
+      el.addEventListener("click", (e) => {
+        if (e.target === el || e.target.closest("[data-ct-ok]")) { document.body.removeChild(el); resolve(); }
+      });
+    });
+  }
+
   /* ---------- Render: KPIs ---------- */
   function renderStats() {
     const el = document.querySelector("[data-cont-stats]");
@@ -570,18 +633,23 @@ ${ctas}
   }
 
   /* ---------- Render: catálogo de cuentas ---------- */
+  const ICO_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>';
+
   function renderCatalogo() {
     const el = document.querySelector("[data-cuentas]");
     if (!el) return;
     el.innerHTML = getCuentas().map((c) => {
       const esMayor = c.nivel === 1;
+      const inactiva = c.activo === false;
       const acciones = esMayor ? "" :
         `<button class="ract" data-cont-mayor="${c.codigo}" title="Libro mayor">${ICO_BOOK}</button>` +
         `<button class="ract" data-cont-edit-cta="${c.id}" title="Editar">${ICO_EDIT}</button>` +
-        `<button class="ract ract--del" data-cont-del-cta="${c.id}" title="Eliminar">${ICO_DEL}</button>`;
-      return `<tr${esMayor ? ' style="background:var(--ink-900,rgba(255,255,255,.02))"' : ""}>
+        (inactiva
+          ? `<button class="ract" data-cont-reactivar-cta="${c.id}" title="Reactivar">${ICO_UNDO}</button>`
+          : `<button class="ract ract--del" data-cont-del-cta="${c.id}" title="Desactivar">${ICO_DEL}</button>`);
+      return `<tr${esMayor ? ' style="background:var(--ink-900,rgba(255,255,255,.02))"' : (inactiva ? ' style="opacity:.5"' : "")}>
         <td class="num"${esMayor ? ' style="font-weight:700"' : ""}>${esc(c.codigo)}</td>
-        <td style="${esMayor ? "font-weight:700" : "padding-left:1.7rem"}">${esc(c.nombre)}</td>
+        <td style="${esMayor ? "font-weight:700" : "padding-left:1.7rem"}">${esc(c.nombre)}${inactiva ? ' <span class="pill pill--late" style="margin-left:.4rem">Inactiva</span>' : ""}</td>
         <td>${c.nat}</td>
         <td class="num" style="text-align:right${esMayor ? ";font-weight:700" : ""}">$${fmt(saldoCuenta(c))}</td>
         <td class="row-act">${acciones}</td></tr>`;
@@ -615,7 +683,7 @@ ${ctas}
     if (!pane) return;
     const ctas = getCuentasAfectables();
     const sel = codigoSel || (ctas[0] && ctas[0].codigo) || "";
-    const opts = ctas.map((c) => `<option value="${c.codigo}"${c.codigo === sel ? " selected" : ""}>${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join("");
+    const ctaSel = getCuentaPorCodigo(sel);
     const cta = getCuentaPorCodigo(sel);
     let saldoAcum = 0;
     const movs = sel ? movimientosCuenta(sel).movs : [];
@@ -628,8 +696,11 @@ ${ctas}
     }).join("") : `<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:2rem">Esta cuenta no tiene movimientos.</td></tr>`;
     pane.innerHTML = `<div class="card">
       <div class="cont-mayor-head">
-        <div class="field" style="margin:0;max-width:360px"><label>Cuenta</label>
-          <select class="input" data-mayor-cuenta>${opts || '<option value="">Sin cuentas</option>'}</select></div>
+        <div class="field fac-sat-field" style="margin:0;max-width:360px"><label>Cuenta</label>
+          <input class="input mayor-cuenta-busca" placeholder="Escribe para buscar…" autocomplete="off" value="${ctaSel ? esc(ctaSel.codigo + " · " + ctaSel.nombre) : ""}">
+          <input type="hidden" data-mayor-cuenta value="${esc(sel)}">
+          <div class="fac-sat-results"></div>
+        </div>
         ${cta ? `<div class="cont-mayor-saldo"><span>Saldo actual</span><b>$${fmt(saldoCuenta(cta))}</b></div>` : ""}
       </div>
       <div style="overflow-x:auto;margin-top:1rem">
@@ -796,7 +867,7 @@ ${ctas}
         <button class="btn btn--ghost" data-cont-close>Cancelar</button>
         <button class="btn btn--primary" data-cont-guardar-cta="${id || ""}">Guardar cuenta</button></div>`;
   }
-  function guardarCuentaForm(id) {
+  async function guardarCuentaForm(id) {
     const codigo = cbody.querySelector("#cta-codigo").value.trim();
     const nombre = cbody.querySelector("#cta-nombre").value.trim();
     const nat = cbody.querySelector("#cta-nat").value;
@@ -807,7 +878,14 @@ ${ctas}
     if (dup) { msg.innerHTML = `<div class="cont-err">Ya existe una cuenta con el código ${esc(codigo)}.</div>`; return; }
     const cuenta = { codigo, nombre, nat, nivel: padre ? 2 : 1, padre };
     if (id) cuenta.id = id;
-    saveCuenta(cuenta);
+    const btn = cbody.querySelector("[data-cont-guardar-cta]");
+    if (btn) btn.disabled = true;
+    const r = await saveCuenta(cuenta);
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err">${esc(r.error)}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
     closeModal();
     renderTodo();
   }
@@ -851,21 +929,23 @@ ${ctas}
     { id: "gasto",    label: "Pagué un gasto",            desc: "Salió dinero por un gasto o compra", iva: true },
     { id: "pagoprov", label: "Le pagué a un proveedor",   desc: "Pago de una factura de proveedor",   iva: false },
   ];
-  function plantillaAPoliza(tipoId, total, concepto, conIva, fecha) {
+  function plantillaAPoliza(tipoId, total, concepto, conIva, fecha, cuentaBanco) {
     total = round2(total);
     const sub = conIva ? round2(total / 1.16) : total, iva = conIva ? round2(total - sub) : 0;
     const base = { fecha: fecha || hoyISO(), concepto: concepto, origen: "rapida" };
     const A = (codigo, nombre, debe, haber) => ({ codigo, nombre, debe, haber });
+    const cb = cuentaBanco || getCuentaPorCodigo("102"); // respaldo si no se eligió nada
+    const bc = (debe, haber) => A(cb.codigo, cb.nombre, debe, haber);
     if (tipoId === "venta") return Object.assign(base, { tipo: "Ingreso", asientos: conIva
-      ? [A("102", "Bancos", total, 0), A("401", "Ventas y servicios", 0, sub), A("209", "IVA trasladado", 0, iva)]
-      : [A("102", "Bancos", total, 0), A("401", "Ventas y servicios", 0, total)] });
+      ? [bc(total, 0), A("401", "Ventas y servicios", 0, sub), A("209", "IVA trasladado", 0, iva)]
+      : [bc(total, 0), A("401", "Ventas y servicios", 0, total)] });
     if (tipoId === "cobro") return Object.assign(base, { tipo: "Ingreso",
-      asientos: [A("102", "Bancos", total, 0), A("105", "Clientes", 0, total)] });
+      asientos: [bc(total, 0), A("105", "Clientes", 0, total)] });
     if (tipoId === "gasto") return Object.assign(base, { tipo: "Egreso", asientos: conIva
-      ? [A("601", "Gastos de operación", sub, 0), A("118", "IVA acreditable", iva, 0), A("102", "Bancos", 0, total)]
-      : [A("601", "Gastos de operación", total, 0), A("102", "Bancos", 0, total)] });
+      ? [A("601", "Gastos de operación", sub, 0), A("118", "IVA acreditable", iva, 0), bc(0, total)]
+      : [A("601", "Gastos de operación", total, 0), bc(0, total)] });
     if (tipoId === "pagoprov") return Object.assign(base, { tipo: "Egreso",
-      asientos: [A("201", "Proveedores", total, 0), A("102", "Bancos", 0, total)] });
+      asientos: [A("201", "Proveedores", total, 0), bc(0, total)] });
     return null;
   }
 
@@ -895,12 +975,25 @@ ${ctas}
     const t = PLANTILLAS.find((x) => x.id === tipoId);
     if (!t) return;
     const ph = tipoId === "gasto" ? "Pago de renta de oficina" : tipoId === "venta" ? "Venta de consultoría" : "Factura A-123";
+    const bancoDefault = getCuentaPorCodigo("102") || getCuentasAfectables()[0];
     cbody.querySelector("[data-rapido-form]").innerHTML = `
       <div class="cont-rapido-card">
         <div class="cont-rapido-titulo">${t.label}</div>
-        <div class="field"><label>Monto total ($)</label><input class="input" id="rap-monto" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        ${(tipoId === "cobro" || tipoId === "venta") ? `<button type="button" class="btn btn--ghost btn--sm" data-rapido-importar-cfdi="${tipoId}" style="margin-bottom:.8rem">⇩ Importar desde factura timbrada</button>` : ""}
+        <div class="field"><label>Monto total ($)</label><input class="input no-spin" id="rap-monto" type="number" min="0" step="0.01" placeholder="0.00"></div>
         <div class="field"><label>Concepto (¿de qué fue?)</label><input class="input" id="rap-concepto" placeholder="Ej. ${ph}"></div>
+        ${tipoId === "venta" ? `
+        <div class="field fac-sat-field"><label>Cliente (opcional)</label>
+          <input class="input rap-cliente-busca" placeholder="Escribe para buscar…" autocomplete="off">
+          <input type="hidden" id="rap-cliente-id" value="">
+          <div class="fac-sat-results"></div>
+        </div>` : ""}
         <div class="field"><label>Fecha</label><input class="input" id="rap-fecha" type="date" value="${hoyISO()}"></div>
+        <div class="field fac-sat-field"><label>¿A qué cuenta entró/salió el dinero?</label>
+          <input class="input rap-cuenta-busca" placeholder="Escribe para buscar… (ej. bancos, caja)" autocomplete="off" value="${bancoDefault ? esc(bancoDefault.codigo + " · " + bancoDefault.nombre) : ""}">
+          <input type="hidden" id="rap-cuenta" value="${bancoDefault ? esc(bancoDefault.codigo) : ""}">
+          <div class="fac-sat-results"></div>
+        </div>
         ${t.iva ? `<label class="cont-check"><input type="checkbox" id="rap-iva" checked> El monto incluye IVA 16%</label>` : ""}
         <div data-cont-msg></div>
         <div class="cont-foot">
@@ -909,15 +1002,114 @@ ${ctas}
       </div>`;
     const mi = cbody.querySelector("#rap-monto"); if (mi) mi.focus();
   }
+
+  // ---------- Buscador de cuenta (Banco/Caja) dentro de Captura rápida ----------
+  function buscarRapCuenta(input) {
+    const field = input.closest(".fac-sat-field");
+    if (!field) return;
+    const box = field.querySelector(".fac-sat-results");
+    const q = input.value.trim().toLowerCase();
+    const ctas = getCuentasAfectables();
+    const filtradas = q ? ctas.filter((c) => c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)) : ctas;
+    box.innerHTML = filtradas.length
+      ? filtradas.map((c) => `<div class="fac-sat-opt" data-codigo="${esc(c.codigo)}" data-txt="${esc(c.codigo + " · " + c.nombre)}"><b>${esc(c.codigo)}</b> · ${esc(c.nombre)}</div>`).join("")
+      : `<div class="fac-sat-hint">Sin resultados para "${esc(input.value)}".</div>`;
+    box.classList.add("is-open");
+  }
+
+  // ---------- Buscador de cliente (opcional) dentro de Captura rápida ----------
+  async function buscarRapCliente(input) {
+    const field = input.closest(".fac-sat-field");
+    if (!field) return;
+    const box = field.querySelector(".fac-sat-results");
+    const q = input.value.trim();
+    if (q.length < 2) { box.classList.remove("is-open"); box.innerHTML = ""; return; }
+    try {
+      const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+      if (!cfg || !t) return;
+      const resp = await fetch(cfg.url + "/rest/v1/clientes?select=id,nombre,rfc&nombre=ilike.*" + encodeURIComponent(q) + "*&limit=8", {
+        headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey },
+      });
+      const data = await resp.json();
+      const lista = Array.isArray(data) ? data : [];
+      box.innerHTML = lista.length
+        ? lista.map((c) => `<div class="fac-sat-opt" data-id="${esc(c.id)}" data-nombre="${esc(c.nombre)}"><b>${esc(c.nombre)}</b>${c.rfc ? " · " + esc(c.rfc) : ""}</div>`).join("")
+        : `<div class="fac-sat-hint">Sin clientes que coincidan con "${esc(q)}".</div>`;
+      box.classList.add("is-open");
+    } catch (e) { /* silencioso: es un campo opcional */ }
+  }
+
+  // ---------- Importar desde factura timbrada (solo "Me pagó un cliente") ----------
+  function abrirImportarCfdiRapido(tipoId) {
+    const cfdis = leerCfdis().filter((c) => c && c.estado !== "cancelada" && c.tipo !== "P");
+    const host = document.createElement("div");
+    host.className = "cont-modal is-open";
+    if (!cfdis.length) {
+      host.innerHTML = `<div class="cont-modal__card" style="max-width:420px"><div class="cont-modal__body" style="padding-top:1.4rem">
+        <p style="margin:0 0 1.2rem;color:var(--text)">No hay facturas timbradas disponibles para importar.</p>
+        <div class="cont-foot"><button class="btn btn--primary" data-ct-ok>Entendido</button></div></div></div>`;
+      document.body.appendChild(host);
+      host.addEventListener("click", (e) => { if (e.target === host || e.target.closest("[data-ct-ok]")) document.body.removeChild(host); });
+      return;
+    }
+    const filaCfdi = (c) => {
+      const m = montosCfdi(c);
+      return `<div class="cont-plantilla" data-cfdi-pick="${esc(cfdiKey(c))}" style="text-align:left"><b>${esc(c.folio || "—")} · ${esc(c.cliente || "Cliente")}</b><span>$${fmt(m.total)}</span></div>`;
+    };
+    host.innerHTML = `<div class="cont-modal__card" style="max-width:520px"><div class="cont-modal__body" style="padding-top:1.4rem">
+      <p style="margin:0 0 .8rem;color:var(--muted);font-size:.85rem">Elige la factura ${tipoId === "venta" ? "que timbraste" : "que te pagaron"} — se rellenan el monto${tipoId === "venta" ? ", el IVA" : ""} y el concepto solos.</p>
+      <input class="input" data-cfdi-import-busca placeholder="Buscar por folio o cliente…" autocomplete="off" style="margin-bottom:.8rem">
+      <div style="display:grid;gap:.5rem;max-height:340px;overflow:auto" data-cfdi-import-lista>${cfdis.slice(0, 30).map(filaCfdi).join("")}</div>
+      <div class="cont-foot"><button class="btn btn--ghost" data-ct-no>Cerrar</button></div></div></div>`;
+    document.body.appendChild(host);
+    const busca = host.querySelector("[data-cfdi-import-busca]");
+    const lista = host.querySelector("[data-cfdi-import-lista]");
+    busca.addEventListener("input", () => {
+      const q = busca.value.trim().toLowerCase();
+      const filtradas = q ? cfdis.filter((c) => (c.folio || "").toLowerCase().includes(q) || (c.cliente || "").toLowerCase().includes(q)) : cfdis;
+      lista.innerHTML = filtradas.length ? filtradas.slice(0, 30).map(filaCfdi).join("")
+        : `<p style="color:var(--faint);font-size:.82rem;padding:.6rem 0;text-align:center">Sin resultados para "${esc(busca.value)}".</p>`;
+    });
+    setTimeout(() => busca.focus(), 50);
+    host.addEventListener("click", (e) => {
+      if (e.target === host || e.target.closest("[data-ct-no]")) { document.body.removeChild(host); return; }
+      const pick = e.target.closest("[data-cfdi-pick]");
+      if (pick) {
+        const key = pick.getAttribute("data-cfdi-pick");
+        const cfdi = cfdis.find((c) => cfdiKey(c) === key);
+        if (cfdi) {
+          const m = montosCfdi(cfdi);
+          const mi = cbody.querySelector("#rap-monto"), ci = cbody.querySelector("#rap-concepto");
+          if (mi) mi.value = m.total;
+          if (tipoId === "venta") {
+            if (ci) ci.value = `Venta CFDI ${cfdi.folio || ""} · ${cfdi.cliente || "Cliente"}`.trim();
+            const ivaChk = cbody.querySelector("#rap-iva");
+            if (ivaChk) { ivaChk.checked = true; ivaChk.disabled = true; } // ya no hay nada que adivinar: el IVA viene real de la factura
+          } else {
+            if (ci) ci.value = `Cobro CFDI ${cfdi.folio || ""} · ${cfdi.cliente || "Cliente"}`.trim();
+          }
+        }
+        document.body.removeChild(host);
+      }
+    });
+  }
   async function guardarRapido(tipoId) {
     const monto = num(cbody.querySelector("#rap-monto").value);
-    const concepto = cbody.querySelector("#rap-concepto").value.trim();
+    let concepto = cbody.querySelector("#rap-concepto").value.trim();
     const fecha = cbody.querySelector("#rap-fecha").value || hoyISO();
     const ivaChk = cbody.querySelector("#rap-iva"), conIva = ivaChk ? ivaChk.checked : false;
+    const cuentaCodigo = (cbody.querySelector("#rap-cuenta") || {}).value || "";
+    const clienteNombreEl = cbody.querySelector(".rap-cliente-busca");
     const msg = cbody.querySelector("[data-cont-msg]");
     if (monto <= 0) { msg.innerHTML = `<div class="cont-err">Pon un monto mayor a cero.</div>`; return; }
     if (!concepto) { msg.innerHTML = `<div class="cont-err">Escribe de qué fue el movimiento.</div>`; return; }
-    const pol = plantillaAPoliza(tipoId, monto, concepto, conIva, fecha);
+    if (!cuentaCodigo) { msg.innerHTML = `<div class="cont-err">Elige a qué cuenta (Banco/Caja) entró o salió el dinero.</div>`; return; }
+    const cuentaBanco = getCuentaPorCodigo(cuentaCodigo);
+    if (!cuentaBanco) { msg.innerHTML = `<div class="cont-err">Esa cuenta ya no existe o fue desactivada — elige otra.</div>`; return; }
+    if (clienteNombreEl && clienteNombreEl.value.trim() && concepto.indexOf(clienteNombreEl.value.trim()) < 0) {
+      concepto = concepto + " · " + clienteNombreEl.value.trim();
+    }
+    const pol = plantillaAPoliza(tipoId, monto, concepto, conIva, fecha, cuentaBanco);
     if (!pol) { msg.innerHTML = `<div class="cont-err">No se pudo crear el movimiento.</div>`; return; }
     const btn = cbody.querySelector("[data-rapido-guardar]"); if (btn) btn.disabled = true;
     const { pgError } = await savePoliza(pol);
@@ -1209,10 +1401,105 @@ ${ctas}
       recalcCuadre();
     }
   });
-  // El selector del Libro Mayor y el de periodo viven en el dashboard (fuera del modal).
+
+  // Navegación con flechas/Enter/Escape — genérica para cualquier buscador
+  // de esta pantalla (Libro Mayor, cuenta de captura rápida, cliente).
+  // Mismo criterio que ya usa Facturación: nunca dejar un buscador nuevo
+  // sin esto, para no tener que corregirlo cada vez que se agrega uno.
+  document.addEventListener("keydown", (e) => {
+    const field = e.target.closest && e.target.closest(".fac-sat-field");
+    if (!field) return;
+    const box = field.querySelector(".fac-sat-results");
+    if (!box || !box.classList.contains("is-open")) return;
+    const opts = Array.from(box.querySelectorAll(".fac-sat-opt"));
+    if (!opts.length) return;
+    let idx = parseInt(box.dataset.activeIndex || "-1", 10);
+
+    if (e.key === "ArrowDown") { e.preventDefault(); idx = Math.min(idx + 1, opts.length - 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); idx = Math.max(idx - 1, 0); }
+    else if (e.key === "Enter") {
+      if (idx >= 0 && opts[idx]) { e.preventDefault(); opts[idx].click(); }
+      return;
+    } else if (e.key === "Escape") { box.classList.remove("is-open"); return; }
+    else return;
+
+    opts.forEach((o) => o.classList.remove("is-active"));
+    opts[idx].classList.add("is-active");
+    opts[idx].scrollIntoView({ block: "nearest" });
+    box.dataset.activeIndex = String(idx);
+  });
+
+  // ---------- Buscador inteligente: Libro Mayor ----------
+  function buscarMayorCuenta(input) {
+    const field = input.closest(".fac-sat-field");
+    if (!field) return;
+    const box = field.querySelector(".fac-sat-results");
+    const q = input.value.trim().toLowerCase();
+    const ctas = getCuentasAfectables();
+    const filtradas = q ? ctas.filter((c) => c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)) : ctas;
+    box.innerHTML = filtradas.length
+      ? filtradas.map((c) => `<div class="fac-sat-opt" data-codigo="${esc(c.codigo)}" data-txt="${esc(c.codigo + " · " + c.nombre)}"><b>${esc(c.codigo)}</b> · ${esc(c.nombre)}</div>`).join("")
+      : `<div class="fac-sat-hint">Sin resultados para "${esc(input.value)}".</div>`;
+    box.classList.add("is-open");
+  }
+  let clienteBuscaTimer = null;
+  document.addEventListener("input", (e) => {
+    if (!e.target.classList) return;
+    if (e.target.classList.contains("mayor-cuenta-busca")) buscarMayorCuenta(e.target);
+    if (e.target.classList.contains("rap-cuenta-busca")) buscarRapCuenta(e.target);
+    if (e.target.classList.contains("rap-cliente-busca")) {
+      clearTimeout(clienteBuscaTimer);
+      const input = e.target;
+      clienteBuscaTimer = setTimeout(() => buscarRapCliente(input), 300);
+    }
+  });
+  document.addEventListener("focusin", (e) => {
+    if (!e.target.classList) return;
+    if (e.target.classList.contains("mayor-cuenta-busca")) buscarMayorCuenta(e.target);
+    if (e.target.classList.contains("rap-cuenta-busca")) buscarRapCuenta(e.target);
+  });
+  document.addEventListener("click", (e) => {
+    const opt = e.target.closest(".fac-sat-field .fac-sat-opt");
+    if (opt) {
+      const field = opt.closest(".fac-sat-field");
+      const box = field.querySelector(".fac-sat-results");
+
+      if (field.querySelector(".mayor-cuenta-busca")) {
+        const input = field.querySelector(".mayor-cuenta-busca");
+        const hidden = field.querySelector("[data-mayor-cuenta]");
+        if (input) input.value = opt.getAttribute("data-txt");
+        if (hidden) hidden.value = opt.getAttribute("data-codigo");
+        box.classList.remove("is-open");
+        renderMayor(opt.getAttribute("data-codigo"));
+        return;
+      }
+      if (field.querySelector(".rap-cuenta-busca")) {
+        const input = field.querySelector(".rap-cuenta-busca");
+        const hidden = document.getElementById("rap-cuenta");
+        if (input) input.value = opt.getAttribute("data-txt");
+        if (hidden) hidden.value = opt.getAttribute("data-codigo");
+        box.classList.remove("is-open");
+        return;
+      }
+      if (field.querySelector(".rap-cliente-busca")) {
+        const input = field.querySelector(".rap-cliente-busca");
+        const hidden = document.getElementById("rap-cliente-id");
+        if (input) input.value = opt.getAttribute("data-nombre");
+        if (hidden) hidden.value = opt.getAttribute("data-id");
+        box.classList.remove("is-open");
+        return;
+      }
+    }
+    if (!e.target.closest(".fac-sat-field")) {
+      document.querySelectorAll(".fac-sat-results.is-open").forEach((b) => b.classList.remove("is-open"));
+    }
+    const btnImportar = e.target.closest("[data-rapido-importar-cfdi]");
+    if (btnImportar) { abrirImportarCfdiRapido(btnImportar.getAttribute("data-rapido-importar-cfdi")); return; }
+  });
+
+
   document.addEventListener("change", (e) => {
     if (!e.target || !e.target.matches) return;
-    if (e.target.matches("[data-mayor-cuenta]")) { renderMayor(e.target.value); return; }
     if (e.target.matches("[data-periodo-sel]")) {
       const v = e.target.value;
       if (!v) setPeriodo(null);
@@ -1231,20 +1518,35 @@ ${ctas}
     if (editPol) { abrirEditarPoliza(editPol.getAttribute("data-cont-editar-pol")); return; }
     const delPol = e.target.closest("[data-cont-del-pol]");
     if (delPol) {
-      if (confirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.")) {
+      ctConfirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.", "Eliminar").then((si) => {
+        if (!si) return;
         const id = delPol.getAttribute("data-cont-del-pol");
         deletePoliza(id).then((r) => {
-          if (!r.ok) { alert("No se pudo eliminar: " + (r.error || "motivo desconocido")); return; }
+          if (!r.ok) { ctAlert("No se pudo eliminar: " + (r.error || "motivo desconocido")); return; }
           renderTodo();
         });
-      }
+      });
       return;
     }
     const editCta = e.target.closest("[data-cont-edit-cta]");
     if (editCta) { openCuentaForm(editCta.getAttribute("data-cont-edit-cta")); return; }
+    const reactivarCta = e.target.closest("[data-cont-reactivar-cta]");
+    if (reactivarCta) {
+      reactivarCuenta(reactivarCta.getAttribute("data-cont-reactivar-cta")).then((r) => {
+        if (!r.ok) { ctAlert("No se pudo reactivar: " + (r.error || "motivo desconocido")); return; }
+        renderTodo();
+      });
+      return;
+    }
     const delCta = e.target.closest("[data-cont-del-cta]");
     if (delCta) {
-      if (confirm("¿Eliminar esta cuenta del catálogo?")) { deleteCuenta(delCta.getAttribute("data-cont-del-cta")); renderTodo(); }
+      ctConfirm("¿Desactivar esta cuenta? Su historial y saldos se conservan, solo deja de estar disponible para movimientos nuevos.", "Desactivar").then((si) => {
+        if (!si) return;
+        deleteCuenta(delCta.getAttribute("data-cont-del-cta")).then((r) => {
+          if (!r.ok) { ctAlert("No se pudo desactivar: " + (r.error || "motivo desconocido")); return; }
+          renderTodo();
+        });
+      });
       return;
     }
     const verMayor = e.target.closest("[data-cont-mayor]");
@@ -1314,6 +1616,7 @@ ${ctas}
 
   function init() {
     renderTodo();
+    cargarCatalogoReal().then((cambio) => { if (cambio) renderTodo(); });
     sincronizarPolizasDesdePostgres().then((cambiado) => { if (cambiado) renderTodo(); });
   }
   init();

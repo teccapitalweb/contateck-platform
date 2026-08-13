@@ -18,6 +18,9 @@ import { demoRouter } from './src/routes/demo.js';
 import { dashboardRouter } from './src/routes/dashboard.js';
 import { ventasRouter } from './src/routes/ventas.js';
 import { empleadosRouter } from './src/routes/empleados.js';
+import { fiscalRouter } from './src/routes/fiscal.js';
+import { onboardingRouter } from './src/routes/onboarding.js';
+import { equipoRouter } from './src/routes/equipo.js';
 
 const app = express();
 
@@ -56,6 +59,9 @@ app.use('/api', polizasCompletasRouter);
 app.use('/api', dashboardRouter);
 app.use('/api', ventasRouter);
 app.use('/api', empleadosRouter);
+app.use('/api', fiscalRouter);
+app.use('/api', onboardingRouter);
+app.use('/api', equipoRouter);
 app.use('/api/demo', demoRouter);
 
 // ---- 404 ----

@@ -17,7 +17,7 @@
   <!-- SIDEBAR -->
   <aside class="side">
     <div class="side__brand">
-      <a href="index.html" class="brand">
+      <a href="dashboard.html" class="brand">
         <span class="brand__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h9M4 18h16"/></svg></span>
         <span class="brand__word">Conta<b class="t">teck</b></span>
       </a>
@@ -56,6 +56,14 @@
       <div class="nav-item" data-view="sat" data-title="SAT y fiscal México">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg>
         SAT y Fiscal
+      </div>
+    </div>
+
+    <div class="side__group" data-nav-group-equipo>
+      <div class="side__label">Equipo</div>
+      <div class="nav-item" data-view="invitaciones" data-title="Equipo" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Equipo
       </div>
     </div>
 
@@ -143,7 +151,7 @@
         <div class="grid-2">
           <div class="card">
             <div class="card__head">
-              <div><h3>Ventas vs gastos</h3><span class="sub">Últimos 12 meses · miles MXN</span></div>
+              <div><h3>Ventas vs gastos</h3><span class="sub">Últimos 6 meses · MXN</span></div>
               <div class="seg">
                 <button>Mes</button><button class="is-active">Año</button>
               </div>
@@ -158,6 +166,10 @@
           <div class="card">
             <div class="card__head"><h3>Alertas</h3><span class="sub">3 activas</span></div>
             <div class="alerts" data-alerts></div>
+            <div style="margin-top:.9rem;padding-top:.9rem;border-top:1px solid var(--line)">
+              <span class="sub" style="display:block;margin-bottom:.5rem">Información general</span>
+              <div class="alerts" data-info-general></div>
+            </div>
           </div>
         </div>
 
@@ -303,29 +315,11 @@
       </section>
 
       <section class="view" data-view="sat">
-        <div class="page-head">
-          <div><h1>SAT y Fiscal México</h1><p>Descarga de XML, validación y declaraciones · <b data-empresa-label>tu empresa</b></p></div>
-          <div class="page-head__actions">
-            <button class="btn btn--ghost" data-soon="La descarga masiva de XML del SAT requiere e.firma + backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 21h14"/></svg>Descargar XML</button>
-            <button class="btn btn--primary" data-soon="La presentación de declaraciones ante el SAT requiere backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg>Presentar declaración</button>
-          </div>
-        </div>
-        <div class="kpis" data-sat-stats></div>
-        <div class="grid-2">
-          <div class="card">
-            <div class="card__head"><h3>Declaraciones</h3><span class="sub">Últimos periodos</span></div>
-            <div style="overflow-x:auto">
-              <table class="tbl">
-                <thead><tr><th>Tipo</th><th>Periodo</th><th>Presentada</th><th>Acuse</th><th>Estado</th></tr></thead>
-                <tbody data-declaraciones></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card__head"><h3>Buzón fiscal</h3><span class="sub">IA</span></div>
-            <div class="alerts" data-buzon></div>
-          </div>
-        </div>
+        <div data-fiscal-root></div>
+      </section>
+
+      <section class="view" data-view="invitaciones">
+        <div data-inv-root></div>
       </section>
 
       <section class="view" data-view="ia">
@@ -382,5 +376,7 @@
 <script src="facturacion.js?v=21"></script>
 <script src="contabilidad.js?v=10"></script>
 <script src="ventas.js?v=1"></script>
+<script src="fiscal.js?v=1"></script>
+<script src="invitaciones.js?v=1"></script>
 </body>
 </html>

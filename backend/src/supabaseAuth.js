@@ -21,6 +21,14 @@ export function isSupabaseAuthReady() {
   return !!supabaseAdmin;
 }
 
+// Onboarding (crear empresa / aceptar invitación) necesita privilegios
+// elevados: un usuario sin perfil todavía no puede insertar en `empresas`
+// ni en `perfiles` bajo su propia RLS (por diseño — el alta de perfiles
+// siempre pasa por el backend con service role, nunca por el cliente).
+export function obtenerClienteAdmin() {
+  return supabaseAdmin;
+}
+
 // Middleware: exige (o no) un access_token de Supabase Auth en el header.
 //   Authorization: Bearer <access_token>
 //
