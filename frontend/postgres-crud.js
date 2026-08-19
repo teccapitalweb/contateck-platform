@@ -40,5 +40,18 @@ window.CTPostgres = (function () {
     // de Debe=Haber garantizada del lado de Postgres.
     crearPolizaCompleta: function (body) { return llamar("POST", "/api/polizas-completas", body); },
     actualizarPolizaCompleta: function (id, body) { return llamar("PUT", "/api/polizas-completas/" + id, body); },
+    // OT-0020: configuración contable (mapa de roles -> cuentas reales)
+    // y cobranza de facturas (registrar/confirmar pago de cliente).
+    obtenerPartidasPoliza: function (polizaId) { return llamar("GET", "/api/polizas-completas/" + polizaId + "/partidas"); },
+    guardarConfigContable: function (body) { return llamar("PUT", "/api/config-contable", body); },
+    registrarPagoCliente: function (body) { return llamar("POST", "/api/pagos-cliente", body); },
+    listarPagosCfdi: function (cfdiId) { return llamar("GET", "/api/pagos-cliente?cfdiId=" + encodeURIComponent(cfdiId)); },
+    confirmarPagoCliente: function (pagoId) { return llamar("POST", "/api/pagos-cliente/" + pagoId + "/confirmar"); },
+    // OT-0023: Cuentas por Pagar (espejo de cobranza)
+    guardarCfdiProveedor: function (datos, polizaId) { return llamar("POST", "/api/cfdis-proveedor", { datos, polizaId }); },
+    registrarPagoProveedor: function (body) { return llamar("POST", "/api/pagos-proveedor", body); },
+    confirmarPagoProveedor: function (pagoId) { return llamar("POST", "/api/pagos-proveedor/" + pagoId + "/confirmar"); },
+    listarPagosProveedor: function (cfdiProveedorId) { return llamar("GET", "/api/pagos-proveedor?cfdiProveedorId=" + encodeURIComponent(cfdiProveedorId)); },
+    listarCfdisProveedorTodas: function () { return llamar("GET", "/api/cfdis-proveedor"); },
   };
 })();

@@ -45,3 +45,26 @@ export async function actualizarPolizaCompleta(accessToken, polizaId, { tipo, fe
   }
   return { ok: true };
 }
+
+// OT-0020 FIX 3: partidas de una póliza que vive en Postgres — para que
+// el frontend pueda mostrar el detalle (Debe/Haber) de pólizas que no
+// nacieron en ese navegador (ej. las generadas por el flujo de cobranza).
+export async function obtenerPartidasPoliza(accessToken, polizaId, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { data, error } = await supabase
+    .from('poliza_partidas')
+    .select('debe, haber, orden, cuentas_contables(codigo, nombre)')
+    .eq('poliza_id', polizaId)
+    .order('orden', { ascending: true });
+  if (error) {
+    log.warn('[postgres] obtenerPartidasPoliza:', error.message);
+    return { ok: false, error: error.message };
+  }
+  const partidas = (data || []).map((r) => ({
+    codigo: r.cuentas_contables ? r.cuentas_contables.codigo : '',
+    nombre: r.cuentas_contables ? r.cuentas_contables.nombre : '',
+    debe: r.debe, haber: r.haber,
+  }));
+  return { ok: true, partidas };
+}

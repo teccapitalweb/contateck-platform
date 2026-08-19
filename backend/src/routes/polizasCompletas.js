@@ -9,7 +9,7 @@
 // ============================================================
 import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
-import { crearPolizaCompleta, actualizarPolizaCompleta } from '../supabasePolizasCompletas.js';
+import { crearPolizaCompleta, actualizarPolizaCompleta, obtenerPartidasPoliza } from '../supabasePolizasCompletas.js';
 
 export const polizasCompletasRouter = Router();
 polizasCompletasRouter.use(verifyAuth);
@@ -18,6 +18,14 @@ function obtenerToken(req) {
   const header = req.headers.authorization || '';
   return header.startsWith('Bearer ') ? header.slice(7) : '';
 }
+
+// OT-0020 FIX 3: detalle (Debe/Haber) de una póliza que vive en Postgres.
+polizasCompletasRouter.get('/polizas-completas/:id/partidas', async (req, res) => {
+  const token = obtenerToken(req);
+  if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
+  const resultado = await obtenerPartidasPoliza(token, req.params.id);
+  res.status(resultado.ok ? 200 : 400).json(resultado);
+});
 
 polizasCompletasRouter.post('/polizas-completas', async (req, res) => {
   const token = obtenerToken(req);

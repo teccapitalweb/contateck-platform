@@ -336,14 +336,22 @@
         // No tenemos debe/haber totales por separado en el payload — se
         // muestra el resultado del cuadre (activo vs pasivo+capital), que
         // es la comprobación contable real equivalente en este punto.
-        const cuadra = bg.cuadra !== false && (bg.totalActivo || bg.totalPasivo || bg.totalCapital);
+        // FIX: el backend calcula "cuadra" con la ecuación completa
+        // (Activo = Pasivo + Capital + Resultado del periodo — correcto
+        // antes de cerrar el ejercicio), pero esta pantalla solo
+        // MOSTRABA Pasivo+Capital sin el resultado, así que el check ✓
+        // aparecía junto a dos números que no coincidían entre sí.
+        const cuadra = bg.cuadra !== false && (bg.totalActivo || bg.totalPasivo || bg.totalCapital || bg.resultadoDelPeriodo);
+        const resultado = bg.resultadoDelPeriodo || 0;
+        const totalDerecha = (bg.totalPasivo || 0) + (bg.totalCapital || 0) + resultado;
         if (bg.totalActivo === undefined) {
           ledgerBar.innerHTML = proximamente("Aún no hay pólizas para calcular el cuadre.");
         } else {
           ledgerBar.innerHTML =
             '<div class="card__head" style="margin-bottom:.9rem"><h3>Balance General</h3><span class="sub">Acumulado</span></div>' +
-            '<div class="ledger__top"><span>Activo</span><span>Pasivo + Capital</span></div>' +
-            '<div class="ledger__nums"><b>$' + money(bg.totalActivo || 0) + '</b><b>$' + money((bg.totalPasivo || 0) + (bg.totalCapital || 0)) + '</b></div>' +
+            '<div class="ledger__top"><span>Activo</span><span>Pasivo + Capital + Resultado del periodo</span></div>' +
+            '<div class="ledger__nums"><b>$' + money(bg.totalActivo || 0) + '</b><b>$' + money(totalDerecha) + '</b></div>' +
+            '<div style="font-size:.78rem;color:var(--muted,#8a93a6);text-align:right;margin-top:-.4rem;margin-bottom:.6rem">Pasivo $' + money(bg.totalPasivo || 0) + ' + Capital $' + money(bg.totalCapital || 0) + ' ' + (resultado >= 0 ? '+' : '−') + ' Resultado $' + money(Math.abs(resultado)) + (resultado < 0 ? ' (pérdida del periodo)' : '') + '</div>' +
             '<div class="ledger__bal">' + (cuadra ?
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Cuadra — Activo = Pasivo + Capital' :
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg> No cuadra — revisa el catálogo de cuentas') +

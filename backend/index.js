@@ -21,6 +21,9 @@ import { empleadosRouter } from './src/routes/empleados.js';
 import { fiscalRouter } from './src/routes/fiscal.js';
 import { onboardingRouter } from './src/routes/onboarding.js';
 import { equipoRouter } from './src/routes/equipo.js';
+import { configContableRouter } from './src/routes/configContable.js';
+import { pagosClienteRouter } from './src/routes/pagosCliente.js';
+import { pagosProveedorRouter } from './src/routes/pagosProveedor.js';
 
 const app = express();
 
@@ -62,6 +65,9 @@ app.use('/api', empleadosRouter);
 app.use('/api', fiscalRouter);
 app.use('/api', onboardingRouter);
 app.use('/api', equipoRouter);
+app.use('/api', configContableRouter);
+app.use('/api', pagosClienteRouter);
+app.use('/api', pagosProveedorRouter);
 app.use('/api/demo', demoRouter);
 
 // ---- 404 ----

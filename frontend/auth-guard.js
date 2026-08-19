@@ -62,13 +62,16 @@ if (!configured) {
         // para esperarlas una por una — eso sumaba los tiempos de red en
         // vez de dejarlos correr al mismo tiempo. Con Promise.all, el
         // tiempo total baja al de la más lenta de las 4, no a la suma.
-        const [perfilData, catData, opData, cfdisData, empleadosData, onbData] = await Promise.all([
+        const [perfilData, catData, opData, cfdisData, empleadosData, onbData, configContableData, saldoData, saldoProveedorData] = await Promise.all([
           fetch(`${BACKEND}/api/perfil`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/catalogo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/operacion`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/cfdis`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/empleados`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/onboarding/estado`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/config-contable`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/cfdis-saldo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          fetch(`${BACKEND}/api/cfdis-proveedor-saldo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
         ]);
 
         // Fase 1 (onboarding): confirma con el endpoint dedicado (preciso)
@@ -109,6 +112,26 @@ if (!configured) {
         // OT-0012: CFDIs reales.
         if (cfdisData.ok) {
           window.CONTATECK_CFDIS_PG = cfdisData.cfdis || [];
+        }
+
+        // OT-0020: configuración contable (mapa de roles -> cuentas
+        // reales de la empresa) y facturas con saldo pendiente para
+        // el flujo de "Me pagó un cliente".
+        if (configContableData.ok) {
+          window.CONTATECK_CONFIG_CONTABLE_PG = configContableData.config || {};
+        } else {
+          window.CONTATECK_CONFIG_CONTABLE_PG = {}; // sin datos: todo se trata como "no configurado"
+        }
+        if (saldoData.ok) {
+          window.CONTATECK_CFDIS_SALDO_PG = saldoData.facturas || [];
+        } else {
+          window.CONTATECK_CFDIS_SALDO_PG = [];
+        }
+        // OT-0023: facturas de proveedor con saldo por pagar.
+        if (saldoProveedorData.ok) {
+          window.CONTATECK_CFDIS_PROVEEDOR_SALDO_PG = saldoProveedorData.facturas || [];
+        } else {
+          window.CONTATECK_CFDIS_PROVEEDOR_SALDO_PG = [];
         }
 
         // Nómina Parte A (OT-0017): empleados reales (columnas según rol).

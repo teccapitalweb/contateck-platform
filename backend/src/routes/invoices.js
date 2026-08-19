@@ -8,7 +8,7 @@
 //    GET  /api/cfdi/:id/status   -> estatus ante el SAT
 // ============================================================
 import { Router } from 'express';
-import { getFiscalapi, unwrap, mensajeDeError } from '../fiscalapi.js';
+import { getFiscalapi, unwrap } from '../fiscalapi.js';
 import { verifyAuth } from '../supabaseAuth.js';
 import { saveCfdi, markCfdiCancelled } from '../firebase.js';
 import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis } from '../supabaseCfdis.js';
@@ -50,6 +50,11 @@ async function requireRolFacturacion(req, res, next) {
 
 // Extrae los campos clave de una factura timbrada (defensivo: la API
 // puede nombrar el UUID de varias formas según el modo).
+// OT-0019: el folio real de Fiscalapi NO es data.folio/data.invoiceNumber
+// (esos siempre vienen null) — es series + consecutive, confirmado
+// contra datos reales en Postgres (ver database/addendum_folio_metodopago.sql).
+// De paso se captura paymentMethodCode (PUE/PPD) y paymentFormCode, que
+// antes ni se guardaban.
 function resumenCfdi(data, user) {
   if (!data) return {};
   const uuid =
@@ -58,11 +63,13 @@ function resumenCfdi(data, user) {
     data.taxStamp?.uuid ||
     data.responses?.[0]?.uuid ||
     null;
+  const serie = data.series ?? null;
+  const consecutivo = data.consecutive ?? null;
   return {
     id: data.id || null,
     uuid,
-    serie: data.series ?? null,
-    folio: data.folio ?? data.invoiceNumber ?? null,
+    serie,
+    folio: (serie && consecutivo != null) ? `${serie}-${consecutivo}` : null,
     total: data.total ?? null,
     subtotal: data.subtotal ?? null,
     moneda: data.currencyCode ?? null,
@@ -72,6 +79,13 @@ function resumenCfdi(data, user) {
     receptorNombre: data.recipient?.legalName ?? null,
     emisorRfc: data.issuer?.tin ?? null,
     estatus: 'vigente',
+    // OT-0019: PUE = pago de contado, PPD = pago diferido/parcialidades.
+    // Una PPD necesita un REP (Recibo Electrónico de Pago) aparte cuando
+    // de verdad llega el dinero — "Importar desde factura timbrada" en
+    // Contabilidad bloquea las PPD hasta que la contadora confirme cómo
+    // debe registrarse ese segundo momento (ver OT-0019.md).
+    metodoPago: data.paymentMethodCode ?? null,
+    formaPago: data.paymentFormCode ?? null,
     uid: user?.uid ?? null,
     emailUsuario: user?.email ?? null,
   };
@@ -115,8 +129,7 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
       cfdi: resumen,
     });
   } catch (err) {
-    const m = mensajeDeError(err);
-    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar.', details: m.details });
+    return res.status(500).json({ ok: false, error: 'Error al timbrar.', details: err.message });
   }
 });
 
@@ -160,8 +173,7 @@ invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => 
       cfdi: resumen,
     });
   } catch (err) {
-    const m = mensajeDeError(err);
-    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar la nota de crédito.', details: m.details });
+    return res.status(500).json({ ok: false, error: 'Error al timbrar la nota de crédito.', details: err.message });
   }
 });
 
@@ -208,8 +220,7 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
       cfdi: resumen,
     });
   } catch (err) {
-    const m = mensajeDeError(err);
-    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar el complemento de pago.', details: m.details });
+    return res.status(500).json({ ok: false, error: 'Error al timbrar el complemento de pago.', details: err.message });
   }
 });
 
@@ -240,20 +251,19 @@ invoicesRouter.post('/enviar-correo', async (req, res) => {
     }
     return res.json({ ok: true, mensaje: `Factura enviada a ${email}.` });
   } catch (err) {
-    const m = mensajeDeError(err);
-    return res.status(m.status).json({ ok: false, error: m.error || 'Error al enviar el correo.', details: m.details });
+    return res.status(500).json({ ok: false, error: 'Error al enviar el correo.', details: err.message });
   }
 });
 
 // ---------- CATÁLOGOS DEL SAT (búsqueda en vivo vía Fiscalapi) ----------
 // GET /api/catalogo/:nombre/:q  -> busca en un catálogo del SAT.
 // Catálogos útiles: SatProductCodes, SatUnitMeasurements, SatPaymentForms,
-// SatCfdiUses, SatTaxRegimes. La búsqueda requiere mínimo 4 caracteres.
+// SatCfdiUses, SatTaxRegimes. La búsqueda requiere mínimo 3 caracteres.
 invoicesRouter.get('/catalogo/:nombre/:q', async (req, res) => {
   const { nombre, q } = req.params;
   const texto = String(q || '').trim();
-  if (texto.length < 4) {
-    return res.status(400).json({ ok: false, error: 'Escribe al menos 4 caracteres para buscar.' });
+  if (texto.length < 3) {
+    return res.status(400).json({ ok: false, error: 'Escribe al menos 3 caracteres para buscar.' });
   }
   try {
     const fiscalapi = getFiscalapi();
@@ -268,8 +278,7 @@ invoicesRouter.get('/catalogo/:nombre/:q', async (req, res) => {
       items: items.map((it) => ({ clave: it.id ?? it.key ?? '', descripcion: it.description ?? it.descripcion ?? '' })),
     });
   } catch (err) {
-    const m = mensajeDeError(err);
-    return res.status(m.status).json({ ok: false, error: m.error || 'Error al buscar en el catálogo.', details: m.details });
+    return res.status(500).json({ ok: false, error: 'Error al buscar en el catálogo.', details: err.message });
   }
 });
 
@@ -305,8 +314,7 @@ invoicesRouter.post('/timbrar', requireRolFacturacion, async (req, res) => {
       cfdi: resumen,
     });
   } catch (err) {
-    const m = mensajeDeError(err);
-    return res.status(m.status).json({ ok: false, error: m.error || 'Error al timbrar.', details: m.details });
+    return res.status(500).json({ ok: false, error: 'Error al timbrar.', details: err.message });
   }
 });
 
@@ -359,8 +367,7 @@ invoicesRouter.post('/cancelar', requireRolFacturacion, async (req, res) => {
 
     return res.json({ ok: true, mensaje: 'CFDI cancelado.', resultado: r.data });
   } catch (err) {
-    const m = mensajeDeError(err);
-    return res.status(m.status).json({ ok: false, error: m.error || 'Error al cancelar.', details: m.details });
+    return res.status(500).json({ ok: false, error: 'Error al cancelar.', details: err.message });
   }
 });
 

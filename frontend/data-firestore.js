@@ -431,6 +431,9 @@ function mapCfdiPostgres(r) {
     estado: r.estatus === "cancelado" ? "cancelada" : "ok",
     cfdiId: r.fiscalapi_id || null,
     tipo: r.tipo || "I",
+    // OT-0019: PUE/PPD real, capturado desde Fiscalapi. null = factura
+    // vieja de antes de este fix, tratar como "desconocido", no como PUE.
+    metodoPago: r.metodo_pago || null,
     // metodoPago/saldo no se guardan hoy en Postgres (ver `raw`); se dejan
     // sin definir a propósito para que el botón de REP no se muestre por
     // error — más seguro ocultarlo que asumir mal. Pendiente si se necesita
@@ -496,7 +499,9 @@ async function addCfdiTimbrado(parcial) {
   const uuidFull = String(parcial.uuid || "");
   const obj = {
     id: "local-" + (++localSeq), // temporal hasta el próximo refresh real de Postgres
-    folio: parcial.folio || ((parcial.serie || "CT") + "-" + (1044 + state.cfdis.length)),
+    // OT-0022: sin folios inventados — si el timbrado no trajo folio,
+    // se muestra "—" y el refresh de Postgres trae el real (series+consecutive).
+    folio: parcial.folio || "—",
     uuid: uuidFull ? (uuidFull.slice(0, 8) + "…" + uuidFull.slice(-4)) : "—",
     uuidFull: uuidFull,
     cliente: parcial.cliente || "—",

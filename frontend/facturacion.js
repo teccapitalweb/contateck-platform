@@ -119,6 +119,9 @@
     .fac-modal.is-open{display:flex}
     .fac-scrim{position:absolute;inset:0;background:rgba(3,6,15,.66);backdrop-filter:blur(5px)}
     .fac-card{position:relative;width:min(680px,100%);max-height:90vh;overflow:auto;background:var(--surface,#0d1322);
+      transition:width .15s ease}
+    .fac-modal--wide .fac-card{width:min(1040px,96vw)}
+    .fac-modal--wide-x{position:relative}
       border:1px solid var(--line-strong,#22304d);border-radius:18px;box-shadow:0 40px 90px -30px rgba(0,0,0,.7)}
     .fac-head{display:flex;align-items:center;justify-content:space-between;padding:1.15rem 1.4rem;border-bottom:1px solid var(--line,#1a2540)}
     .fac-head h3{margin:0;font-size:1.12rem}
@@ -533,6 +536,7 @@
           if (window.CTData && typeof window.CTData.addCfdi === "function") {
             window.CTData.addCfdi({
               uuid: data.uuid,
+              folio: data.cfdi && data.cfdi.folio,
               cliente: nombre || (data.cfdi && data.cfdi.receptorNombre) || rfc,
               total: data.total,
               serie: (data.cfdi && data.cfdi.serie) || "CT",
@@ -618,7 +622,7 @@
 
   // ---- Abrir / cerrar ----
   function open() { setTitle("Timbrar CFDI 4.0"); retIvaTocadoManual = false; retIsrTocadoManual = false; renderForm(); modal.classList.add("is-open"); }
-  function close() { modal.classList.remove("is-open"); }
+  function close() { modal.classList.remove("is-open"); modal.classList.remove("fac-modal--wide"); }
   function setTitle(t) { const el = modal.querySelector("[data-fac-title]"); if (el) el.textContent = t; }
 
   // ---------- Cancelación de CFDI ----------
@@ -789,7 +793,7 @@
       const data = await resp.json();
       if (data.ok) {
         if (window.CTData && window.CTData.addCfdi) {
-          window.CTData.addCfdi({ uuid: data.uuid, cliente: f.cliente || "—", total: data.total, serie: "NC", cfdiId: data.id, tipo: "E" });
+          window.CTData.addCfdi({ uuid: data.uuid, folio: data.cfdi && data.cfdi.folio, cliente: f.cliente || "—", total: data.total, serie: "NC", cfdiId: data.id, tipo: "E" });
         }
         content.innerHTML = resultadoOK("Nota de crédito emitida", data.uuid, "Quedó timbrada y relacionada con la factura original.");
       } else {
@@ -867,7 +871,7 @@
         const nuevoSaldo = Math.max(saldoActual - monto, 0);
         if (window.CTData && window.CTData.updateCfdiSaldo) await window.CTData.updateCfdiSaldo(rowId, nuevoSaldo);
         if (window.CTData && window.CTData.addCfdi) {
-          window.CTData.addCfdi({ uuid: data.uuid, cliente: f.cliente || "—", total: monto, serie: "PAGO", cfdiId: data.id, tipo: "P" });
+          window.CTData.addCfdi({ uuid: data.uuid, folio: data.cfdi && data.cfdi.folio, cliente: f.cliente || "—", total: monto, serie: "PAGO", cfdiId: data.id, tipo: "P" });
         }
         content.innerHTML = resultadoOK("Complemento de pago emitido", data.uuid,
           nuevoSaldo > 0 ? `Pago registrado. Saldo pendiente: ${money(nuevoSaldo)}.` : "Pago registrado. La factura quedó liquidada.");
@@ -1458,7 +1462,271 @@
     if (correoTrig) { e.preventDefault(); const p = correoTrig.getAttribute("data-correo-cfdi").split("::"); openCorreo(p[0], p[1]); }
     const pdfTrig = e.target.closest("[data-pdf-cfdi]");
     if (pdfTrig) { e.preventDefault(); verPdfConLogo(pdfTrig.getAttribute("data-pdf-cfdi")); }
+    const histTrig = e.target.closest("[data-hist-cfdi]");
+    if (histTrig) { e.preventDefault(); openHistorialPagos(histTrig.getAttribute("data-hist-cfdi")); }
     if (e.target.closest("[data-config-empresa]")) { e.preventDefault(); openConfigEmpresa(); }
+  });
+
+
+  /* ============================================================
+     OT-0021/OT-0022 · Historial de pagos de una factura
+     Navegación de dos niveles SIN salir de Facturación:
+       Facturación → CFDI → Historial de pagos → Detalle del pago
+     Nivel 1 (lista): resumen del CFDI + pagos registrados.
+     Nivel 2 (detalle): un pago con todo — monto, forma, cuenta
+     destino, referencia, comprobante real (o "Sin comprobante
+     adjunto"), póliza si existe (o "Póliza contable pendiente"),
+     y trazabilidad completa. "← Volver al historial" regresa al
+     nivel 1 sin re-consultar el backend.
+     Nada aquí es ficticio: todo sale de pagos_cliente en Postgres;
+     si un dato no existe, se dice explícitamente.
+     ============================================================ */
+  const HIST_FORMAS_PAGO = { "01": "Efectivo", "02": "Cheque nominativo", "03": "Transferencia", "04": "Tarjeta de crédito", "28": "Tarjeta de débito", "99": "Otro" };
+  let histState = null; // { f, pagos } mientras el modal está abierto
+  function fechaCortaHist(iso) {
+    if (!iso) return "—";
+    try { const d = new Date(iso); return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }); } catch (e) { return iso; }
+  }
+  function fechaHoraHist(iso) {
+    if (!iso) return "—";
+    try { const d = new Date(iso); return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }) + " " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return iso; }
+  }
+  function moneyHist(n) { return (parseFloat(n) || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 }); }
+  function nombreArchivo(path) { return path ? (path.split("/").pop() || path) : null; }
+  async function firmarComprobante(path) {
+    const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+    if (!cfg || !t || !path) return null;
+    try {
+      const resp = await fetch(cfg.url + "/storage/v1/object/sign/documentos/" + path, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresIn: 3600 }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.signedURL) return null;
+      return cfg.url + "/storage/v1" + data.signedURL;
+    } catch (e) { return null; }
+  }
+  const pillEstadoPago = (p) => {
+    if (p.estado === "confirmado") return '<span class="pill pill--ok">Confirmado</span>';
+    if (p.estado === "cancelado") return '<span class="pill pill--late">Cancelado</span>';
+    return '<span class="pill pill--pend">Registrado</span>';
+  };
+  const pillComplemento = (p) => {
+    if (p.complementoPago === "timbrado") return '<span class="pill pill--ok">REP timbrado</span>';
+    if (p.complementoPago === "pendiente") return '<span class="pill pill--pend">REP pendiente</span>';
+    return '<span style="color:var(--faint);font-size:.78rem">No aplica</span>';
+  };
+
+  async function openHistorialPagos(cfdiPgId) {
+    const f = ((window.CTData && window.CTData.getCfdis) ? window.CTData.getCfdis() : []).find((c) => c.id === cfdiPgId) || {};
+    setTitle("Historial de pagos · " + (f.folio || ""));
+    content.innerHTML = '<p style="color:var(--muted);padding:1rem 0">Cargando pagos…</p>';
+    modal.classList.add("is-open");
+    modal.classList.add("fac-modal--wide"); // OT-0022: pantalla amplia para historial/detalle
+    const r = (window.CTPostgres && window.CTPostgres.listarPagosCfdi)
+      ? await window.CTPostgres.listarPagosCfdi(cfdiPgId)
+      : { ok: false, error: "Sin conexión con el backend." };
+    if (!r.ok) {
+      content.innerHTML = '<div style="color:#FB7185;padding:.8rem 0">' + escHtml(r.error || "No se pudieron cargar los pagos.") + '</div>' +
+        '<div style="display:flex;justify-content:flex-end"><button class="btn btn--ghost" data-fac-close>Cerrar</button></div>';
+      return;
+    }
+    histState = { f, pagos: r.pagos || [] };
+    renderHistLista();
+  }
+
+  function renderHistLista() {
+    if (!histState) return;
+    const { f, pagos } = histState;
+    setTitle("Historial de pagos · " + (f.folio || ""));
+    const totalConfirmado = pagos.filter((p) => p.estado === "confirmado").reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+    const totalFactura = typeof f.total === "number" ? f.total : parseFloat(f.total || 0);
+    const saldo = Math.round((totalFactura - totalConfirmado) * 100) / 100;
+    const filas = pagos.map((p, i) => {
+      const quien = (p.registradoPor ? "Registró: " + escHtml(p.registradoPor) : "") +
+        (p.confirmadoPor ? (p.registradoPor ? " · " : "") + "Confirmó: " + escHtml(p.confirmadoPor) : "");
+      return '<tr>' +
+        '<td class="num">' + fechaCortaHist(p.fechaPago) + '</td>' +
+        '<td class="num" style="text-align:right">$' + moneyHist(p.monto) + '</td>' +
+        '<td>' + escHtml(HIST_FORMAS_PAGO[p.formaPago] || p.formaPago || "—") + '</td>' +
+        '<td>' + pillEstadoPago(p) + '</td>' +
+        '<td class="num">' + (p.polizaFolio ? escHtml(p.polizaFolio) : '<span style="color:var(--faint);font-size:.78rem">Pendiente</span>') + '</td>' +
+        '<td>' + pillComplemento(p) + '</td>' +
+        '<td style="font-size:.78rem;color:var(--muted)">' + (quien || "—") + '</td>' +
+        '<td><button class="ract" data-hist-det="' + i + '" title="Ver detalle del pago"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15c.7-1.2 1.1-2.2 1.1-3 0-3-4.5-7-10.3-7S1.7 9 1.7 12s4.5 7 10.3 7c1.6 0 3.1-.3 4.4-.8"/><circle cx="12" cy="12" r="3"/></svg></button></td></tr>';
+    }).join("");
+    content.innerHTML =
+      '<div style="background:var(--ink-900,rgba(255,255,255,.03));border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.88rem">' +
+        '<div><b>' + escHtml(f.folio || "—") + '</b> · ' + escHtml(f.cliente || "") +
+          (f.metodoPago ? ' · <b>' + escHtml(f.metodoPago) + '</b>' : '') +
+          ' · <span class="pill ' + (f.estado === "ok" ? "pill--ok" : "pill--late") + '">' + (f.estado === "ok" ? "Vigente" : "Cancelada") + '</span></div>' +
+        '<div style="margin-top:.3rem">Total: $' + moneyHist(totalFactura) +
+          ' &nbsp;·&nbsp; Pagado (confirmado): $' + moneyHist(totalConfirmado) +
+          ' &nbsp;·&nbsp; <b>Saldo: $' + moneyHist(saldo) + '</b></div></div>' +
+      (pagos.length
+        ? '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Fecha</th><th style="text-align:right">Monto</th><th>Forma</th><th>Estado</th><th>Póliza</th><th>Complemento</th><th>Trazabilidad</th><th></th></tr></thead><tbody>' + filas + '</tbody></table></div>'
+        : '<p style="color:var(--muted);padding:.6rem 0">Esta factura todavía no tiene pagos registrados. Se registran desde Contabilidad → Registrar movimiento → "Me pagó un cliente".</p>') +
+      '<div style="display:flex;justify-content:flex-end;margin-top:1rem"><button class="btn btn--ghost" data-fac-close>Cerrar</button></div>';
+  }
+
+  function renderHistDetalle(idx) {
+    if (!histState) return;
+    const { f, pagos } = histState;
+    const p = pagos[idx];
+    if (!p) return;
+    setTitle("Detalle del pago " + (p.folioPago || "") + " · " + (f.folio || ""));
+    const filaDato = (etiqueta, valor) =>
+      '<div style="display:flex;justify-content:space-between;gap:1rem;padding:.45rem 0;border-bottom:1px solid var(--line,#1a2540)">' +
+      '<span style="color:var(--muted);font-size:.84rem">' + etiqueta + '</span><span style="text-align:right">' + valor + '</span></div>';
+    const nombreComp = nombreArchivo(p.comprobantePath);
+    // Comprobante: archivo REAL asociado al pago, o declaración explícita
+    // de que no existe. Adjuntar a un pago ya creado requiere backend que
+    // aún no existe — se marca como pendiente, no se simula.
+    // OT-0022: el comprobante se PREVISUALIZA dentro del propio detalle
+    // (imagen o PDF embebido) — no se saca al usuario a otra pestaña.
+    // "Abrir" y "Descargar" quedan como acciones secundarias.
+    // OT-0022: DOS cosas distintas, separadas a propósito —
+    // (a) Comprobante interno de pago: PDF que GENERA Contateck con los
+    //     datos reales del registro (imprimible/entregable).
+    // (b) Evidencia adjunta: el archivo que el usuario subió al capturar.
+    // OT-0022: tabla única de documentos de la operación — evidencia,
+    // comprobante Contateck, CFDI y complemento, cada uno con sus
+    // acciones reales (o su estado honesto si aún no existe).
+    const btnMini = (attrs, texto) => '<button class="btn btn--ghost" style="padding:.15rem .6rem;font-size:.76rem" ' + attrs + '>' + texto + '</button>';
+    const docRow = (nombre, tipo, acciones) =>
+      '<tr><td style="font-size:.84rem">' + nombre + '</td><td style="font-size:.78rem;color:var(--muted)">' + tipo + '</td><td style="white-space:nowrap">' + acciones + '</td></tr>';
+    const documentosHTML =
+      '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Documento</th><th>Tipo</th><th>Acciones</th></tr></thead><tbody>' +
+      (p.comprobantePath
+        ? docRow('📎 ' + escHtml(nombreComp), 'Evidencia adjunta',
+            btnMini('data-hist-comprobante="' + escHtml(p.comprobantePath) + '" data-comp-modo="ver"', 'Ver') + ' ' +
+            btnMini('data-hist-comprobante="' + escHtml(p.comprobantePath) + '" data-comp-modo="descargar" data-comp-nombre="' + escHtml(nombreComp) + '"', 'Descargar'))
+        : docRow('📎 Sin evidencia adjunta', 'Evidencia adjunta', '<span style="color:var(--faint);font-size:.76rem">Adjuntar: pendiente de habilitar</span>')) +
+      docRow('📄 Comprobante de pago ' + escHtml(p.folioPago || ''), 'Generado por Contateck',
+        btnMini('data-comp-interno="' + escHtml(p.id) + '" data-ci-modo="ver"', 'Ver') + ' ' +
+        btnMini('data-comp-interno="' + escHtml(p.id) + '" data-ci-modo="descargar"', 'Descargar')) +
+      docRow('🧾 CFDI ' + escHtml(f.folio || ''), 'Documento fiscal',
+        f.cfdiId
+          ? btnMini('data-pdf-cfdi="' + escHtml(f.cfdiId) + '"', 'Ver PDF')
+          : '<span style="color:var(--faint);font-size:.76rem">PDF no disponible</span>') +
+      docRow('🧾 Complemento de pago', 'Documento fiscal',
+        p.complementoPago === 'timbrado'
+          ? '<span class="pill pill--ok">Timbrado</span>'
+          : p.complementoPago === 'pendiente'
+            ? '<span style="color:var(--faint);font-size:.76rem">Pendiente de emisión ante el SAT</span>'
+            : '<span style="color:var(--faint);font-size:.76rem">No aplica (PUE)</span>') +
+      '</tbody></table></div>';
+    const polizaHTML = p.polizaFolio
+      ? '<b>' + escHtml(p.polizaFolio) + '</b> <span style="color:var(--faint);font-size:.78rem">(generada al confirmar este pago)</span>'
+      : '<span style="color:var(--faint)">Póliza contable pendiente</span> <span style="font-size:.76rem;color:var(--faint)">(se genera al confirmar el pago)</span>';
+    content.innerHTML =
+      '<button class="btn btn--ghost" data-hist-volver style="margin-bottom:1rem;padding:.3rem .8rem">← Volver al historial</button>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.2rem" class="hist-det-grid">' +
+        '<div>' +
+          '<h4 style="margin:.2rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Datos del pago</h4>' +
+          filaDato("Monto", "<b>$" + moneyHist(p.monto) + "</b>") +
+          filaDato("Fecha del pago", escHtml(fechaCortaHist(p.fechaPago))) +
+          filaDato("Forma de pago", escHtml(HIST_FORMAS_PAGO[p.formaPago] || p.formaPago || "—")) +
+          filaDato("Cuenta destino", p.cuentaDestino ? escHtml(p.cuentaDestino) : "—") +
+          filaDato("Referencia", p.referencia ? escHtml(p.referencia) : "—") +
+          filaDato("Notas", p.notas ? escHtml(p.notas) : "—") +
+          filaDato("Estado", pillEstadoPago(p)) +
+          '<h4 style="margin:1.1rem 0 .4rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Documentos de la operación</h4>' +
+          documentosHTML +
+          '<div data-ci-preview style="display:none;margin-top:.6rem"></div>' +
+          (p.comprobantePath
+            ? '<div style="margin-top:.6rem"><div style="font-size:.72rem;color:var(--faint);margin-bottom:.25rem">Vista previa de la evidencia adjunta: <b>' + escHtml(nombreComp) + '</b> (archivo subido por el usuario)</div>' +
+              '<div data-comp-preview style="border:1px solid var(--line,#1a2540);border-radius:10px;min-height:60px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--ink-900,rgba(255,255,255,.02))"><span style="color:var(--faint);font-size:.8rem">Cargando vista previa…</span></div></div>'
+            : '') +
+        '</div>' +
+        '<div>' +
+          '<h4 style="margin:.2rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Información contable</h4>' +
+          filaDato("Póliza relacionada", polizaHTML) +
+          '<h4 style="margin:1.1rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Parte fiscal</h4>' +
+          filaDato("Factura (CFDI)", escHtml(f.folio || "—") + (f.metodoPago ? " · " + escHtml(f.metodoPago) : "")) +
+          filaDato("Complemento de Pago", pillComplemento(p)) +
+          '<h4 style="margin:1.1rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Trazabilidad</h4>' +
+          filaDato("Registrado por", (p.registradoPor ? escHtml(p.registradoPor) : "—") + '<br><span style="color:var(--faint);font-size:.76rem">' + fechaHoraHist(p.creadoEn) + '</span>') +
+          filaDato("Confirmado por", p.confirmadoPor ? (escHtml(p.confirmadoPor) + '<br><span style="color:var(--faint);font-size:.76rem">' + fechaHoraHist(p.confirmadoEn) + '</span>') : '<span style="color:var(--faint)">Aún sin confirmar</span>') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:flex-end;margin-top:1.2rem"><button class="btn btn--ghost" data-fac-close>Cerrar</button></div>';
+    if (p.comprobantePath) cargarPreviewComprobante(p.comprobantePath);
+  }
+
+  async function cargarPreviewComprobante(path) {
+    const box = content.querySelector("[data-comp-preview]");
+    if (!box) return;
+    const url = await firmarComprobante(path);
+    if (!url) { box.innerHTML = '<span style="color:var(--faint);font-size:.8rem;padding:.8rem">No se pudo cargar la vista previa — usa Abrir o Descargar.</span>'; return; }
+    const ext = (path.split(".").pop() || "").toLowerCase();
+    if (["png", "jpg", "jpeg", "gif", "webp"].indexOf(ext) >= 0) {
+      box.innerHTML = '<img src="' + url + '" alt="Comprobante" style="max-width:100%;max-height:340px;display:block">';
+    } else if (ext === "pdf") {
+      box.innerHTML = '<embed src="' + url + '" type="application/pdf" style="width:100%;height:340px">';
+    } else {
+      box.innerHTML = '<span style="color:var(--faint);font-size:.8rem;padding:.8rem">Vista previa no disponible para .' + escHtml(ext) + ' — usa Abrir o Descargar.</span>';
+    }
+  }
+
+  async function abrirComprobanteInterno(pagoId, modo, btn) {
+    const box = content.querySelector("[data-ci-preview]");
+    try {
+      if (btn) btn.disabled = true;
+      if (modo === "ver" && box) {
+        box.style.display = "block";
+        box.innerHTML = '<span style="color:var(--faint);font-size:.8rem">Generando comprobante…</span>';
+      }
+      const resp = await fetch(`${BACKEND}/api/pagos-cliente/${pagoId}/comprobante-pdf`, { headers: headersConAuth() });
+      if (!resp.ok) {
+        let detalle = "";
+        try { const j = await resp.json(); detalle = [j.error, j.details].filter(Boolean).join(" — "); } catch (e2) {}
+        throw new Error("(" + resp.status + ") " + (detalle || "PDF no disponible — verifica que el backend esté actualizado y reiniciado."));
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      if (modo === "descargar") {
+        const a = document.createElement("a");
+        a.href = url; a.download = "ComprobantePago_" + pagoId.slice(0, 8) + ".pdf";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } else if (box) {
+        // OT-0022: el PDF se ve DENTRO del detalle — sin popups (que el
+        // navegador bloquea tras un await) y sin sacar al usuario.
+        box.innerHTML =
+          '<div style="font-size:.72rem;color:var(--faint);margin-bottom:.25rem">Comprobante de pago generado por Contateck</div>' +
+          '<embed src="' + url + '" type="application/pdf" style="width:100%;height:480px;border:1px solid var(--line,#1a2540);border-radius:10px">';
+        // No se revoca el blob mientras el embed lo usa; se libera al navegar.
+      }
+    } catch (err) {
+      const msg = "No se pudo generar el comprobante: " + err.message;
+      if (box && modo === "ver") { box.style.display = "block"; box.innerHTML = '<div style="color:#FB7185;font-size:.82rem;padding:.5rem 0">' + escHtml(msg) + '</div>'; }
+      if (window.CTData && window.CTData.toast) window.CTData.toast(msg, "error");
+    } finally { if (btn) btn.disabled = false; }
+  }
+
+  document.addEventListener("click", async (e) => {
+    const ci = e.target.closest("[data-comp-interno]");
+    if (ci) { e.preventDefault(); abrirComprobanteInterno(ci.getAttribute("data-comp-interno"), ci.getAttribute("data-ci-modo"), ci); return; }
+    const det = e.target.closest("[data-hist-det]");
+    if (det) { e.preventDefault(); renderHistDetalle(parseInt(det.getAttribute("data-hist-det"), 10)); return; }
+    if (e.target.closest("[data-hist-volver]")) { e.preventDefault(); renderHistLista(); return; }
+    const comp = e.target.closest("[data-hist-comprobante]");
+    if (!comp) return;
+    e.preventDefault();
+    comp.style.opacity = ".5";
+    const url = await firmarComprobante(comp.getAttribute("data-hist-comprobante"));
+    comp.style.opacity = "";
+    if (!url) { if (window.CTData && window.CTData.toast) window.CTData.toast("No se pudo abrir el comprobante.", "error"); return; }
+    if (comp.getAttribute("data-comp-modo") === "descargar") {
+      const a = document.createElement("a");
+      a.href = url + "&download=" + encodeURIComponent(comp.getAttribute("data-comp-nombre") || "comprobante");
+      a.download = comp.getAttribute("data-comp-nombre") || "comprobante";
+      document.body.appendChild(a); a.click(); a.remove();
+    } else {
+      window.open(url, "_blank");
+    }
   });
 
   console.log("[CONTATECK] Módulo de facturación cargado · backend:", BACKEND);
