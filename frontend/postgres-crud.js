@@ -40,6 +40,10 @@ window.CTPostgres = (function () {
     // de Debe=Haber garantizada del lado de Postgres.
     crearPolizaCompleta: function (body) { return llamar("POST", "/api/polizas-completas", body); },
     actualizarPolizaCompleta: function (id, body) { return llamar("PUT", "/api/polizas-completas/" + id, body); },
+    corregirPoliza: function (id, body) { return llamar("POST", "/api/polizas-completas/" + id + "/corregir", body); },
+    polizasConPartidas: function (ids) { return llamar("GET", "/api/polizas-completas/con-partidas?ids=" + encodeURIComponent(ids.join(","))); },
+    listarPeriodos: function () { return llamar("GET", "/api/periodos"); },
+    cerrarPeriodo: function (anio, mes) { return llamar("POST", "/api/periodos/cerrar", { anio, mes }); },
     // OT-0020: configuración contable (mapa de roles -> cuentas reales)
     // y cobranza de facturas (registrar/confirmar pago de cliente).
     obtenerPartidasPoliza: function (polizaId) { return llamar("GET", "/api/polizas-completas/" + polizaId + "/partidas"); },

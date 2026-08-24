@@ -41,30 +41,62 @@ export async function actualizarPolizaCompleta(accessToken, polizaId, { tipo, fe
   });
   if (error) {
     log.warn('[postgres] actualizar_poliza_completa:', error.message);
-    return { ok: false, error: error.message };
+    // OT-0025: la función rechaza cambios de partidas con un mensaje que
+    // empieza con "CAMBIO_CONTABLE:". El frontend lo detecta para
+    // ofrecer el flujo de corrección en vez de mostrar un error crudo.
+    const esCambioContable = /CAMBIO_CONTABLE:/i.test(error.message || '');
+    return { ok: false, error: error.message, cambioContable: esCambioContable };
   }
   return { ok: true };
 }
 
-// OT-0020 FIX 3: partidas de una póliza que vive en Postgres — para que
-// el frontend pueda mostrar el detalle (Debe/Haber) de pólizas que no
-// nacieron en ese navegador (ej. las generadas por el flujo de cobranza).
-export async function obtenerPartidasPoliza(accessToken, polizaId, log = console) {
+// OT-0025: trae encabezado + partidas de pólizas específicas (por sus ids).
+// El frontend lo usa tras una corrección para alimentar el Libro Mayor
+// con las partidas de la reversa y la corregida (que nacieron en el
+// backend y el navegador aún no tiene localmente).
+export async function obtenerPolizasConPartidas(accessToken, ids, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
-  const { data, error } = await supabase
+  if (!Array.isArray(ids) || !ids.length) return { ok: true, polizas: [] };
+  const { data: cabeceras, error: e1 } = await supabase
+    .from('polizas')
+    .select('id, folio, tipo, fecha, concepto, monto, estado, ajuste_de_id, tipo_ajuste, motivo_ajuste')
+    .in('id', ids);
+  if (e1) { log.warn('[postgres] obtenerPolizasConPartidas cab:', e1.message); return { ok: false, error: e1.message }; }
+  const { data: partidas, error: e2 } = await supabase
     .from('poliza_partidas')
-    .select('debe, haber, orden, cuentas_contables(codigo, nombre)')
-    .eq('poliza_id', polizaId)
-    .order('orden', { ascending: true });
+    .select('poliza_id, debe, haber, descripcion, orden, cuentas_contables(codigo, nombre)')
+    .in('poliza_id', ids)
+    .order('orden');
+  if (e2) { log.warn('[postgres] obtenerPolizasConPartidas part:', e2.message); return { ok: false, error: e2.message }; }
+  const porPoliza = {};
+  (partidas || []).forEach((p) => {
+    (porPoliza[p.poliza_id] = porPoliza[p.poliza_id] || []).push({
+      codigo: p.cuentas_contables ? p.cuentas_contables.codigo : '',
+      nombre: p.cuentas_contables ? p.cuentas_contables.nombre : '',
+      debe: Number(p.debe) || 0, haber: Number(p.haber) || 0, descripcion: p.descripcion || null,
+    });
+  });
+  const polizas = (cabeceras || []).map((c) => ({
+    id: c.id, folio: c.folio, tipo: c.tipo, fecha: c.fecha, concepto: c.concepto,
+    monto: c.monto, estado: c.estado, ajusteDeId: c.ajuste_de_id, tipoAjuste: c.tipo_ajuste,
+    motivoAjuste: c.motivo_ajuste, asientos: porPoliza[c.id] || [],
+  }));
+  return { ok: true, polizas };
+}
+
+// OT-0025: genera reversa + corrección de una póliza, atómico, sin tocar
+// la original. partidasCorrectas = cómo debe quedar el asiento correcto.
+export async function corregirPolizaConAjuste(accessToken, polizaId, { motivo, partidasCorrectas }, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { data, error } = await supabase.rpc('corregir_poliza_con_ajuste', {
+    p_poliza_id: polizaId, p_motivo: motivo, p_partidas_correctas: partidasCorrectas,
+  });
   if (error) {
-    log.warn('[postgres] obtenerPartidasPoliza:', error.message);
+    log.warn('[postgres] corregir_poliza_con_ajuste:', error.message);
     return { ok: false, error: error.message };
   }
-  const partidas = (data || []).map((r) => ({
-    codigo: r.cuentas_contables ? r.cuentas_contables.codigo : '',
-    nombre: r.cuentas_contables ? r.cuentas_contables.nombre : '',
-    debe: r.debe, haber: r.haber,
-  }));
-  return { ok: true, partidas };
+  // data = { ok, reversa:{id,folio}, correccion:{id,folio} }
+  return { ok: true, reversa: data.reversa, correccion: data.correccion };
 }

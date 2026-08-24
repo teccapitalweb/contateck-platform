@@ -9,7 +9,7 @@
 // ============================================================
 import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
-import { crearPolizaCompleta, actualizarPolizaCompleta, obtenerPartidasPoliza } from '../supabasePolizasCompletas.js';
+import { crearPolizaCompleta, actualizarPolizaCompleta, corregirPolizaConAjuste, obtenerPolizasConPartidas } from '../supabasePolizasCompletas.js';
 
 export const polizasCompletasRouter = Router();
 polizasCompletasRouter.use(verifyAuth);
@@ -18,14 +18,6 @@ function obtenerToken(req) {
   const header = req.headers.authorization || '';
   return header.startsWith('Bearer ') ? header.slice(7) : '';
 }
-
-// OT-0020 FIX 3: detalle (Debe/Haber) de una póliza que vive en Postgres.
-polizasCompletasRouter.get('/polizas-completas/:id/partidas', async (req, res) => {
-  const token = obtenerToken(req);
-  if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
-  const resultado = await obtenerPartidasPoliza(token, req.params.id);
-  res.status(resultado.ok ? 200 : 400).json(resultado);
-});
 
 polizasCompletasRouter.post('/polizas-completas', async (req, res) => {
   const token = obtenerToken(req);
@@ -49,5 +41,32 @@ polizasCompletasRouter.put('/polizas-completas/:id', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Faltan datos de la póliza.' });
   }
   const resultado = await actualizarPolizaCompleta(token, req.params.id, { tipo, fecha, concepto, partidas });
+  res.status(resultado.ok ? 200 : 400).json(resultado);
+});
+
+// OT-0025: corrección con asientos de ajuste. No sobreescribe la
+// original — genera reversa + corregida ligadas, de forma atómica.
+polizasCompletasRouter.post('/polizas-completas/:id/corregir', async (req, res) => {
+  const token = obtenerToken(req);
+  if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
+  const { motivo, partidasCorrectas } = req.body || {};
+  if (!motivo || !String(motivo).trim()) {
+    return res.status(400).json({ ok: false, error: 'El motivo de la corrección es obligatorio.' });
+  }
+  if (!Array.isArray(partidasCorrectas) || partidasCorrectas.length < 2) {
+    return res.status(400).json({ ok: false, error: 'La corrección necesita al menos 2 movimientos.' });
+  }
+  const resultado = await corregirPolizaConAjuste(token, req.params.id, { motivo, partidasCorrectas });
+  res.status(resultado.ok ? 200 : 400).json(resultado);
+});
+
+// OT-0025: encabezado + partidas de pólizas específicas (ids separados
+// por coma). El frontend lo usa para alimentar el Libro Mayor con las
+// partidas de la reversa/corrección recién creadas en el backend.
+polizasCompletasRouter.get('/polizas-completas/con-partidas', async (req, res) => {
+  const token = obtenerToken(req);
+  if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
+  const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const resultado = await obtenerPolizasConPartidas(token, ids);
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });

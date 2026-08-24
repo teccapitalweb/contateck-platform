@@ -220,12 +220,13 @@
     } else {
       const i = arr.findIndex((p) => p.id === poliza.id);
       const existente = i >= 0 ? arr[i] : null;
+      let cambioContable = false;
       if (existente && existente.pgId && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
         try {
           const r = await window.CTPostgres.actualizarPolizaCompleta(existente.pgId, {
             tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
           });
-          if (!r.ok) pgError = r.error;
+          if (!r.ok) { pgError = r.error; cambioContable = !!r.cambioContable; }
         } catch (e) { pgError = e.message; }
       }
       if (!pgError) {
@@ -233,7 +234,9 @@
         else arr.push(poliza);
         guardarPolizas(arr);
       }
-      return { poliza: pgError ? existente : poliza, pgError };
+      // OT-0025: cambioContable indica que se intentó cambiar cuentas/importes
+      // de una póliza real — el llamador debe ofrecer el flujo de corrección.
+      return { poliza: pgError ? existente : poliza, pgError, cambioContable, pgId: existente ? existente.pgId : null };
     }
     guardarPolizas(arr);
     return { poliza, pgError };
@@ -379,10 +382,17 @@
     const cont = getContabilizados();
     return leerCfdis().filter((c) => c && c.estado !== "cancelada" && cont.indexOf(cfdiKey(c)) < 0);
   }
-  function contabilizarCfdi(cfdi) {
+  async function contabilizarCfdi(cfdi) {
     const poliza = cfdiAPoliza(cfdi);
     if (poliza.error) return poliza.error; // el llamador decide cómo mostrarlo
-    savePoliza(poliza);
+    // Fix (ago-2026): antes no se esperaba savePoliza() ni se revisaba su
+    // resultado — si fallaba de fondo (ruta faltante, cuenta sin
+    // configurar, etc.) el error se perdía en silencio y la factura se
+    // marcaba como "contabilizada" en localStorage aunque la póliza
+    // nunca se hubiera creado de verdad en el servidor. Ahora sí se
+    // espera y solo se marca si realmente se guardó.
+    const { pgError } = await savePoliza(poliza);
+    if (pgError) return pgError;
     marcarContabilizado(cfdiKey(cfdi));
     return null;
   }
@@ -476,7 +486,11 @@
   // Estado de Resultados: Ingresos − Costos y gastos = Utilidad
   function estadoResultados() {
     const ingresos = grupoDetalle("400");
-    const gastos = grupoDetalle("500");
+    // Fix (ago-2026): existen 2 grupos de mayor para egresos —
+    // "500 Costos y gastos" y "600 Gastos" — pero antes solo se sumaba
+    // el 500, dejando fuera cuentas como 601/602/603 (Gastos de
+    // operación/administración/venta) de la utilidad del ejercicio.
+    const gastos = [...grupoDetalle("500"), ...grupoDetalle("600")];
     const totalIngresos = round2(ingresos.reduce((s, x) => s + x.saldo, 0));
     const totalGastos = round2(gastos.reduce((s, x) => s + x.saldo, 0));
     return { ingresos, gastos, totalIngresos, totalGastos, utilidad: round2(totalIngresos - totalGastos) };
@@ -1100,6 +1114,65 @@ ${ctas}
   }
 
   /* ---------- Render: SAT / Declaraciones (Bloque 3) ---------- */
+  // ============================================================
+  // OT-0026 · Cierre de periodos contables
+  // ============================================================
+  const MESES_NOMBRE = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  let periodosCache = null;
+
+  async function renderPeriodos() {
+    const pane = document.querySelector('[data-pane="periodos"]');
+    if (!pane) return;
+    pane.innerHTML = `<div class="card"><p style="color:var(--muted)">Cargando periodos…</p></div>`;
+    if (!window.CTPostgres || !window.CTPostgres.listarPeriodos) {
+      pane.innerHTML = `<div class="card"><p class="cont-hint">El cierre de periodos requiere conexión con el servidor.</p></div>`;
+      return;
+    }
+    let r;
+    try { r = await window.CTPostgres.listarPeriodos(); } catch (e) { r = null; }
+    if (!r || !r.ok) {
+      pane.innerHTML = `<div class="card"><p class="cont-err">No se pudo cargar la lista de periodos.</p></div>`;
+      return;
+    }
+    periodosCache = r.periodos || [];
+    // El Balance general (acumulado, no solo del mes) debe cuadrar antes
+    // de permitir cerrar cualquier periodo — reutiliza la misma lógica
+    // que ya se ve en la pestaña Balanza, sin duplicar cálculo.
+    const bg = balanceGeneral();
+    pane.innerHTML = `
+      <div class="card">
+        <h3 class="cont-ef-titulo">Periodos contables</h3>
+        <p style="color:var(--muted);font-size:.88rem;margin:.3rem 0 1rem">
+          Cerrar un periodo bloquea capturar o corregir pólizas con fecha dentro de ese mes.
+          La póliza original de un mes cerrado nunca se reabre — cualquier corrección posterior
+          se registra con la fecha de hoy, en el periodo actual.</p>
+        ${!bg.cuadra ? `<div class="cont-err" style="margin-bottom:1rem">El Balance general no cuadra ahorita mismo (diferencia entre Activo y Pasivo+Capital). No se puede cerrar ningún periodo hasta corregir eso — revisa la pestaña Balanza.</div>` : ""}
+        <table class="tbl"><thead><tr><th>Periodo</th><th>Estado</th><th>Cerrado</th><th></th></tr></thead>
+        <tbody>
+        ${periodosCache.length ? periodosCache.map((p) => `
+          <tr>
+            <td>${MESES_NOMBRE[p.mes]} ${p.anio}</td>
+            <td><span class="pill ${p.estado === "cerrado" ? "pill--pend" : "pill--ok"}">${p.estado === "cerrado" ? "Cerrado" : "Abierto"}</span></td>
+            <td>${p.cerradoEn ? esc(new Date(p.cerradoEn).toLocaleDateString("es-MX")) : "—"}</td>
+            <td>${p.estado === "abierto"
+              ? `<button class="btn btn--ghost btn--sm" data-cerrar-periodo="${p.anio}-${p.mes}" ${!bg.cuadra ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Cerrar periodo</button>
+                 ${!bg.cuadra ? '<span style="display:block;font-size:.72rem;color:var(--faint);margin-top:.25rem">Balance no cuadra</span>' : ""}`
+              : ""}</td>
+          </tr>`).join("")
+          : `<tr><td colspan="4" style="text-align:center;color:var(--faint);padding:1.5rem">Aún no hay pólizas capturadas.</td></tr>`}
+        </tbody></table>
+      </div>`;
+  }
+
+  async function confirmarCerrarPeriodo(anio, mes) {
+    if (!confirm(`¿Cerrar ${MESES_NOMBRE[mes]} ${anio}? Ya no se podrán capturar ni corregir pólizas con fecha en ese mes.`)) return;
+    const r = await window.CTPostgres.cerrarPeriodo(anio, mes);
+    if (!r.ok) { toast(r.error || "No se pudo cerrar el periodo.", "error"); return; }
+    toast(`${MESES_NOMBRE[mes]} ${anio} quedó cerrado.`, "ok");
+    renderPeriodos();
+  }
+
   function renderSAT() {
     const pane = document.querySelector('[data-pane="sat"]');
     if (!pane) return;
@@ -1157,7 +1230,7 @@ ${ctas}
   function renderTodo() {
     renderPeriodoSelector();
     renderStats(); renderCatalogo(); renderPolizasTabla(); renderBalanza(); renderMayor(); renderProveedores();
-    renderEstados(); renderSAT();
+    renderEstados(); renderSAT(); renderPeriodos();
   }
 
   /* ---------- Modal: cuenta ---------- */
@@ -1976,14 +2049,87 @@ ${ctas}
     const btn = cbody.querySelector("[data-cont-guardar-pol]"); if (btn) btn.disabled = true;
     const payload = { tipo, fecha, concepto, asientos };
     if (editandoId) payload.id = editandoId;
-    const { pgError } = await savePoliza(payload);
+    const { pgError, cambioContable, pgId } = await savePoliza(payload);
     if (pgError) {
+      // OT-0026: periodo cerrado — mensaje claro, no error crudo.
+      if (/PERIODO_CERRADO/i.test(pgError)) {
+        msg.innerHTML = `<div class="cont-err">Este periodo ya está cerrado y no admite movimientos nuevos. Revisa la pestaña "Periodos" para más detalle.</div>`;
+        if (btn) btn.disabled = false;
+        return;
+      }
+      // OT-0025: si el rechazo es porque se cambiaron cuentas/importes de
+      // una póliza real, no es un error del usuario — se le ofrece generar
+      // la corrección (reversa + corregida), conservando la original.
+      if (cambioContable && editandoId && pgId) {
+        abrirConfirmacionCorreccion({ localId: editandoId, pgId, asientos });
+        return;
+      }
       msg.innerHTML = `<div class="cont-err">${pgError}</div>`;
       if (btn) btn.disabled = false;
       return;
     }
     editandoId = null;
     closeModal(); renderTodo();
+  }
+
+  // ============================================================
+  // OT-0025 · Flujo de corrección con asientos de ajuste
+  // El usuario editó cuentas/importes de una póliza real. En vez de
+  // sobreescribir, se le explica y se pide motivo; al confirmar, el
+  // backend genera reversa + corregida ligadas a la original.
+  // 'asientos' aquí = cómo definió el usuario que debe quedar el asiento.
+  // ============================================================
+  let correccionState = null;
+  function abrirConfirmacionCorreccion({ localId, pgId, asientos }) {
+    const pol = getPolizas().find((x) => x.id === localId) || {};
+    openModal("Corrección de póliza " + (pol.folio || ""));
+    cbody.innerHTML = `
+      <div style="background:rgba(110,139,255,.08);border:1px solid rgba(110,139,255,.25);border-radius:12px;padding:1rem 1.2rem;margin-bottom:1.1rem">
+        <div style="font-weight:700;margin-bottom:.4rem;color:var(--brand,#6E8BFF)">Estás modificando cuentas o importes que afectan la contabilidad</div>
+        <p style="font-size:.9rem;line-height:1.6;margin:0;color:var(--muted)">
+          Para conservar la trazabilidad, la póliza original <b>${esc(pol.folio || "")}</b> no será modificada.
+          Contateck va a generar automáticamente los movimientos necesarios para corregirla:
+          una <b>reversa</b> que cancela la original y una <b>corrección</b> con el asiento que acabas de definir.
+          Ambas quedarán ligadas a la original.</p>
+      </div>
+      <div class="cont-asientos-head"><span>Así quedará el asiento corregido</span><span>Debe</span><span>Haber</span><span></span></div>
+      <div style="font-size:.86rem;border-top:1px solid var(--line,#1a2540);border-bottom:1px solid var(--line,#1a2540);padding:.5rem 0;margin-bottom:1rem">
+        ${asientos.map((a) => `<div style="display:grid;grid-template-columns:1fr auto auto;gap:1rem;padding:.25rem 0">
+          <span>${esc(a.codigo)} · ${esc(a.nombre || "")}</span>
+          <span style="text-align:right;min-width:90px">${num(a.debe) ? "$" + fmt(a.debe) : "—"}</span>
+          <span style="text-align:right;min-width:90px">${num(a.haber) ? "$" + fmt(a.haber) : "—"}</span></div>`).join("")}
+      </div>
+      <div class="field"><label>Motivo de la corrección <span style="color:#FB7185">*</span></label>
+        <input class="input" id="correccion-motivo" placeholder="Ej. La cuenta correcta era 502 Compras, no 501 Gastos" autocomplete="off"></div>
+      <div data-cont-msg></div>
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-correccion-cancelar>Cancelar</button>
+        <button class="btn btn--primary" data-correccion-confirmar>Continuar con corrección</button></div>`;
+    correccionState = { pgId, asientos };
+    setTimeout(() => { const m = cbody.querySelector("#correccion-motivo"); if (m) m.focus(); }, 50);
+  }
+
+  async function confirmarCorreccion() {
+    if (!correccionState) return;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const motivo = (cbody.querySelector("#correccion-motivo").value || "").trim();
+    if (!motivo) { msg.innerHTML = `<div class="cont-err">El motivo es obligatorio para generar la corrección.</div>`; return; }
+    const btn = cbody.querySelector("[data-correccion-confirmar]"); if (btn) btn.disabled = true;
+    const partidasCorrectas = correccionState.asientos.map((a, i) => ({
+      codigo: a.codigo, debe: num(a.debe), haber: num(a.haber), descripcion: a.descripcion || null, orden: i,
+    }));
+    const r = await window.CTPostgres.corregirPoliza(correccionState.pgId, { motivo, partidasCorrectas });
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo generar la corrección.")}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    const idsNuevos = [correccionState.pgId, r.reversa.id, r.correccion.id];
+    correccionState = null; editandoId = null;
+    closeModal();
+    toast("Corrección generada — reversa " + r.reversa.folio + " y corrección " + r.correccion.folio, "ok", 6000);
+    await recargarPolizasPg(idsNuevos);
+    renderTodo();
   }
 
   function abrirEditarPoliza(id) {
@@ -2049,6 +2195,7 @@ ${ctas}
         <div><span>Fecha</span><b>${esc(fechaCorta(p.fecha))}</b></div>
         <div><span>Folio</span><b>${esc(p.folio)}</b></div></div>
       <p style="margin:.6rem 0 1rem;color:var(--muted)">${esc(p.concepto)}</p>
+      ${bannerAjuste(p)}
       <div style="overflow-x:auto">
       <table class="tbl"><thead><tr><th>Cuenta</th><th>Nombre</th><th style="text-align:right">Debe</th><th style="text-align:right">Haber</th></tr></thead>
       <tbody>${filas}</tbody>
@@ -2056,7 +2203,43 @@ ${ctas}
         <td class="num" style="text-align:right">$${fmt(debe)}</td><td class="num" style="text-align:right">$${fmt(haber)}</td></tr></tfoot></table></div>
       <div class="cont-foot">
         <button class="btn btn--ghost" data-cont-close>Cerrar</button>
-        <button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button></div>`;
+        ${botonEditarPoliza(p)}</div>`;
+  }
+
+  // OT-0025: banner que explica el rol de la póliza dentro de un ajuste
+  // y su vínculo con las demás (original ↔ reversa ↔ corrección).
+  function bannerAjuste(p) {
+    const est = p.estado;
+    const buscarPorPg = (pgId) => getPolizas().find((x) => x.pgId === pgId);
+    if (est === "corregida") {
+      const hijas = getPolizas().filter((x) => x.ajusteDeId && p.pgId && x.ajusteDeId === p.pgId);
+      const rev = hijas.find((x) => x.tipoAjuste === "reversa");
+      const cor = hijas.find((x) => x.tipoAjuste === "correccion");
+      return `<div style="background:rgba(251,191,113,.08);border:1px solid rgba(251,191,113,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FBBF71">Póliza corregida</b> — esta póliza fue corregida y ya no se modifica.
+        Se cancela con la reversa <b>${rev ? esc(rev.folio) : "—"}</b> y se reemplaza por la corrección <b>${cor ? esc(cor.folio) : "—"}</b>.</div>`;
+    }
+    if (est === "reversa") {
+      const orig = p.ajusteDeId ? buscarPorPg(p.ajusteDeId) : null;
+      return `<div style="background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b>Reversa</b> — cancela el efecto de la póliza original <b>${orig ? esc(orig.folio) : "—"}</b>. Sus importes son los de la original, invertidos.</div>`;
+    }
+    if (est === "correccion") {
+      const orig = p.ajusteDeId ? buscarPorPg(p.ajusteDeId) : null;
+      return `<div style="background:rgba(110,139,255,.08);border:1px solid rgba(110,139,255,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#6E8BFF">Corrección</b> — es el asiento corregido de la póliza original <b>${orig ? esc(orig.folio) : "—"}</b>.
+        ${p.motivoAjuste ? `<br><span style="color:var(--muted)">Motivo: ${esc(p.motivoAjuste)}</span>` : ""}</div>`;
+    }
+    return "";
+  }
+
+  // OT-0025: las pólizas de ajuste (reversa/corrección) y las ya corregidas
+  // no se editan directamente. Una corrección sí puede volver a corregirse
+  // (encadena), así que esa mantiene el botón.
+  function botonEditarPoliza(p) {
+    if (p.estado === "reversa") return "";
+    if (p.estado === "corregida") return "";
+    return `<button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button>`;
   }
 
   /* ---------- Modal: Contabilizar CFDI emitidos (Bloque 1) ---------- */
@@ -2089,21 +2272,27 @@ ${ctas}
         <button class="btn btn--primary" data-cont-contab-go>Contabilizar seleccionadas</button></div>`;
     cbody._pendientes = pend;
   }
-  function ejecutarContabilizar() {
+  async function ejecutarContabilizar() {
     const pend = cbody._pendientes || []; let n = 0;
     const msg = cbody.querySelector("[data-cont-msg]");
     let errorConfig = null;
-    cbody.querySelectorAll(".cont-chk").forEach((chk) => {
-      if (errorConfig || !chk.checked) return;
+    const btn = cbody.querySelector("[data-cont-contab-go]"); if (btn) btn.disabled = true;
+    const checks = Array.from(cbody.querySelectorAll(".cont-chk")).filter((chk) => chk.checked);
+    // Se procesan en secuencia (no en paralelo) para no saturar al
+    // backend con muchas escrituras simultáneas ni perder el orden de
+    // los folios generados.
+    for (const chk of checks) {
       const c = pend[parseInt(chk.getAttribute("data-idx"), 10)];
-      if (!c) return;
-      const err = contabilizarCfdi(c);
-      if (err) errorConfig = err; else n++;
-    });
+      if (!c) continue;
+      const err = await contabilizarCfdi(c);
+      if (err) { errorConfig = err; break; }
+      n++;
+    }
     if (errorConfig) {
       // Falta configuración contable: se explica en el modal con acceso
       // directo, en vez de cerrar como si todo hubiera salido bien.
       if (msg) msg.innerHTML = errorConfigHTML(errorConfig);
+      if (btn) btn.disabled = false;
       if (n) renderTodo();
       return;
     }
@@ -2246,6 +2435,15 @@ ${ctas}
       return;
     }
     if (e.target.closest("[data-cont-guardar-pol]")) { guardarPolizaForm(); return; }
+    // OT-0025: flujo de corrección con asientos de ajuste.
+    if (e.target.closest("[data-correccion-cancelar]")) { correccionState = null; editandoId = null; closeModal(); return; }
+    if (e.target.closest("[data-correccion-confirmar]")) { confirmarCorreccion(); return; }
+    const cerrarPer = e.target.closest("[data-cerrar-periodo]");
+    if (cerrarPer) {
+      const [anio, mes] = cerrarPer.getAttribute("data-cerrar-periodo").split("-").map(Number);
+      confirmarCerrarPeriodo(anio, mes);
+      return;
+    }
     const modoBtn = e.target.closest("[data-modo]");
     if (modoBtn) {
       cbody.querySelectorAll(".cont-modo").forEach((b) => b.classList.toggle("is-active", b === modoBtn));
@@ -2366,6 +2564,59 @@ ${ctas}
   function cerrarBuscadores(excepto) {
     document.querySelectorAll(".fac-sat-results.is-open").forEach((b) => { if (b !== excepto) b.classList.remove("is-open"); });
   }
+  // Mejora de UX: si el buscador de cuentas no encuentra nada, permite
+  // dar de alta la cuenta SIN salir del formulario que se esté llenando
+  // (póliza, factura, lo que sea) — evita perder lo ya capturado.
+  // Funciona en CUALQUIER buscador de cuenta porque todos comparten el
+  // mismo .fac-sat-field / .fac-sat-results (ver OT-0018).
+  function abrirCrearCuentaInline(box, textoBuscado) {
+    const codigoSugerido = /^\d+$/.test(textoBuscado.trim()) ? textoBuscado.trim() : "";
+    const nombreSugerido = codigoSugerido ? "" : textoBuscado.trim();
+    box.innerHTML = `
+      <div style="padding:.7rem .75rem">
+        <div style="font-size:.78rem;font-weight:700;margin-bottom:.5rem;color:var(--brand,#6E8BFF)">Nueva cuenta</div>
+        <input class="input" id="inline-cta-codigo" placeholder="Código (ej. 301)" value="${esc(codigoSugerido)}" style="margin-bottom:.4rem">
+        <input class="input" id="inline-cta-nombre" placeholder="Nombre" value="${esc(nombreSugerido)}" style="margin-bottom:.4rem">
+        <select class="input" id="inline-cta-nat" style="margin-bottom:.4rem">
+          <option>Deudora</option><option>Acreedora</option></select>
+        <select class="input" id="inline-cta-padre" style="margin-bottom:.5rem">${mayorOptions("")}</select>
+        <div data-inline-cta-msg></div>
+        <div style="display:flex;gap:.5rem">
+          <button type="button" class="btn btn--ghost btn--sm" data-cancelar-cuenta-inline style="flex:1">Cancelar</button>
+          <button type="button" class="btn btn--primary btn--sm" data-guardar-cuenta-inline style="flex:1">Crear y usar</button>
+        </div>
+      </div>`;
+  }
+
+  async function guardarCuentaInline(field) {
+    const box = field.querySelector(".fac-sat-results");
+    const codigo = box.querySelector("#inline-cta-codigo").value.trim();
+    const nombre = box.querySelector("#inline-cta-nombre").value.trim();
+    const nat = box.querySelector("#inline-cta-nat").value;
+    const padre = box.querySelector("#inline-cta-padre").value || null;
+    const msg = box.querySelector("[data-inline-cta-msg]");
+    if (!codigo || !nombre) { msg.innerHTML = `<div class="cont-err" style="margin-bottom:.4rem">Captura código y nombre.</div>`; return; }
+    if (getCuentas().find((x) => x.codigo === codigo)) {
+      msg.innerHTML = `<div class="cont-err" style="margin-bottom:.4rem">Ya existe una cuenta con el código ${esc(codigo)}.</div>`;
+      return;
+    }
+    const btn = box.querySelector("[data-guardar-cuenta-inline]"); if (btn) btn.disabled = true;
+    const r = await saveCuenta({ codigo, nombre, nat, nivel: padre ? 2 : 1, padre });
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err" style="margin-bottom:.4rem">${esc(r.error)}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    // Mismo efecto que elegir una opción del dropdown normal (OT-0018).
+    const inputCuenta = field.querySelector(".cuenta-busca");
+    const hidden = field.querySelector('input[type="hidden"]');
+    if (inputCuenta) inputCuenta.value = codigo + " · " + nombre;
+    if (hidden) hidden.value = codigo;
+    box.classList.remove("is-open");
+    toast("Cuenta " + codigo + " creada y seleccionada.", "ok");
+    if (typeof actualizarCuadre === "function") { try { actualizarCuadre(); } catch (e) {} }
+  }
+
   function buscarCuenta(input, mostrarTodo) {
     const field = input.closest(".fac-sat-field");
     if (!field) return;
@@ -2375,7 +2626,9 @@ ${ctas}
     const filtradas = q ? ctas.filter((c) => c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)) : ctas;
     box.innerHTML = filtradas.length
       ? filtradas.map((c) => `<div class="fac-sat-opt" data-codigo="${esc(c.codigo)}" data-txt="${esc(c.codigo + " · " + c.nombre)}"><b>${esc(c.codigo)}</b> · ${esc(c.nombre)}</div>`).join("")
-      : `<div class="fac-sat-hint">Sin resultados para "${esc(input.value)}".</div>`;
+      : `<div class="fac-sat-hint">Sin resultados para "${esc(input.value)}".
+          <button type="button" class="btn btn--ghost btn--sm" style="margin-top:.5rem;width:100%" data-crear-cuenta-inline="${esc(input.value)}">+ Crear cuenta "${esc(input.value)}"</button>
+        </div>`;
     cerrarBuscadores(box);
     box.classList.add("is-open");
   }
@@ -2400,6 +2653,24 @@ ${ctas}
     // OT-0020 fix: clic fuera de cualquier buscador cierra los dropdowns
     // abiertos (antes se quedaban pegados al pasar de un campo a otro).
     if (!e.target.closest(".fac-sat-field")) cerrarBuscadores();
+    const crearInline = e.target.closest("[data-crear-cuenta-inline]");
+    if (crearInline) {
+      const field = crearInline.closest(".fac-sat-field");
+      const box = field ? field.querySelector(".fac-sat-results") : null;
+      if (box) abrirCrearCuentaInline(box, crearInline.getAttribute("data-crear-cuenta-inline") || "");
+      return;
+    }
+    if (e.target.closest("[data-cancelar-cuenta-inline]")) {
+      const field = e.target.closest(".fac-sat-field");
+      const input = field ? field.querySelector(".cuenta-busca") : null;
+      if (input) buscarCuenta(input, true);
+      return;
+    }
+    if (e.target.closest("[data-guardar-cuenta-inline]")) {
+      const field = e.target.closest(".fac-sat-field");
+      if (field) guardarCuentaInline(field);
+      return;
+    }
     const opt = e.target.closest(".fac-sat-field .fac-sat-opt");
     if (opt) {
       const field = opt.closest(".fac-sat-field");
@@ -2552,6 +2823,33 @@ ${ctas}
     });
     if (cambiado) guardarPolizas(arr);
     return cambiado;
+  }
+
+  // OT-0025: tras una corrección, trae del backend la original (ya
+  // marcada 'corregida'), la reversa y la corregida CON sus partidas, y
+  // las mete al localStorage — así el Libro Mayor ve el efecto neto y el
+  // detalle muestra los vínculos entre las tres.
+  async function recargarPolizasPg(idsExtra) {
+    if (!window.CTPostgres || !window.CTPostgres.polizasConPartidas) return;
+    const arr = leerPolizas();
+    const ids = arr.map((p) => p.pgId).filter(Boolean);
+    (idsExtra || []).forEach((id) => { if (id && ids.indexOf(id) < 0) ids.push(id); });
+    if (!ids.length) return;
+    let r;
+    try { r = await window.CTPostgres.polizasConPartidas(ids); } catch (e) { return; }
+    if (!r || !r.ok) return;
+    (r.polizas || []).forEach((p) => {
+      let local = arr.find((x) => x.pgId === p.id);
+      const datos = {
+        pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto,
+        estado: p.estado, origen: "postgres",
+        ajusteDeId: p.ajusteDeId || null, tipoAjuste: p.tipoAjuste || null, motivoAjuste: p.motivoAjuste || null,
+      };
+      if (p.asientos && p.asientos.length) datos.asientos = p.asientos;
+      if (local) Object.assign(local, datos);
+      else arr.push(Object.assign({ id: "pg-" + p.id, creada: Date.now(), asientos: p.asientos || [] }, datos));
+    });
+    guardarPolizas(arr);
   }
 
   function init() {
