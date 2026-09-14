@@ -41,6 +41,7 @@ window.CTPostgres = (function () {
     crearPolizaCompleta: function (body) { return llamar("POST", "/api/polizas-completas", body); },
     actualizarPolizaCompleta: function (id, body) { return llamar("PUT", "/api/polizas-completas/" + id, body); },
     corregirPoliza: function (id, body) { return llamar("POST", "/api/polizas-completas/" + id + "/corregir", body); },
+    anularPolizaDuplicada: function (id, motivo) { return llamar("POST", "/api/polizas-completas/" + id + "/anular", { motivo }); },
     polizasConPartidas: function (ids) { return llamar("GET", "/api/polizas-completas/con-partidas?ids=" + encodeURIComponent(ids.join(","))); },
     listarPeriodos: function () { return llamar("GET", "/api/periodos"); },
     cerrarPeriodo: function (anio, mes) { return llamar("POST", "/api/periodos/cerrar", { anio, mes }); },
@@ -48,6 +49,7 @@ window.CTPostgres = (function () {
     // y cobranza de facturas (registrar/confirmar pago de cliente).
     obtenerPartidasPoliza: function (polizaId) { return llamar("GET", "/api/polizas-completas/" + polizaId + "/partidas"); },
     guardarConfigContable: function (body) { return llamar("PUT", "/api/config-contable", body); },
+    leerConfigContable: function () { return llamar("GET", "/api/config-contable"); },
     registrarPagoCliente: function (body) { return llamar("POST", "/api/pagos-cliente", body); },
     listarPagosCfdi: function (cfdiId) { return llamar("GET", "/api/pagos-cliente?cfdiId=" + encodeURIComponent(cfdiId)); },
     confirmarPagoCliente: function (pagoId) { return llamar("POST", "/api/pagos-cliente/" + pagoId + "/confirmar"); },

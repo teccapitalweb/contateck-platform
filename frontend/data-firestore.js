@@ -15,6 +15,13 @@ const configured = !!cfg.apiKey && cfg.apiKey.indexOf("PEGA") === -1 && cfg.apiK
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 function hoyCorto() { const d = new Date(); return String(d.getDate()).padStart(2, "0") + " " + MESES[d.getMonth()]; }
 function parseMoney(s) { const n = parseFloat(String(s).replace(/[^0-9.]/g, "")); return isNaN(n) ? 0 : Math.round(n * 100) / 100; }
+// OT-mejoras-nomina: mismo criterio que parseMoney (limpiar en automático
+// al guardar, no bloquear a media captura) — RFC/CURP no llevan guiones
+// ni puntos en la vida real, y NSS/cuenta bancaria son puramente
+// numéricos. Si alguien pega "123-456.789" en la CLABE, se guarda
+// "123456789", nunca el texto sucio.
+function soloAlfanumerico(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+function soloNumeros(s) { return String(s || "").replace(/[^0-9]/g, ""); }
 function pad5(n) { return String(n).padStart(5, "0"); }
 function hex(n) { let s = ""; for (let i = 0; i < n; i++) s += "0123456789ABCDEF"[Math.floor(Math.random() * 16)]; return s; }
 function uuidShort() { return hex(4) + "…" + hex(4); }
@@ -84,24 +91,63 @@ const SCHEMAS = {
       { k: "nombre", label: "Nombre completo", type: "text", ph: "Nombre del empleado", req: true },
       { k: "puesto", label: "Puesto", type: "text", ph: "Ej. Contadora", req: true },
       { k: "departamento", label: "Departamento", type: "text", ph: "Ej. Contabilidad" },
-      { k: "fecha_ingreso", label: "Fecha de ingreso", type: "text", ph: "AAAA-MM-DD" },
-      { k: "sueldo", label: "Sueldo mensual (MXN)", type: "money", ph: "0.00", req: true },
-      { k: "rfc", label: "RFC", type: "text", ph: "Opcional" },
-      { k: "curp", label: "CURP", type: "text", ph: "Opcional" },
-      { k: "nss", label: "NSS (IMSS)", type: "text", ph: "Opcional" },
-      { k: "cuenta_bancaria", label: "Cuenta bancaria / CLABE", type: "text", ph: "Opcional" },
+      { k: "fecha_ingreso", label: "Fecha de ingreso", type: "date" },
+      // OT-nomina: el usuario captura como piensa ("$6,000 al mes") y el
+      // sistema traduce a salario diario por dentro — conversión silenciosa
+      // en editable(), el usuario nunca ve el divisor. Divisores:
+      // mensual/30, quincenal/15, semanal/7, diario/1.
+      {
+        k: "sueldo_tipo", label: "Tipo de sueldo", type: "seg", def: "mensual",
+        opts: [
+          { v: "mensual", t: "Mensual" }, { v: "quincenal", t: "Quincenal" },
+          { v: "semanal", t: "Semanal" }, { v: "diario", t: "Diario" },
+        ],
+      },
+      { k: "sueldo_monto_original", label: "Monto pactado (MXN)", type: "money", ph: "0.00", req: true },
+      { k: "rfc", label: "RFC", type: "text", ph: "Opcional", mask: "alfa", max: 13 },
+      { k: "curp", label: "CURP", type: "text", ph: "Opcional", mask: "alfa", max: 18 },
+      { k: "nss", label: "NSS (IMSS)", type: "text", ph: "Opcional", mask: "num", max: 11 },
+      { k: "cuenta_bancaria", label: "Cuenta bancaria / CLABE", type: "text", ph: "Opcional", mask: "num", max: 18 },
+      // OT-nomina-p1: estados de ausencia temporal (incapacidad, maternidad,
+      // permiso) — se guardan en minúsculas (consistente con "ok"/"baja" ya
+      // existentes en la BD); la etiqueta visible es la bonita. La prenómina
+      // (pieza 3) solo pagará a los que estén estrictamente en "ok".
+      {
+        k: "estado", label: "Estado", type: "seg", def: "ok",
+        opts: [
+          { v: "ok", t: "Activo" }, { v: "incapacidad", t: "Incapacidad" },
+          { v: "maternidad", t: "Maternidad" }, { v: "permiso", t: "Permiso" },
+          { v: "baja", t: "Baja" },
+        ],
+      },
     ],
-    editable: (v) => ({
-      nombre: v.nombre.trim(), puesto: v.puesto.trim(), sueldo: parseMoney(v.sueldo),
-      departamento: (v.departamento || "").trim() || null,
-      fecha_ingreso: (v.fecha_ingreso || "").trim() || null,
-      rfc: (v.rfc || "").trim() || null, curp: (v.curp || "").trim() || null,
-      nss: (v.nss || "").trim() || null, cuenta_bancaria: (v.cuenta_bancaria || "").trim() || null,
-    }),
+    editable: (v) => {
+      const tipo = v.sueldo_tipo || "mensual";
+      const monto = parseMoney(v.sueldo_monto_original);
+      // Conversión silenciosa a salario diario — el usuario nunca la ve.
+      // OT-nomina-precision: se guarda con 6 decimales (no 2) para evitar
+      // el "centavo fantasma". Ej: 4000/7 = 571.428571 (no 571.43). El
+      // redondeo a 2 decimales se hace solo al final, en la prenómina.
+      const DIVISORES = { mensual: 30, quincenal: 15, semanal: 7, diario: 1 };
+      const diario = Math.round((monto / (DIVISORES[tipo] || 30)) * 1e6) / 1e6;
+      return {
+        nombre: v.nombre.trim(), puesto: v.puesto.trim(),
+        sueldo: diario, sueldo_tipo: tipo, sueldo_monto_original: monto,
+        departamento: (v.departamento || "").trim() || null,
+        fecha_ingreso: (v.fecha_ingreso || "").trim() || null,
+        rfc: soloAlfanumerico(v.rfc) || null, curp: soloAlfanumerico(v.curp) || null,
+        nss: soloNumeros(v.nss) || null, cuenta_bancaria: soloNumeros(v.cuenta_bancaria) || null,
+        estado: v.estado || "ok",
+      };
+    },
     meta: () => ({ estado: "ok", createdAt: Date.now() }),
     fill: (o) => ({
-      nombre: o.nombre, puesto: o.puesto, sueldo: o.sueldo, departamento: o.departamento,
+      nombre: o.nombre, puesto: o.puesto,
+      sueldo_tipo: o.sueldo_tipo || "mensual",
+      sueldo_monto_original: o.sueldo_monto_original || o.sueldo,
+      departamento: o.departamento,
       fecha_ingreso: o.fecha_ingreso, rfc: o.rfc, curp: o.curp, nss: o.nss, cuenta_bancaria: o.cuenta_bancaria,
+      estado: o.estado,
     }),
   },
 };
@@ -118,8 +164,14 @@ let current = null; // {mode, schema?, coll, id?, obj?, label?}
 function fieldHTML(f, val) {
   const v = val == null ? "" : String(val);
   if (f.type === "seg") {
-    return '<div class="fld"><label>' + f.label + '</label><div class="seg" data-seg="' + f.k + '">' +
-      f.opts.map((o) => '<button type="button" data-val="' + o + '" class="' + ((val ? o === val : o === f.def) ? "is-active" : "") + '">' + o + "</button>").join("") +
+    // OT-nomina-p1: soporta opciones como string plano ("Diario") o como
+    // par { v: valor-interno, t: etiqueta-visible } — retrocompatible con
+    // los esquemas ya existentes (pólizas). flex-wrap para que 5 opciones
+    // (Estado del empleado) acomoden en 2 filas sin desbordarse del modal.
+    const opts = f.opts.map((o) => (typeof o === "string" ? { v: o, t: o } : o));
+    const activo = val || f.def;
+    return '<div class="fld"><label>' + f.label + '</label><div class="seg" data-seg="' + f.k + '" style="flex-wrap:wrap">' +
+      opts.map((o) => '<button type="button" data-val="' + o.v + '" class="' + (o.v === activo ? "is-active" : "") + '">' + o.t + "</button>").join("") +
       "</div></div>";
   }
   if (f.type === "money") {
@@ -127,8 +179,23 @@ function fieldHTML(f, val) {
       '<div class="money-in"><input data-in="' + f.k + '" inputmode="decimal" value="' + v + '" placeholder="' + (f.ph || "") + '"></div>' +
       '<span class="err">Escribe un monto válido.</span></div>';
   }
+  // OT-mejoras-nomina: selector nativo de fecha (calendario del propio
+  // navegador) en vez de texto libre — antes se pedía "AAAA-MM-DD" a mano,
+  // fácil de escribir mal. El valor que entrega este input ya sale en
+  // formato ISO (AAAA-MM-DD), exactamente lo que espera la columna `date`
+  // en Postgres — no hace falta tocar readForm() ni el backend.
+  if (f.type === "date") {
+    return '<div class="fld" data-fld="' + f.k + '"><label>' + f.label + '</label>' +
+      '<input data-in="' + f.k + '" type="date" value="' + v + '"><span class="err">Este campo es obligatorio.</span></div>';
+  }
+  // OT-mejoras-nomina: data-mask bloquea EN VIVO (letra por letra) los
+  // caracteres que no aplican — "alfa" para RFC/CURP (solo letras y
+  // números, mayúsculas), "num" para NSS/cuenta bancaria (solo dígitos).
+  // maxlength usa el tope MÁXIMO real (RFC puede ser 12 o 13, CLABE 16 o
+  // 18) — nunca fuerza una longitud exacta que rechazaría casos válidos.
   return '<div class="fld" data-fld="' + f.k + '"><label>' + f.label + '</label>' +
-    '<input data-in="' + f.k + '" type="text" value="' + v.replace(/"/g, "&quot;") + '" placeholder="' + (f.ph || "") + '"><span class="err">Este campo es obligatorio.</span></div>';
+    '<input data-in="' + f.k + '" type="text"' + (f.mask ? ' data-mask="' + f.mask + '"' : "") + (f.max ? ' maxlength="' + f.max + '"' : "") +
+    ' value="' + v.replace(/"/g, "&quot;") + '" placeholder="' + (f.ph || "") + '"><span class="err">Este campo es obligatorio.</span></div>';
 }
 
 function bindSegs() {
@@ -292,6 +359,25 @@ document.querySelectorAll("[data-search]").forEach((inp) => {
   inp.addEventListener("input", () => { filters[coll] = (inp.value || "").toLowerCase().trim(); refresh(coll); });
 });
 
+// OT-mejoras-nomina: bloqueo EN VIVO de caracteres que no aplican, letra
+// por letra mientras se escribe — no deja que aparezcan guiones/puntos
+// en RFC/CURP, ni letras en NSS/cuenta bancaria. Delegado en `document`
+// (no en el input directo) porque estos campos se crean e se destruyen
+// cada vez que se abre/cierra el modal — un listener directo se perdería.
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  const mask = el.getAttribute && el.getAttribute("data-mask");
+  if (!mask) return;
+  const antes = el.value;
+  let despues = antes;
+  if (mask === "alfa") despues = antes.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  else if (mask === "num") despues = antes.replace(/[^0-9]/g, "");
+  if (despues === antes) return;
+  const cursor = el.selectionStart == null ? despues.length : el.selectionStart - (antes.length - despues.length);
+  el.value = despues;
+  try { el.setSelectionRange(cursor, cursor); } catch (e2) { /* algunos navegadores/tipos de input no soportan setSelectionRange */ }
+});
+
 /* Pintado inicial con ids asegurados (sirve también en modo demo) */
 ["polizas", "cfdis", "empleados"].forEach((c) => { ensureIds(c); refresh(c); });
 
@@ -309,15 +395,6 @@ if (configured) {
     db = getFirestore(app);
     _collection = collection; _addDoc = addDoc; _doc = doc; _updateDoc = updateDoc; _deleteDoc = deleteDoc;
 
-    /* ---- OT-0008-B: puente Supabase Auth → Firebase Auth ----
-       Las reglas de Firestore exigen request.auth != null (de Firebase).
-       Desde que el login real es con Supabase (OT-0004), Firestore
-       rechazaba todo con "permission-denied". Aquí se pide al backend
-       un Firebase Custom Token (usando la sesión de Supabase ya
-       verificada) y se inicia sesión también en Firebase, sin pedirle
-       nada nuevo al usuario. Si algo de esto falla, se sigue de largo:
-       las lecturas de Firestore fallarán igual que antes (con su
-       propio try/catch), no se rompe el resto del panel. */
     try {
       const start = Date.now();
       while (window.CONTATECK_SUPABASE_TOKEN === undefined && Date.now() - start < 4000) {
@@ -368,12 +445,6 @@ if (configured) {
   }
 }
 
-/* ---- OT-0008 · Fase A: mezclar empleados/pólizas de Postgres (aditivo) ----
-   auth-guard.js trae estos datos en paralelo vía /api/operacion; como los
-   dos scripts son módulos que arrancan casi al mismo tiempo, esperamos un
-   momento corto a que window.CONTATECK_EMPLEADOS_PG/POLIZAS_PG existan
-   antes de decidir si hay algo que mezclar. Si nunca llegan (sin Postgres,
-   sin sesión, etc.), no pasa nada — el panel sigue con lo de Firestore. */
 async function esperarOperacionPostgres(maxMs = 5000) {
   const start = Date.now();
   while (
@@ -400,18 +471,11 @@ function mezclarOperacionPostgres() {
 try {
   await esperarOperacionPostgres();
   mezclarOperacionPostgres();
-  // Red de seguridad: si el backend tardó más de los 5s de arriba (ej.
-  // arranque en frío), reintenta una vez más pasados unos segundos.
   setTimeout(mezclarOperacionPostgres, 3000);
 } catch (e) {
-  // No debe romper el resto del panel si algo falla aquí; se deja como
-  // warning silencioso (no error) para diagnóstico futuro si hiciera falta.
   console.warn("[CONTATECK][OT-0008] No se pudo mezclar empleados/pólizas de Postgres:", e);
 }
 
-/* ---- OT-0012: CFDIs reales desde Postgres (reemplazo total, no mezcla) ----
-   A diferencia de empleados/pólizas, aquí NO se combina con nada local ni
-   con Firestore — Postgres es la única fuente de verdad para Facturación. */
 function formatFechaCorta(iso) {
   if (!iso) return hoyCorto();
   const d = new Date(iso);
@@ -431,13 +495,7 @@ function mapCfdiPostgres(r) {
     estado: r.estatus === "cancelado" ? "cancelada" : "ok",
     cfdiId: r.fiscalapi_id || null,
     tipo: r.tipo || "I",
-    // OT-0019: PUE/PPD real, capturado desde Fiscalapi. null = factura
-    // vieja de antes de este fix, tratar como "desconocido", no como PUE.
     metodoPago: r.metodo_pago || null,
-    // metodoPago/saldo no se guardan hoy en Postgres (ver `raw`); se dejan
-    // sin definir a propósito para que el botón de REP no se muestre por
-    // error — más seguro ocultarlo que asumir mal. Pendiente si se necesita
-    // el flujo de REP sobre CFDIs ya existentes en una vuelta futura.
   };
 }
 async function esperarCfdisPostgres(maxMs = 5000) {
@@ -448,7 +506,7 @@ async function esperarCfdisPostgres(maxMs = 5000) {
 }
 function cargarCfdisPostgres() {
   const pg = window.CONTATECK_CFDIS_PG;
-  if (!Array.isArray(pg)) return; // sin backend/sesión: la tabla queda vacía, sin datos falsos
+  if (!Array.isArray(pg)) return;
   state.cfdis = pg.map(mapCfdiPostgres);
   refresh("cfdis");
 }
@@ -460,12 +518,6 @@ try {
   console.warn("[CONTATECK][OT-0012] No se pudieron cargar los CFDIs de Postgres:", e);
 }
 
-/* ---- Nómina Parte A (OT-0017): empleados reales desde Postgres ----
-   Reemplazo total (no mezcla) — igual criterio que CFDIs: nada de
-   datos demo mezclados con reales. Las columnas ya vienen recortadas
-   por el backend según el rol (auditor no recibe sueldo/rfc/curp/nss/
-   cuenta_bancaria, así que esos campos llegan undefined y se muestran
-   como "—", nunca inventados). */
 async function esperarEmpleadosPostgres(maxMs = 5000) {
   const start = Date.now();
   while (window.CONTATECK_EMPLEADOS_REAL_PG === undefined && Date.now() - start < maxMs) {
@@ -474,7 +526,7 @@ async function esperarEmpleadosPostgres(maxMs = 5000) {
 }
 function cargarEmpleadosPostgres() {
   const pg = window.CONTATECK_EMPLEADOS_REAL_PG;
-  if (!Array.isArray(pg)) return; // sin backend/sesión/permiso: la tabla queda vacía, sin datos falsos
+  if (!Array.isArray(pg)) return;
   state.empleados = pg;
   ensureIds("empleados");
   refresh("empleados");
@@ -487,20 +539,11 @@ try {
   console.warn("[CONTATECK][OT-0017] No se pudieron cargar los empleados de Postgres:", e);
 }
 
-/* ============================================================
-   API pública para otros módulos (facturacion.js).
-   OT-0012: el backend ya guardó el CFDI en Postgres como parte de la
-   respuesta de /api/facturar — aquí ya NO se escribe nada a Firestore.
-   Solo se agrega a la tabla en memoria para que se vea al instante, sin
-   esperar el siguiente refresh de /api/cfdis.
-   ============================================================ */
 async function addCfdiTimbrado(parcial) {
   parcial = parcial || {};
   const uuidFull = String(parcial.uuid || "");
   const obj = {
-    id: "local-" + (++localSeq), // temporal hasta el próximo refresh real de Postgres
-    // OT-0022: sin folios inventados — si el timbrado no trajo folio,
-    // se muestra "—" y el refresh de Postgres trae el real (series+consecutive).
+    id: "local-" + (++localSeq),
     folio: parcial.folio || "—",
     uuid: uuidFull ? (uuidFull.slice(0, 8) + "…" + uuidFull.slice(-4)) : "—",
     uuidFull: uuidFull,
@@ -524,9 +567,6 @@ async function addCfdiTimbrado(parcial) {
 window.CTData = window.CTData || {};
 window.CTData.addCfdi = addCfdiTimbrado;
 
-// OT-0012: /api/cancelar ya actualizó estatus='cancelado' en Postgres del
-// lado del backend. Aquí solo se refleja en la tabla en memoria, sin
-// ninguna escritura a Firestore.
 async function markCfdiCancelledLocal(rowId) {
   const f = state.cfdis.find((x) => x.id === rowId);
   if (!f) return null;
@@ -536,7 +576,6 @@ async function markCfdiCancelledLocal(rowId) {
 }
 window.CTData.markCfdiCancelled = markCfdiCancelledLocal;
 
-/* ---------- Catálogo de clientes y productos guardados ---------- */
 function getClientes() { return state.clientes.slice(); }
 function getProductos() { return state.productos.slice(); }
 
@@ -549,9 +588,8 @@ async function saveClienteLocal(c) {
   };
   if (!obj.rfc || !obj.nombre) return null;
   const existe = state.clientes.find((x) => x.rfc === obj.rfc);
-  if (existe) return existe; // no duplicar por RFC
+  if (existe) return existe;
   try {
-    // OT-0008-C: clientes/productos ahora se crean en Postgres primero.
     if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
       const r = await window.CTPostgres.crear("clientes", { nombre: obj.nombre, rfc: obj.rfc, uso_cfdi: obj.usoCfdi });
       if (r.ok) obj.id = r.registro.id;
@@ -591,13 +629,8 @@ window.CTData.getProductos = getProductos;
 window.CTData.saveCliente = saveClienteLocal;
 window.CTData.saveProducto = saveProductoLocal;
 
-/* ---------- Lectura de CFDIs y saldos (para nota de crédito / REP) ---------- */
 window.CTData.getCfdis = () => state.cfdis.slice();
 
-// OT-0012: actualiza el saldo pendiente (REP parcial) solo en memoria —
-// ya no escribe a Firestore. El saldo real no se persiste todavía en
-// Postgres (columna pendiente para cuando se retome el flujo de REP a
-// fondo); esto es una limitación conocida, no un bug nuevo de este fix.
 async function updateCfdiSaldoLocal(rowId, nuevoSaldo) {
   const f = state.cfdis.find((x) => x.id === rowId);
   if (!f) return;
@@ -606,9 +639,6 @@ async function updateCfdiSaldoLocal(rowId, nuevoSaldo) {
 }
 window.CTData.updateCfdiSaldo = updateCfdiSaldoLocal;
 
-/* ---------- Perfiles de marca (logo + color por consultora) ---------- */
-// Todas tus consultoras facturan con el MISMO RFC (persona física), pero cada
-// una con su propio branding en el PDF/correo. Se guardan en el navegador.
 const PERFILES_KEY = "contateck_perfiles";
 
 function _leerPerfiles() {
@@ -616,7 +646,6 @@ function _leerPerfiles() {
     const raw = JSON.parse(localStorage.getItem(PERFILES_KEY) || "null");
     if (raw && Array.isArray(raw.perfiles)) return raw;
   } catch (e) { /* sigue a migración */ }
-  // Migración: si existía la config vieja de un solo logo, conviértela en perfil.
   try {
     const viejo = JSON.parse(localStorage.getItem("contateck_empresa") || "null");
     if (viejo && (viejo.logo || viejo.color)) {
@@ -667,7 +696,6 @@ function deletePerfil(id) {
   if (d.activoId === id) d.activoId = d.perfiles[0] ? d.perfiles[0].id : "";
   return _guardarPerfiles(d);
 }
-// Compatibilidad: el logo/color que usan PDF y correo = un perfil dado o el activo.
 function getConfigEmpresa(perfilId) {
   const p = (perfilId && getPerfilById(perfilId)) || getPerfilActivo();
   return p ? { logo: p.logo || "", color: p.color || "" } : {};

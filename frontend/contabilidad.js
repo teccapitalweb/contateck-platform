@@ -101,6 +101,26 @@
       return true;
     } catch (e) { return false; }
   }
+  // OT-0027-fix: la config contable (roles -> cuentas reales) se guardaba
+  // bien en Postgres, pero window.CONTATECK_CONFIG_CONTABLE_PG solo se
+  // llenaba dentro del handler de "Guardar configuración" — nunca se leía
+  // del servidor al abrir el módulo. Resultado: en cualquier sesión nueva
+  // (recarga, otra pestaña, otro día) la variable regresaba a {} y
+  // determinacionIVA()/cuentaRol() veían "no configurado" aunque sí
+  // existiera guardado, mostrando $0.00 en SAT/Declaraciones.
+  async function cargarConfigContable() {
+    try {
+      const inicio = Date.now();
+      while (!window.CONTATECK_SUPABASE_TOKEN && Date.now() - inicio < 4000) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      if (!window.CONTATECK_SUPABASE_TOKEN) return false;
+      const r = await window.CTPostgres.leerConfigContable();
+      if (!r || !r.ok) return false;
+      window.CONTATECK_CONFIG_CONTABLE_PG = r.config || {};
+      return true;
+    } catch (e) { return false; }
+  }
   function leerPolizas() {
     try {
       const raw = JSON.parse(localStorage.getItem(K_POLIZAS) || "null");
@@ -206,13 +226,27 @@
         try {
           // OT-0012: NO se manda folio — Postgres lo genera de forma
           // atómica y lo regresa junto con el id.
+          // OT-mejoras-SAT: origen/cfdiUuid ahora sí se mandan y se
+          // guardan en Postgres — antes solo vivían en localStorage,
+          // así que DIOT y el candado de duplicados se perdían en
+          // cualquier navegador/usuario distinto al que importó el XML.
           const r = await window.CTPostgres.crearPolizaCompleta({
             tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
+            origen: poliza.origen || null, cfdiUuid: poliza.cfdiUuid || null,
           });
-          if (r.ok) { poliza.pgId = r.id; poliza.folio = r.folio; poliza.origen = "postgres"; }
-          else { pgError = r.error; rechazado = true; }
-        } catch (e) { pgError = e.message; poliza.origen = "local"; }
-      } else { poliza.origen = "local"; }
+          if (r.ok) {
+            poliza.pgId = r.id; poliza.folio = r.folio;
+            // OT-mejoras-SAT fix: antes esto pisaba "cfdi-recibido"/"cfdi"
+            // con "postgres" a fuerzas — perdiendo el origen real que
+            // necesita DIOT. Solo se marca "postgres" si no traía ya
+            // un origen propio (pólizas manuales/Diario).
+            if (!poliza.origen) poliza.origen = "postgres";
+          } else {
+            pgError = r.error; rechazado = true;
+            poliza.duplicado = !!r.duplicado;
+          }
+        } catch (e) { pgError = e.message; poliza.origen = poliza.origen || "local"; }
+      } else { poliza.origen = poliza.origen || "local"; }
       // Solo cae al folio local (marcado LOCAL-) si de plano no hubo
       // sesión de Postgres — nunca como fallback silencioso de un error.
       if (!poliza.folio) poliza.folio = siguienteFolioLocal(poliza.tipo);
@@ -280,15 +314,48 @@
     return round2(cuenta.nat === "Deudora" ? debe - haber : haber - debe);
   }
   // Balanza de comprobación: una fila por cuenta afectable con cargos/abonos/saldo.
+  // OT-Balanza (mejora): movimientos de una cuenta ANTES del periodo
+  // seleccionado — para el "Saldo inicial". Si no hay periodo activo
+  // ("Todo el ejercicio"), no hay saldo inicial: se arranca en cero.
+  function movimientosPreviosCuenta(codigo) {
+    if (!periodoActivo) return { debe: 0, haber: 0 };
+    let debe = 0, haber = 0;
+    // Una póliza es "previa" si su año-mes es estrictamente menor al
+    // periodo activo (compara como número AAAAMM para evitar líos).
+    const corte = periodoActivo.anio * 100 + periodoActivo.mes;
+    leerPolizas().forEach((p) => {
+      const parts = String(p.fecha || "").split("-");
+      if (parts.length !== 3) return;
+      const ym = parseInt(parts[0], 10) * 100 + parseInt(parts[1], 10);
+      if (ym >= corte) return; // no es previa
+      (p.asientos || []).forEach((a) => {
+        if (a.codigo === codigo) { debe += num(a.debe); haber += num(a.haber); }
+      });
+    });
+    return { debe: round2(debe), haber: round2(haber) };
+  }
+
   function balanza() {
+    const hayPeriodo = !!periodoActivo;
     const filas = getCuentasAfectables().map((c) => {
       const { debe, haber } = movimientosCuenta(c.codigo);
-      const saldo = c.nat === "Deudora" ? debe - haber : haber - debe;
+      // Saldo inicial (neto según naturaleza) con lo previo al periodo.
+      const prev = movimientosPreviosCuenta(c.codigo);
+      const saldoInicial = c.nat === "Deudora" ? round2(prev.debe - prev.haber) : round2(prev.haber - prev.debe);
+      // Saldo final = saldo inicial + movimientos del periodo (según naturaleza).
+      const movNeto = c.nat === "Deudora" ? (debe - haber) : (haber - debe);
+      const saldo = round2(saldoInicial + movNeto);
+      // Saldo atípico: cuenta de naturaleza deudora que termina en
+      // acreedor (o viceversa) — posible error de captura. saldo<0
+      // significa que quedó del lado contrario a su naturaleza.
+      const atipico = saldo < -0.01;
       return {
         codigo: c.codigo, nombre: c.nombre, nat: c.nat,
+        saldoInicial,
         debe: round2(debe), haber: round2(haber),
         saldoDeudor: c.nat === "Deudora" ? round2(Math.max(saldo, 0)) : (saldo < 0 ? round2(-saldo) : 0),
         saldoAcreedor: c.nat === "Acreedora" ? round2(Math.max(saldo, 0)) : (saldo < 0 ? round2(-saldo) : 0),
+        atipico,
       };
     });
     const tot = filas.reduce((t, f) => ({
@@ -296,7 +363,7 @@
       saldoDeudor: t.saldoDeudor + f.saldoDeudor, saldoAcreedor: t.saldoAcreedor + f.saldoAcreedor,
     }), { debe: 0, haber: 0, saldoDeudor: 0, saldoAcreedor: 0 });
     Object.keys(tot).forEach((k) => (tot[k] = round2(tot[k])));
-    return { filas, tot, cuadra: Math.abs(tot.debe - tot.haber) < 0.01 };
+    return { filas, tot, hayPeriodo, cuadra: Math.abs(tot.debe - tot.haber) < 0.01, atipicos: filas.filter((f) => f.atipico).length };
   }
 
   /* ============================================================
@@ -479,8 +546,16 @@
      BLOQUE 2 · Estados financieros
      ============================================================ */
   function grupoDetalle(codMayor) {
+    // Fix (ago-2026): antes se usaba Math.abs(saldoCuenta(c)), lo que le
+    // quitaba el signo a TODAS las cuentas — incluidas las atípicas
+    // (ej. Caja con saldo acreedor). Eso hacía que una cuenta con saldo
+    // del lado equivocado SUMARA al total en vez de RESTAR, inflando
+    // artificialmente Activo/Gastos y provocando que el Balance General
+    // nunca cuadrara aunque cada póliza individual sí estuviera bien.
+    // Ahora se respeta el signo real: una cuenta atípica resta del total,
+    // que es matemáticamente lo correcto en partida doble.
     return getCuentas().filter((c) => c.padre === codMayor)
-      .map((c) => ({ codigo: c.codigo, nombre: c.nombre, saldo: Math.abs(saldoCuenta(c)) }))
+      .map((c) => ({ codigo: c.codigo, nombre: c.nombre, saldo: saldoCuenta(c) }))
       .filter((x) => x.saldo !== 0);
   }
   // Estado de Resultados: Ingresos − Costos y gastos = Utilidad
@@ -555,6 +630,13 @@ ${ctas}
     const provs = {};
     polizasDelPeriodo().forEach((p) => {
       if (p.origen !== "cfdi-recibido") return;
+      // OT-mejoras-SAT: una póliza anulada (duplicado) o ya corregida
+      // (su versión vieja, antes del ajuste) ya no debe sumar aquí —
+      // su efecto real quedó cancelado por la reversa. Solo cuentan las
+      // que siguen activas ('ok'). Sin este filtro, ahora que origen
+      // persiste correctamente en Postgres, una póliza anulada volvería
+      // a aparecer en DIOT con su monto original, ya sin efecto real.
+      if (p.estado && p.estado !== "ok") return;
       const rfc = p.proveedorRfc || "—";
       const nom = p.proveedorNombre || (p.concepto || "").split("·").pop().trim();
       const ivaA = (p.asientos || []).filter((a) => a.codigo === (cuentaRol("ivaAcreditable") || {}).codigo).reduce((s, a) => s + num(a.debe), 0);
@@ -766,11 +848,21 @@ ${ctas}
   }
 
   /* ---------- Render: tabla de pólizas ---------- */
+  let filtroPolizas = "";
   function renderPolizasTabla() {
     const el = document.querySelector("[data-polizas]");
     if (!el) return;
-    const pol = getPolizas();
-    if (!pol.length) { el.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Aún no hay pólizas. Crea la primera con <b>Nueva póliza</b>.</td></tr>`; return; }
+    let pol = getPolizas();
+    if (filtroPolizas.trim()) {
+      const q = filtroPolizas.trim().toLowerCase();
+      pol = pol.filter((p) => (p.folio || "").toLowerCase().includes(q) || (p.concepto || "").toLowerCase().includes(q));
+    }
+    if (!pol.length) {
+      el.innerHTML = filtroPolizas.trim()
+        ? `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Sin resultados para "${esc(filtroPolizas)}".</td></tr>`
+        : `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Aún no hay pólizas. Crea la primera con <b>Nueva póliza</b>.</td></tr>`;
+      return;
+    }
     el.innerHTML = pol.map((p) => {
       // FIX 2: pólizas nacidas en Postgres (ej. cobranza) llegan sin
       // asientos locales — se usa el monto que ya manda el backend.
@@ -1043,24 +1135,31 @@ ${ctas}
     const pane = document.querySelector('[data-pane="balanza"]');
     if (!pane) return;
     const b = balanza();
-    const filas = b.filas.map((f) => `<tr>
-      <td class="num">${esc(f.codigo)}</td><td>${esc(f.nombre)}</td>
+    const colIni = b.hayPeriodo; // solo mostrar "Saldo inicial" cuando hay mes seleccionado
+    const filas = b.filas.map((f) => `<tr${f.atipico ? ' style="background:rgba(251,113,133,.06)"' : ""}>
+      <td class="num">${esc(f.codigo)}</td>
+      <td>${esc(f.nombre)}${f.atipico ? ` <span title="Saldo atípico: esta cuenta es de naturaleza ${esc(f.nat)} pero quedó del lado contrario — revisa sus pólizas" style="color:#FB7185;font-weight:700;cursor:help">⚠</span>` : ""}</td>
+      ${colIni ? `<td class="num" style="text-align:right;color:var(--muted)">${f.saldoInicial ? (f.saldoInicial < 0 ? "-$" + fmt(Math.abs(f.saldoInicial)) : "$" + fmt(f.saldoInicial)) : "—"}</td>` : ""}
       <td class="num" style="text-align:right">$${fmt(f.debe)}</td>
       <td class="num" style="text-align:right">$${fmt(f.haber)}</td>
-      <td class="num" style="text-align:right">${f.saldoDeudor ? "$" + fmt(f.saldoDeudor) : "—"}</td>
-      <td class="num" style="text-align:right">${f.saldoAcreedor ? "$" + fmt(f.saldoAcreedor) : "—"}</td></tr>`).join("");
+      <td class="num" style="text-align:right${f.atipico ? ";color:#FB7185;font-weight:700" : ""}">${f.saldoDeudor ? "$" + fmt(f.saldoDeudor) : "—"}</td>
+      <td class="num" style="text-align:right${f.atipico ? ";color:#FB7185;font-weight:700" : ""}">${f.saldoAcreedor ? "$" + fmt(f.saldoAcreedor) : "—"}</td></tr>`).join("");
+    const nCols = colIni ? 7 : 6;
     pane.innerHTML = `<div class="card">
       <div style="overflow-x:auto">
         <table class="tbl"><thead><tr><th>Código</th><th>Cuenta</th>
+          ${colIni ? `<th style="text-align:right">Saldo inicial</th>` : ""}
           <th style="text-align:right">Cargos</th><th style="text-align:right">Abonos</th>
           <th style="text-align:right">Saldo deudor</th><th style="text-align:right">Saldo acreedor</th></tr></thead>
-        <tbody>${filas || `<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:2rem">Sin movimientos todavía.</td></tr>`}</tbody>
-        <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
+        <tbody>${filas || `<tr><td colspan="${nCols}" style="text-align:center;color:var(--faint);padding:2rem">Sin movimientos todavía.</td></tr>`}</tbody>
+        <tfoot><tr style="font-weight:700"><td colspan="${colIni ? 3 : 2}" style="text-align:right">Totales</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.debe)}</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.haber)}</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.saldoDeudor)}</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.saldoAcreedor)}</td></tr></tfoot></table></div>
-      <div class="cont-balanza-estado ${b.cuadra ? "is-ok" : "is-bad"}">${b.cuadra ? "✓ La balanza cuadra" : "⚠ La balanza no cuadra"}</div></div>`;
+      <div class="cont-balanza-estado ${b.cuadra ? "is-ok" : "is-bad"}">${b.cuadra ? "✓ La balanza cuadra" : "⚠ La balanza no cuadra"}</div>
+      ${b.atipicos ? `<div style="margin-top:.7rem;font-size:.85rem;color:#FB7185;display:flex;align-items:center;gap:.4rem">
+        <span style="font-size:1.1rem">⚠</span> ${b.atipicos} cuenta${b.atipicos > 1 ? "s" : ""} con saldo atípico (marcada${b.atipicos > 1 ? "s" : ""} en rojo) — una cuenta terminó del lado contrario a su naturaleza, lo que suele indicar un error de captura en sus pólizas.</div>` : ""}</div>`;
   }
 
   /* ---------- Descargar archivo (XML/texto) ---------- */
@@ -1080,7 +1179,10 @@ ${ctas}
     const pane = document.querySelector('[data-pane="estados"]');
     if (!pane) return;
     const er = estadoResultados(), bg = balanceGeneral();
-    const fila = (x) => `<tr><td class="num">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td class="num" style="text-align:right">$${fmt(x.saldo)}</td></tr>`;
+    // Mismo fix de formato que en Balanza: con grupoDetalle ya sin
+    // Math.abs(), una cuenta atípica puede llegar con saldo negativo —
+    // se muestra "-$1,234.00" en vez de "$-1,234.00".
+    const fila = (x) => `<tr${x.saldo < 0 ? ' style="color:#FB7185"' : ""}><td class="num">${esc(x.codigo)}</td><td>${esc(x.nombre)}${x.saldo < 0 ? " ⚠" : ""}</td><td class="num" style="text-align:right">${x.saldo < 0 ? "-$" + fmt(Math.abs(x.saldo)) : "$" + fmt(x.saldo)}</td></tr>`;
     pane.innerHTML = `<div class="cont-ef-grid">
       <div class="card">
         <h3 class="cont-ef-titulo">Estado de Resultados</h3>
@@ -1158,17 +1260,44 @@ ${ctas}
             <td>${p.estado === "abierto"
               ? `<button class="btn btn--ghost btn--sm" data-cerrar-periodo="${p.anio}-${p.mes}" ${!bg.cuadra ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Cerrar periodo</button>
                  ${!bg.cuadra ? '<span style="display:block;font-size:.72rem;color:var(--faint);margin-top:.25rem">Balance no cuadra</span>' : ""}`
-              : ""}</td>
+              : `<button class="btn btn--ghost btn--sm" disabled style="opacity:.4;cursor:not-allowed" title="Un periodo cerrado nunca se reabre — las correcciones se registran en el periodo actual">Periodo cerrado</button>`}</td>
           </tr>`).join("")
           : `<tr><td colspan="4" style="text-align:center;color:var(--faint);padding:1.5rem">Aún no hay pólizas capturadas.</td></tr>`}
         </tbody></table>
       </div>`;
   }
 
-  async function confirmarCerrarPeriodo(anio, mes) {
-    if (!confirm(`¿Cerrar ${MESES_NOMBRE[mes]} ${anio}? Ya no se podrán capturar ni corregir pólizas con fecha en ese mes.`)) return;
+  // OT-mejoras-SAT: antes usaba el confirm() nativo del navegador (la
+  // ventanita fea "127.0.0.1:5500 dice...") — se reemplaza por un modal
+  // propio, mismo estilo que ya usan corrección/anulación de pólizas.
+  function abrirConfirmarCierrePeriodo(anio, mes) {
+    openModal(`Cerrar ${MESES_NOMBRE[mes]} ${anio}`);
+    cbody.innerHTML = `
+      <div style="background:rgba(251,191,113,.08);border:1px solid rgba(251,191,113,.3);border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FBBF71">Esta acción no se puede deshacer</b> — una vez cerrado, ${MESES_NOMBRE[mes]} ${anio}
+        nunca se vuelve a abrir. Ya no se podrán capturar ni corregir pólizas con fecha dentro de ese mes; cualquier
+        corrección posterior se registrará con la fecha de hoy, en el periodo actual.</div>
+      <p style="color:var(--muted);font-size:.88rem">¿Seguro que quieres cerrar <b>${MESES_NOMBRE[mes]} ${anio}</b>?</p>
+      <div data-cont-msg></div>
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-cierre-cancelar>Cancelar</button>
+        <button class="btn btn--primary" data-cierre-confirmar>Sí, cerrar periodo</button></div>`;
+    cierrePeriodoState = { anio, mes };
+  }
+
+  async function confirmarCerrarPeriodo() {
+    if (!cierrePeriodoState) return;
+    const { anio, mes } = cierrePeriodoState;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const btn = cbody.querySelector("[data-cierre-confirmar]"); if (btn) btn.disabled = true;
     const r = await window.CTPostgres.cerrarPeriodo(anio, mes);
-    if (!r.ok) { toast(r.error || "No se pudo cerrar el periodo.", "error"); return; }
+    if (!r.ok) {
+      if (msg) msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo cerrar el periodo.")}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    cierrePeriodoState = null;
+    closeModal();
     toast(`${MESES_NOMBRE[mes]} ${anio} quedó cerrado.`, "ok");
     renderPeriodos();
   }
@@ -1176,11 +1305,18 @@ ${ctas}
   function renderSAT() {
     const pane = document.querySelector('[data-pane="sat"]');
     if (!pane) return;
-    const iva = determinacionIVA(), dt = diot(), rfc = getRfcEmisor(), per = getPeriodo();
+    const iva = determinacionIVA(), dt = diot(), rfc = getRfcEmisor(), per = getPeriodo(), b = balanza();
     const mes = per ? per.mes : (new Date().getMonth() + 1), anio = per ? per.anio : new Date().getFullYear();
     const diotFilas = dt.length ? dt.map((d) => `<tr><td class="num">${esc(d.rfc)}</td><td>${esc(d.nombre)}</td>
       <td class="num" style="text-align:right">$${fmt(d.base)}</td><td class="num" style="text-align:right">$${fmt(d.iva)}</td></tr>`).join("")
       : '<tr><td colspan="4" style="text-align:center;color:var(--faint);padding:1.5rem">Importa CFDI de proveedores (en Pólizas) para poblar la DIOT.</td></tr>';
+    // OT-mejoras-SAT: totales al pie — Declaranot/Declarabanco piden los
+    // acumulados de Base e IVA, no solo el detalle por proveedor.
+    const diotTotalBase = round2(dt.reduce((s, d) => s + num(d.base), 0));
+    const diotTotalIva = round2(dt.reduce((s, d) => s + num(d.iva), 0));
+    const diotFoot = dt.length ? `<tfoot><tr class="cont-ef-total"><td colspan="2">Total</td>
+      <td class="num" style="text-align:right">$${fmt(diotTotalBase)}</td>
+      <td class="num" style="text-align:right">$${fmt(diotTotalIva)}</td></tr></tfoot>` : "";
     pane.innerHTML = `
       <div class="card" style="margin-bottom:1rem">
         <h3 class="cont-ef-titulo">Contabilidad Electrónica · XML para el SAT</h3>
@@ -1192,8 +1328,9 @@ ${ctas}
         </div>
         <div class="cont-foot" style="justify-content:flex-start;margin-top:.8rem">
           <button class="btn btn--primary" data-sat-xml-cat>Descargar XML Catálogo</button>
-          <button class="btn btn--primary" data-sat-xml-bal>Descargar XML Balanza</button>
+          <button class="btn btn--primary" data-sat-xml-bal ${!b.cuadra ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Descargar XML Balanza</button>
         </div>
+        ${!b.cuadra ? `<div class="cont-err" style="margin-top:.6rem">La Balanza de comprobación no cuadra ahorita mismo — el SAT rechaza el XML si los totales no coinciden. Corrige el descuadre en la pestaña Balanza antes de descargar.</div>` : ""}
       </div>
       <div class="cont-ef-grid">
         <div class="card">
@@ -1208,8 +1345,13 @@ ${ctas}
           <h3 class="cont-ef-titulo">DIOT · Operaciones con terceros</h3>
           <div style="overflow-x:auto"><table class="tbl">
             <thead><tr><th>RFC</th><th>Proveedor</th><th style="text-align:right">Base</th><th style="text-align:right">IVA</th></tr></thead>
-            <tbody>${diotFilas}</tbody></table></div>
+            <tbody>${diotFilas}</tbody>${diotFoot}</table></div>
         </div>
+        <!-- PENDIENTE (no visible aún): ISR Provisional (Ingresos − Deducciones
+             autorizadas). Se agrega cuando el responsable contable defina qué
+             cuentas cuentan como deducción autorizada — mientras tanto se
+             deja fuera de pantalla para no mostrar algo que aún no calcula
+             nada real. -->
       </div>`;
   }
 
@@ -1973,6 +2115,15 @@ ${ctas}
     const btn = cbody.querySelector("[data-rapido-guardar]"); if (btn) btn.disabled = true;
     const { pgError } = await savePoliza(pol);
     if (pgError) {
+      // OT-mejoras-SAT: mismo mensaje amigable que ya usa el formulario
+      // avanzado (guardarPolizaForm) — antes este asistente rápido
+      // mostraba el error crudo de Postgres ("PERIODO_CERRADO: el
+      // periodo 6 / 2026...") en vez de una explicación clara.
+      if (/PERIODO_CERRADO/i.test(pgError)) {
+        msg.innerHTML = `<div class="cont-err">Este periodo ya está cerrado y no admite movimientos nuevos. Revisa la pestaña "Periodos" para más detalle.</div>`;
+        if (btn) btn.disabled = false;
+        return;
+      }
       msg.innerHTML = `<div class="cont-err">${pgError}</div>`;
       if (btn) btn.disabled = false;
       return;
@@ -2080,6 +2231,8 @@ ${ctas}
   // 'asientos' aquí = cómo definió el usuario que debe quedar el asiento.
   // ============================================================
   let correccionState = null;
+  let anulacionState = null;
+  let cierrePeriodoState = null;
   function abrirConfirmacionCorreccion({ localId, pgId, asientos }) {
     const pol = getPolizas().find((x) => x.id === localId) || {};
     openModal("Corrección de póliza " + (pol.folio || ""));
@@ -2128,6 +2281,49 @@ ${ctas}
     correccionState = null; editandoId = null;
     closeModal();
     toast("Corrección generada — reversa " + r.reversa.folio + " y corrección " + r.correccion.folio, "ok", 6000);
+    await recargarPolizasPg(idsNuevos);
+    renderTodo();
+  }
+
+  // OT-mejoras-SAT: modal simple para anular una póliza duplicada — solo
+  // pide motivo (no hay partidas que editar, a diferencia de la
+  // corrección: aquí lo que se corrige es "esta póliza entera sobra").
+  function abrirAnularDuplicada(id) {
+    const p = getPolizas().find((x) => x.id === id);
+    if (!p) return;
+    if (!p.pgId) { toast("Esta póliza aún no terminó de sincronizarse con Postgres — espera unos segundos e intenta de nuevo.", "error"); return; }
+    openModal(`Marcar como duplicada · ${p.folio}`);
+    cbody.innerHTML = `
+      <div style="background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.3);border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FB7185">Esto no borra nada</b> — se genera una póliza de <b>reversa</b> que cancela el efecto
+        contable de <b>${esc(p.folio)}</b> (${esc(p.concepto)}), y la original queda bloqueada como "anulada". Úsalo
+        solo cuando esta póliza completa sobra — por ejemplo, el mismo CFDI se importó y contabilizó dos veces.</div>
+      <div class="field"><label>Motivo <span style="color:#FB7185">*</span></label>
+        <input class="input" id="anulacion-motivo" placeholder="Ej. Factura duplicada, ver folio E-00016" autocomplete="off"></div>
+      <div data-cont-msg></div>
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-anulacion-cancelar>Cancelar</button>
+        <button class="btn btn--primary" style="background:#FB7185;border-color:#FB7185" data-anulacion-confirmar>Confirmar anulación</button></div>`;
+    anulacionState = { id: p.id, pgId: p.pgId, folio: p.folio };
+    setTimeout(() => { const m = cbody.querySelector("#anulacion-motivo"); if (m) m.focus(); }, 50);
+  }
+
+  async function confirmarAnulacion() {
+    if (!anulacionState) return;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const motivo = (cbody.querySelector("#anulacion-motivo").value || "").trim();
+    if (!motivo) { msg.innerHTML = `<div class="cont-err">El motivo es obligatorio para anular la póliza.</div>`; return; }
+    const btn = cbody.querySelector("[data-anulacion-confirmar]"); if (btn) btn.disabled = true;
+    const r = await window.CTPostgres.anularPolizaDuplicada(anulacionState.pgId, motivo);
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo anular la póliza.")}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    const idsNuevos = [anulacionState.pgId, r.reversa.id];
+    anulacionState = null;
+    closeModal();
+    toast("Póliza anulada — se generó la reversa " + r.reversa.folio, "ok", 6000);
     await recargarPolizasPg(idsNuevos);
     renderTodo();
   }
@@ -2201,9 +2397,12 @@ ${ctas}
       <tbody>${filas}</tbody>
       <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
         <td class="num" style="text-align:right">$${fmt(debe)}</td><td class="num" style="text-align:right">$${fmt(haber)}</td></tr></tfoot></table></div>
-      <div class="cont-foot">
+      <div class="cont-foot" style="display:flex;align-items:center;justify-content:space-between">
+        <div>${p.origen === "ventas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Ventas ' + esc(p.concepto || '').split(' — ')[0].replace('Venta ', '') + '</span>' : ''}</div>
+        <div style="display:flex;gap:.5rem">
         <button class="btn btn--ghost" data-cont-close>Cerrar</button>
-        ${botonEditarPoliza(p)}</div>`;
+        ${botonAnularDuplicada(p)}
+        ${botonEditarPoliza(p)}</div></div>`;
   }
 
   // OT-0025: banner que explica el rol de la póliza dentro de un ajuste
@@ -2218,6 +2417,14 @@ ${ctas}
       return `<div style="background:rgba(251,191,113,.08);border:1px solid rgba(251,191,113,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
         <b style="color:#FBBF71">Póliza corregida</b> — esta póliza fue corregida y ya no se modifica.
         Se cancela con la reversa <b>${rev ? esc(rev.folio) : "—"}</b> y se reemplaza por la corrección <b>${cor ? esc(cor.folio) : "—"}</b>.</div>`;
+    }
+    if (est === "anulada") {
+      const hijas = getPolizas().filter((x) => x.ajusteDeId && p.pgId && x.ajusteDeId === p.pgId);
+      const rev = hijas.find((x) => x.tipoAjuste === "anulacion");
+      return `<div style="background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FB7185">Póliza anulada (duplicado)</b> — se detectó que esta póliza duplicaba otra ya contabilizada.
+        Su efecto se canceló con la reversa <b>${rev ? esc(rev.folio) : "—"}</b>.
+        ${p.motivoAjuste ? `<br><span style="color:var(--muted)">Motivo: ${esc(p.motivoAjuste)}</span>` : ""}</div>`;
     }
     if (est === "reversa") {
       const orig = p.ajusteDeId ? buscarPorPg(p.ajusteDeId) : null;
@@ -2236,10 +2443,29 @@ ${ctas}
   // OT-0025: las pólizas de ajuste (reversa/corrección) y las ya corregidas
   // no se editan directamente. Una corrección sí puede volver a corregirse
   // (encadena), así que esa mantiene el botón.
+  // OT-mejoras-SAT: tampoco se edita una ya anulada, ni una reversa de
+  // anulación.
   function botonEditarPoliza(p) {
     if (p.estado === "reversa") return "";
     if (p.estado === "corregida") return "";
+    if (p.estado === "anulada") return "";
+    // Conexión Ventas↔Contabilidad: las pólizas generadas automáticamente
+    // desde Ventas NO se editan — si algo está mal, se corrige desde la
+    // venta misma (rechazar y re-registrar), no editando la póliza por
+    // atrás, porque eso rompería la consistencia entre los dos módulos.
+    if (p.origen === "ventas") return "";
     return `<button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button>`;
+  }
+
+  // OT-mejoras-SAT: botón para anular una póliza como duplicada — solo
+  // aparece si nació de un CFDI (tiene cfdiUuid) y todavía no está
+  // reversada/corregida/anulada. No es para cualquier error de captura
+  // (para eso está "Editar" → corrección); es específico para "esta
+  // póliza entera sobra, ya existe otra con el mismo CFDI".
+  function botonAnularDuplicada(p) {
+    if (!p.cfdiUuid) return "";
+    if (["reversa", "corregida", "anulada", "correccion"].includes(p.estado)) return "";
+    return `<button class="btn btn--ghost" style="border-color:rgba(251,113,133,.4);color:#FB7185" data-cont-anular-pol="${esc(p.id)}">Marcar como duplicada</button>`;
   }
 
   /* ---------- Modal: Contabilizar CFDI emitidos (Bloque 1) ---------- */
@@ -2289,6 +2515,11 @@ ${ctas}
       n++;
     }
     if (errorConfig) {
+      // OT-mejoras-SAT: mismo mensaje amigable que en los otros flujos de
+      // guardado — antes mostraba el error crudo de Postgres tal cual.
+      if (/PERIODO_CERRADO/i.test(errorConfig)) {
+        errorConfig = 'Este periodo ya está cerrado y no admite movimientos nuevos. Revisa la pestaña "Periodos" para más detalle.';
+      }
       // Falta configuración contable: se explica en el modal con acceso
       // directo, en vez de cerrar como si todo hubiera salido bien.
       if (msg) msg.innerHTML = errorConfigHTML(errorConfig);
@@ -2365,6 +2596,26 @@ ${ctas}
     const items = cbody._xmlPolizas || [];
     for (const x of items) {
       const r = await savePoliza(x.poliza);
+      // OT-mejoras-SAT: si Postgres rechazó por CFDI ya contabilizado
+      // (candado real en el servidor, ver migración origen_cfdi_uuid),
+      // se avisa claro y NO se intenta guardar la factura para
+      // seguimiento de pagos — la póliza nunca se creó, no hay nada
+      // que ligarle.
+      if (r.pgError) {
+        // OT-mejoras-SAT: mismo criterio que los otros 3 flujos de
+        // guardado — duplicado, periodo cerrado, o error crudo como
+        // último recurso.
+        let msg;
+        if (r.poliza && r.poliza.duplicado) {
+          msg = `${x.parsed.nombreEmisor || x.parsed.rfcEmisor || "Esta factura"} ya fue contabilizada antes — no se volvió a registrar.`;
+        } else if (/PERIODO_CERRADO/i.test(r.pgError)) {
+          msg = `No se pudo contabilizar ${x.parsed.nombreEmisor || x.parsed.rfcEmisor || "esta factura"}: el periodo de esa fecha ya está cerrado. Revisa la pestaña "Periodos".`;
+        } else {
+          msg = `No se pudo contabilizar ${x.parsed.nombreEmisor || x.parsed.rfcEmisor || "esta factura"}: ${r.pgError}`;
+        }
+        toast(msg, "error", 6000);
+        continue;
+      }
       // OT-0023: la factura queda guardada como documento propio, ligada
       // a la póliza de causación que se acaba de crear — de aquí en
       // adelante se puede consultar y pagarle saldo, ya no se pierde
@@ -2438,12 +2689,13 @@ ${ctas}
     // OT-0025: flujo de corrección con asientos de ajuste.
     if (e.target.closest("[data-correccion-cancelar]")) { correccionState = null; editandoId = null; closeModal(); return; }
     if (e.target.closest("[data-correccion-confirmar]")) { confirmarCorreccion(); return; }
-    const cerrarPer = e.target.closest("[data-cerrar-periodo]");
-    if (cerrarPer) {
-      const [anio, mes] = cerrarPer.getAttribute("data-cerrar-periodo").split("-").map(Number);
-      confirmarCerrarPeriodo(anio, mes);
-      return;
-    }
+    // OT-mejoras-SAT: flujo de anulación de duplicados (solo reversa).
+    if (e.target.closest("[data-anulacion-cancelar]")) { anulacionState = null; closeModal(); return; }
+    if (e.target.closest("[data-anulacion-confirmar]")) { confirmarAnulacion(); return; }
+    // OT-mejoras-SAT: confirmación de cierre de periodo, en modal propio
+    // en vez del confirm() nativo del navegador.
+    if (e.target.closest("[data-cierre-cancelar]")) { cierrePeriodoState = null; closeModal(); return; }
+    if (e.target.closest("[data-cierre-confirmar]")) { confirmarCerrarPeriodo(); return; }
     const modoBtn = e.target.closest("[data-modo]");
     if (modoBtn) {
       cbody.querySelectorAll(".cont-modo").forEach((b) => b.classList.toggle("is-active", b === modoBtn));
@@ -2510,8 +2762,9 @@ ${ctas}
     const anio = parseInt(pane.querySelector("[data-sat-anio]").value, 10) || new Date().getFullYear();
     setRfcEmisor(rfc);
     const suf = `${rfc}_${anio}${String(mes).padStart(2, "0")}.xml`;
-    if (tipo === "catalogo") descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml");
-    else descargarTexto("Balanza_" + suf, xmlBalanzaSAT(rfc, mes, anio), "application/xml");
+    if (tipo === "catalogo") { descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml"); return; }
+    if (!balanza().cuadra) { toast("La Balanza no cuadra — el SAT rechaza el XML así. Corrige el descuadre primero.", "error"); return; }
+    descargarTexto("Balanza_" + suf, xmlBalanzaSAT(rfc, mes, anio), "application/xml");
   }
   cbody.addEventListener("input", (e) => {
     if (e.target.classList.contains("cont-as-debe") || e.target.classList.contains("cont-as-haber")) {
@@ -2641,6 +2894,12 @@ ${ctas}
       const input = e.target;
       clienteBuscaTimer = setTimeout(() => buscarRapCliente(input), 300);
     }
+    // Fix (ago-2026): el buscador de "Buscar póliza por folio o concepto…"
+    // existía en el HTML pero nunca estaba conectado a nada.
+    if (e.target.getAttribute && e.target.getAttribute("data-search") === "polizas") {
+      filtroPolizas = e.target.value;
+      renderPolizasTabla();
+    }
   });
   document.addEventListener("focusin", (e) => {
     if (!e.target.classList) return;
@@ -2727,6 +2986,19 @@ ${ctas}
     if (ver) { verPoliza(ver.getAttribute("data-cont-ver")); return; }
     const editPol = e.target.closest("[data-cont-editar-pol]");
     if (editPol) { abrirEditarPoliza(editPol.getAttribute("data-cont-editar-pol")); return; }
+    const anularPol = e.target.closest("[data-cont-anular-pol]");
+    if (anularPol) { abrirAnularDuplicada(anularPol.getAttribute("data-cont-anular-pol")); return; }
+    // OT-mejoras-SAT fix: "Cerrar periodo" vive en la página principal
+    // (data-pane="periodos"), no dentro de un modal — este handler
+    // estaba atrapado en el listener de "modal", que solo escucha clics
+    // DENTRO del modal, así que nunca se disparaba. Se mueve aquí, al
+    // listener de document que sí cubre toda la página.
+    const cerrarPer = e.target.closest("[data-cerrar-periodo]");
+    if (cerrarPer) {
+      const [anio, mes] = cerrarPer.getAttribute("data-cerrar-periodo").split("-").map(Number);
+      abrirConfirmarCierrePeriodo(anio, mes);
+      return;
+    }
     const delPol = e.target.closest("[data-cont-del-pol]");
     if (delPol) {
       ctConfirm("¿Eliminar esta póliza de prueba? Solo existe en este navegador (no está en la base de datos). Sus movimientos dejarán de afectar los saldos.", "Eliminar").then((si) => {
@@ -2809,15 +3081,22 @@ ${ctas}
       let local = arr.find((x) => x.pgId === p.id);
       if (!local) local = arr.find((x) => x.folio === p.folio && !x.pgId);
       if (local) {
-        if (local.tipo !== p.tipo || local.fecha !== p.fecha || local.concepto !== p.concepto || local.estado !== p.estado || local.pgId !== p.id || local.monto !== p.monto) {
+        // OT-mejoras-SAT: también se compara/actualiza origen y cfdiUuid —
+        // sin esto, una póliza creada en OTRO navegador/usuario nunca
+        // traía su origen real y DIOT la ignoraba en silencio.
+        if (local.tipo !== p.tipo || local.fecha !== p.fecha || local.concepto !== p.concepto || local.estado !== p.estado || local.pgId !== p.id || local.monto !== p.monto || local.origen !== (p.origen || local.origen) || local.cfdiUuid !== (p.cfdiUuid || local.cfdiUuid)) {
           local.tipo = p.tipo; local.fecha = p.fecha; local.concepto = p.concepto; local.estado = p.estado; local.pgId = p.id; local.monto = p.monto;
+          if (p.origen) local.origen = p.origen;
+          if (p.cfdiUuid) local.cfdiUuid = p.cfdiUuid;
           cambiado = true;
         }
       } else {
         // Póliza que existe en Postgres pero no en este navegador (ej. se
         // creó desde otra sesión/dispositivo). Se agrega sin asientos —
         // esos siguen siendo solo locales hasta aprobar poliza_partidas.
-        arr.push({ id: "pg-" + p.id, pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto, monto: p.monto, asientos: [], creada: Date.now(), origen: "postgres" });
+        // OT-mejoras-SAT: origen real (cfdi-recibido/cfdi/etc.) en vez de
+        // "postgres" a fuerzas — así DIOT sí la toma en cuenta.
+        arr.push({ id: "pg-" + p.id, pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto, monto: p.monto, asientos: [], creada: Date.now(), origen: p.origen || "postgres", cfdiUuid: p.cfdiUuid || "" });
         cambiado = true;
       }
     });
@@ -2840,9 +3119,16 @@ ${ctas}
     if (!r || !r.ok) return;
     (r.polizas || []).forEach((p) => {
       let local = arr.find((x) => x.pgId === p.id);
+      // OT-mejoras-SAT fix: antes esto pisaba origen con "postgres" a
+      // fuerzas para CUALQUIER póliza recargada (ej. al anular un
+      // duplicado, la original perdía su "cfdi-recibido" y desaparecía
+      // de DIOT). Ahora solo usa el origen real que regresa el backend,
+      // y si no viene, respeta el que ya tenía localmente.
       const datos = {
         pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto,
-        estado: p.estado, origen: "postgres",
+        estado: p.estado,
+        origen: p.origen || (local && local.origen) || "postgres",
+        cfdiUuid: p.cfdiUuid || (local && local.cfdiUuid) || "",
         ajusteDeId: p.ajusteDeId || null, tipoAjuste: p.tipoAjuste || null, motivoAjuste: p.motivoAjuste || null,
       };
       if (p.asientos && p.asientos.length) datos.asientos = p.asientos;
@@ -2856,6 +3142,7 @@ ${ctas}
     renderTodo();
     cargarCatalogoReal().then((cambio) => { if (cambio) renderTodo(); });
     sincronizarPolizasDesdePostgres().then((cambiado) => { if (cambiado) renderTodo(); });
+    cargarConfigContable().then((cambio) => { if (cambio) renderTodo(); });
   }
   init();
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

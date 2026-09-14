@@ -292,7 +292,7 @@
         <div class="page-head">
           <div><h1>Nómina</h1><p>Cálculo y timbrado · <b data-empresa-label>tu empresa</b></p></div>
           <div class="page-head__actions">
-            <button class="btn btn--ghost" data-soon="El cálculo de nómina (ISR/IMSS) con tablas SAT llega en la siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>Calcular</button>
+            <button class="btn btn--ghost" data-nom-calcular><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>Calcular</button>
             <button class="btn btn--primary" data-soon="El timbrado de CFDI Nómina ante el PAC requiere backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Timbrar nómina</button>
           </div>
         </div>
@@ -305,14 +305,16 @@
           </div>
           <div class="comp" data-nom-desglose></div>
         </div>
-        <div class="card">
+        <div data-historial-nominas-root></div>
+        <div data-prenomina-root></div>
+        <div class="card" data-empleados-card>
           <div class="card__head"><h3>Empleados</h3><div style="display:flex;align-items:center;gap:.8rem"><span class="sub" data-emp-count></span><button class="btn btn--ghost" style="padding:.45rem .8rem;font-size:.84rem" data-new="empleado"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Empleado</button></div></div>
           <div class="toolbar">
             <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-search="empleados" placeholder="Buscar empleado por nombre o puesto…"></div>
           </div>
           <div style="overflow-x:auto">
             <table class="tbl">
-              <thead><tr><th>Empleado</th><th>Puesto</th><th style="text-align:right">Sueldo mensual</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Empleado</th><th>Puesto</th><th style="text-align:right">Salario diario</th><th>Estado</th><th></th></tr></thead>
               <tbody data-empleados></tbody>
             </table>
           </div>
@@ -381,6 +383,7 @@
 <script src="facturacion.js?v=21"></script>
 <script src="contabilidad.js?v=10"></script>
 <script src="ventas.js?v=1"></script>
+<script src="nomina.js?v=1"></script>
 <script src="fiscal.js?v=1"></script>
 <script src="invitaciones.js?v=1"></script>
 </body>

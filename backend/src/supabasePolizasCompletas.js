@@ -19,15 +19,23 @@ function clienteComoUsuario(accessToken) {
 // partidas: [{ codigo, debe, haber, descripcion }, ...]
 // OT-0012: crear_poliza_completa ya no recibe folio — lo genera Postgres
 // internamente (siguiente_folio) y lo regresa junto con el id.
-export async function crearPolizaCompleta(accessToken, { tipo, fecha, concepto, partidas }, log = console) {
+// OT-mejoras-SAT: ahora también manda origen/cfdiUuid — necesarios para
+// que DIOT y el candado contra duplicados funcionen desde cualquier
+// dispositivo/usuario, no solo en el navegador donde se importó el XML.
+export async function crearPolizaCompleta(accessToken, { tipo, fecha, concepto, partidas, origen, cfdiUuid }, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
   const { data, error } = await supabase.rpc('crear_poliza_completa', {
     p_tipo: tipo, p_fecha: fecha, p_concepto: concepto, p_partidas: partidas,
+    p_origen: origen || null, p_cfdi_uuid: cfdiUuid || null,
   });
   if (error) {
     log.warn('[postgres] crear_poliza_completa:', error.message);
-    return { ok: false, error: error.message };
+    // OT-mejoras-SAT: la función rechaza CFDI ya contabilizado con un
+    // mensaje que empieza con "CFDI_DUPLICADO:" — el frontend lo detecta
+    // para avisar claro en vez de mostrar el error crudo de Postgres.
+    const esDuplicado = /CFDI_DUPLICADO:/i.test(error.message || '');
+    return { ok: false, error: error.message, duplicado: esDuplicado };
   }
   // data ahora es {"id": "...", "folio": "I-00007"}
   return { ok: true, id: data.id, folio: data.folio };
@@ -50,6 +58,33 @@ export async function actualizarPolizaCompleta(accessToken, polizaId, { tipo, fe
   return { ok: true };
 }
 
+// OT-0020 FIX 3: partidas (Debe/Haber) de UNA sola póliza que vive en
+// Postgres — el frontend la llama bajo demanda (asegurarAsientosPg) para
+// pólizas que llegaron sin asientos locales: creadas en otro dispositivo,
+// generadas por cobranza, o sincronizadas de otro usuario del equipo.
+// NOTA: esta función se había perdido al reescribir el archivo completo
+// sin tenerla a la vista — se reconstruye aquí con la misma forma de
+// respuesta ({ ok, partidas }) que ya usa obtenerPolizasConPartidas.
+export async function obtenerPartidasPoliza(accessToken, polizaId, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { data, error } = await supabase
+    .from('poliza_partidas')
+    .select('debe, haber, descripcion, orden, cuentas_contables(codigo, nombre)')
+    .eq('poliza_id', polizaId)
+    .order('orden');
+  if (error) {
+    log.warn('[postgres] obtenerPartidasPoliza:', error.message);
+    return { ok: false, error: error.message };
+  }
+  const partidas = (data || []).map((p) => ({
+    codigo: p.cuentas_contables ? p.cuentas_contables.codigo : '',
+    nombre: p.cuentas_contables ? p.cuentas_contables.nombre : '',
+    debe: Number(p.debe) || 0, haber: Number(p.haber) || 0, descripcion: p.descripcion || null,
+  }));
+  return { ok: true, partidas };
+}
+
 // OT-0025: trae encabezado + partidas de pólizas específicas (por sus ids).
 // El frontend lo usa tras una corrección para alimentar el Libro Mayor
 // con las partidas de la reversa y la corregida (que nacieron en el
@@ -60,7 +95,7 @@ export async function obtenerPolizasConPartidas(accessToken, ids, log = console)
   if (!Array.isArray(ids) || !ids.length) return { ok: true, polizas: [] };
   const { data: cabeceras, error: e1 } = await supabase
     .from('polizas')
-    .select('id, folio, tipo, fecha, concepto, monto, estado, ajuste_de_id, tipo_ajuste, motivo_ajuste')
+    .select('id, folio, tipo, fecha, concepto, monto, estado, ajuste_de_id, tipo_ajuste, motivo_ajuste, origen, cfdi_uuid')
     .in('id', ids);
   if (e1) { log.warn('[postgres] obtenerPolizasConPartidas cab:', e1.message); return { ok: false, error: e1.message }; }
   const { data: partidas, error: e2 } = await supabase
@@ -80,9 +115,27 @@ export async function obtenerPolizasConPartidas(accessToken, ids, log = console)
   const polizas = (cabeceras || []).map((c) => ({
     id: c.id, folio: c.folio, tipo: c.tipo, fecha: c.fecha, concepto: c.concepto,
     monto: c.monto, estado: c.estado, ajusteDeId: c.ajuste_de_id, tipoAjuste: c.tipo_ajuste,
-    motivoAjuste: c.motivo_ajuste, asientos: porPoliza[c.id] || [],
+    motivoAjuste: c.motivo_ajuste, origen: c.origen || null, cfdiUuid: c.cfdi_uuid || null,
+    asientos: porPoliza[c.id] || [],
   }));
   return { ok: true, polizas };
+}
+
+// OT-mejoras-SAT: anula una póliza duplicada (mismo CFDI contabilizado
+// 2 veces por error) — solo genera la reversa que cancela el efecto
+// contable, sin forzar una "corrección" de reemplazo con montos
+// inventados. La original queda bloqueada con estado 'anulada'.
+export async function anularPolizaDuplicada(accessToken, polizaId, { motivo }, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { data, error } = await supabase.rpc('anular_poliza_duplicada', {
+    p_poliza_id: polizaId, p_motivo: motivo,
+  });
+  if (error) {
+    log.warn('[postgres] anular_poliza_duplicada:', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, reversa: data.reversa };
 }
 
 // OT-0025: genera reversa + corrección de una póliza, atómico, sin tocar

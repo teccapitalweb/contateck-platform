@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 //  CONTATECK · Backend · Empleados (Nómina — Parte A)
 //  OT-0017 · Épica 2: Evolución UX/UI
 //
@@ -39,7 +39,7 @@ const ROLES_CON_ACCESO = ['rh', 'admin', 'director', 'contador', 'auditor'];
 // Columnas administrativas, seguras para auditoría de cumplimiento.
 const COLUMNAS_AUDITOR = 'id, nombre, puesto, departamento, estado, fecha_ingreso, created_at';
 // Todo, incluyendo datos sensibles (sueldo, rfc, curp, nss, cuenta bancaria).
-const COLUMNAS_COMPLETAS = 'id, nombre, puesto, departamento, fecha_ingreso, sueldo, rfc, curp, nss, cuenta_bancaria, estado, created_by, created_at, updated_at';
+const COLUMNAS_COMPLETAS = 'id, nombre, puesto, departamento, fecha_ingreso, sueldo, sueldo_tipo, sueldo_monto_original, rfc, curp, nss, cuenta_bancaria, estado, created_by, created_at, updated_at';
 
 function clienteComoUsuario(accessToken) {
   if (!config.supabase.url || !config.supabase.anonKey) return null;

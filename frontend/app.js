@@ -528,13 +528,23 @@
       const puedeEscribir = puedeEscribirEmpleados();
       const btnNuevo = document.querySelector('[data-new="empleado"]');
       if (btnNuevo) btnNuevo.style.display = puedeEscribir ? "" : "none";
+      // OT-nomina-p1: mapa de los 5 estados con su etiqueta y color —
+      // antes era binario (todo lo que no fuera "ok" se pintaba "Baja"
+      // en rojo), y un empleado en incapacidad/maternidad/permiso se
+      // veía mal etiquetado. "pill--pend" (ámbar) para ausencias
+      // temporales: no está de baja, pero tampoco cuenta para prenómina.
+      const ESTADOS_EMP = {
+        ok: { t: "Activo", c: "pill--ok" },
+        incapacidad: { t: "Incapacidad", c: "pill--pend" },
+        maternidad: { t: "Maternidad", c: "pill--pend" },
+        permiso: { t: "Permiso", c: "pill--pend" },
+        baja: { t: "Baja", c: "pill--late" },
+      };
       fill("[data-empleados]", arr.map(function (e) {
-        const ok = e.estado === "ok";
-        // Nómina Parte A: el rol auditor no recibe "sueldo" del backend
-        // (columnas restringidas) — se muestra "—", nunca un valor falso.
+        const est = ESTADOS_EMP[e.estado] || ESTADOS_EMP.baja;
         const sueldoTxt = e.sueldo == null ? "—" : "$" + money(e.sueldo);
         return "<tr><td>" + e.nombre + "</td><td>" + (e.puesto || "—") + '</td><td class="num" style="text-align:right">' + sueldoTxt +
-          '</td><td><span class="pill ' + (ok ? "pill--ok" : "pill--late") + '">' + (ok ? "Activo" : "Baja") + "</span></td>" +
+          '</td><td><span class="pill ' + est.c + '">' + est.t + "</span></td>" +
           (puedeEscribir ? rowAct("empleados", e.id) : "<td></td>") + "</tr>";
       }).join(""));
     }

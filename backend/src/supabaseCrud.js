@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 //  CONTATECK · Backend · CRUD en Postgres
 //  OT-0008-C — Escritura (crear/editar/borrar) para clientes,
 //  productos, empleados y pólizas. A partir de esta OT, estos 4
@@ -31,7 +31,7 @@ const TABLAS = {
   // cuenta_bancaria son sensibles — el rol auditor nunca los ve
   // (columnas ocultas en supabaseEmpleados.js, no aquí).
   empleados: {
-    campos: ['nombre', 'puesto', 'departamento', 'fecha_ingreso', 'sueldo', 'rfc', 'curp', 'nss', 'cuenta_bancaria', 'estado'],
+    campos: ['nombre', 'puesto', 'departamento', 'fecha_ingreso', 'sueldo', 'sueldo_tipo', 'sueldo_monto_original', 'rfc', 'curp', 'nss', 'cuenta_bancaria', 'estado'],
     permiteEliminar: false,
   }, // soft-delete
   polizas: { campos: ['folio', 'tipo', 'fecha', 'concepto', 'monto', 'estado'], permiteEliminar: false }, // nunca se borra

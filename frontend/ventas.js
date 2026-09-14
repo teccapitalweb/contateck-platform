@@ -21,6 +21,10 @@
     rechazado: { txt: "Rechazado", cls: "v-badge--bad" },
   };
   const ROLES_VALIDADORES = ["contador", "admin", "director"];
+  // OT-mejoras-ventas: mismo criterio que el backend — admin/director
+  // pueden validar su propio registro (excepción a la separación de
+  // funciones); "contador" a secas se queda sin esta excepción.
+  const ROLES_AUTOVALIDAN = ["admin", "director"];
 
   // ---------- Backend / sesión ----------
   function backendUrl() {
@@ -44,6 +48,7 @@
   function miId() { const p = miPerfil(); return p ? p.id : null; }
   function miRol() { const p = miPerfil(); return p ? p.rol : null; }
   function esValidador() { return ROLES_VALIDADORES.indexOf(miRol()) !== -1; }
+  function puedeAutovalidar() { return ROLES_AUTOVALIDAN.indexOf(miRol()) !== -1; }
 
   function money(n) { return "$" + Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function hoy() { return new Date().toISOString().slice(0, 10); }
@@ -54,6 +59,39 @@
     return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
   }
   function idCorto(id) { return id ? String(id).slice(0, 8) + "…" : "—"; }
+
+  // ---------- Combo propio (reemplaza <select> nativo) ----------
+  // Un <select> nativo no se puede pintar oscuro por dentro — los
+  // <option> los dibuja el sistema operativo, no el CSS del sitio, por
+  // eso se veían blancos aunque el resto del formulario sea oscuro.
+  // Este combo es un desplegable propio, mismo patrón visual que ya usa
+  // Contabilidad (fac-sat-field), con soporte para "Otro" (revela un
+  // campo de texto libre cuando se elige esa opción).
+  // ---------- Buscador de Cliente (sugiere de ventas anteriores) ----------
+  // No existe un catálogo real de "Clientes" en ningún lado del sistema
+  // (Contabilidad solo tiene la cuenta contable 105, no una tabla de
+  // personas) — así que las sugerencias salen de los nombres que ya se
+  // usaron antes en este mismo módulo. Sigue siendo texto libre: si no
+  // hay coincidencia, se guarda tal cual lo que la persona escriba.
+  function clientesUsados() {
+    const set = new Set();
+    ventasCache.forEach((v) => { if (v.cliente) set.add(v.cliente); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }
+
+  function comboHTML(id, opciones, valorInicial) {
+    return `
+      <div class="v-combo" data-v-combo="${id}">
+        <button type="button" class="v-inp v-combo__btn" data-v-combo-toggle="${id}">
+          <span data-v-combo-label="${id}">${valorInicial}</span>
+          <svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="v-combo__list" data-v-combo-list="${id}">
+          ${opciones.map((o) => `<div class="v-combo__opt${o === valorInicial ? " is-active" : ""}" data-v-combo-opt="${id}::${o}">${o}</div>`).join("")}
+        </div>
+      </div>
+      <input type="hidden" id="v-${id}" value="${valorInicial}">`;
+  }
   function uuidCliente() {
     if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
@@ -109,6 +147,7 @@
 
   // ---------- Datos (backend real) ----------
   let ventasCache = [];
+  let nombresCache = {};
   async function cargarVentas() {
     try {
       const resp = await fetch(backendUrl() + "/api/ventas", { headers: authHeaders(false) });
@@ -119,6 +158,21 @@
       ventasCache = [];
       toast("Sin conexión con el backend.", "warn");
     }
+  }
+  // OT-mejoras-ventas: antes Vendedor mostraba el UUID crudo (ej.
+  // "ab450fa5…") — nadie lo reconoce. Se resuelve contra /api/equipo/nombres
+  // (ruta ligera, sin candado de rol) para mostrar el nombre real.
+  async function cargarNombresEquipo() {
+    try {
+      const resp = await fetch(backendUrl() + "/api/equipo/nombres", { headers: authHeaders(false) });
+      const data = await resp.json();
+      nombresCache = {};
+      if (data.ok) (data.equipo || []).forEach((p) => { nombresCache[p.id] = p.nombre; });
+    } catch (e) { /* si falla, se cae al UUID corto como respaldo — no bloquea la pantalla */ }
+  }
+  function nombreVendedor(id) {
+    if (!id) return "—";
+    return nombresCache[id] || idCorto(id);
   }
 
   // ---------- Render principal ----------
@@ -147,12 +201,25 @@
         </div>
         <div style="overflow-x:auto">
           <table class="tbl v-tbl">
-            <thead><tr><th>Folio</th><th>Cliente</th><th>Concepto</th><th>Consultora</th><th style="text-align:right">Importe</th><th>Vendedor</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Folio</th><th>Cliente</th><th>Concepto</th><th style="text-align:right">Importe</th><th>Registrado por</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
             <tbody data-v-rows></tbody>
           </table>
         </div>
       </div>`;
-    await Promise.all([cargarVentas(), esperarPerfil()]);
+    await Promise.all([cargarVentas(), esperarPerfil(), cargarNombresEquipo()]);
+    renderKpis();
+    renderRows();
+  }
+
+  // OT-mejoras-ventas: version ligera de render() para usar DESPUÉS de
+  // una acción (registrar/tomar/confirmar/rechazar) — antes se llamaba
+  // a render() completo, que reconstruye TODA la pantalla desde cero y
+  // vuelve a pedir el equipo (nombresCache, que casi nunca cambia) y
+  // espera el perfil otra vez — 3 llamadas de red por cada clic cuando
+  // solo hacía falta 1 (traer las ventas actualizadas). Con esto los
+  // botones responden mucho más rápido, sin parpadeo de toda la pantalla.
+  async function recargarDatos() {
+    await cargarVentas();
     renderKpis();
     renderRows();
   }
@@ -176,7 +243,9 @@
   function accionesFila(v) {
     let acciones = `<button class="v-mini" data-v-ver="${v.id}">Ver</button>`;
     const soyCreador = v.created_by === miId();
-    if (!esValidador() || soyCreador) return acciones; // sin permiso o es su propio registro
+    // Bloquea solo si es su propio registro Y su rol no tiene la
+    // excepción de auto-validar (admin/director sí pueden).
+    if (!esValidador() || (soyCreador && !puedeAutovalidar())) return acciones;
     if (v.estado === "pendiente") {
       acciones += `<button class="v-mini v-mini--ok" data-v-tomar="${v.id}">Tomar para revisión</button>`;
     } else if (v.estado === "revision") {
@@ -191,7 +260,7 @@
     let arr = ventasCache.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     if (filtroActual !== "todos") arr = arr.filter((v) => v.estado === filtroActual);
     if (!arr.length) {
-      tb.innerHTML = `<tr><td colspan="9" class="v-empty">Sin pagos registrados. Da clic en "Nueva venta" para empezar.</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="8" class="v-empty">Sin pagos registrados. Da clic en "Nueva venta" para empezar.</td></tr>`;
       return;
     }
     tb.innerHTML = arr.map((v) => {
@@ -200,9 +269,8 @@
         <td><b>${v.folio}</b></td>
         <td>${v.cliente || "—"}</td>
         <td>${v.concepto || "—"}</td>
-        <td>${v.consultora_id ? idCorto(v.consultora_id) : "—"}</td>
         <td style="text-align:right">${money(v.importe)}</td>
-        <td>${v.vendedor_id ? idCorto(v.vendedor_id) : "—"}</td>
+        <td>${nombreVendedor(v.vendedor_id)}</td>
         <td>${fmtFecha(v.fecha_pago)}</td>
         <td><span class="v-badge ${e.cls}">${e.txt}</span></td>
         <td><div class="v-acc">${accionesFila(v)}</div></td>
@@ -232,20 +300,54 @@
       <h2 class="v-h2">Nueva venta / Registro de pago</h2>
       <p class="v-sub">El pago quedará <b>Pendiente</b> hasta que alguien de administración lo tome para revisión.</p>
       <div class="v-grid2">
-        <div class="v-field"><label>Cliente</label><input class="v-inp" id="v-cliente" placeholder="Nombre del cliente"></div>
-        <div class="v-field"><label>Concepto</label><input class="v-inp" id="v-concepto" placeholder="Servicio, curso o concepto"></div>
+        <div class="v-field">
+          <label>Cliente</label>
+          <div class="v-search" data-v-search="cliente">
+            <input class="v-inp" id="v-cliente" placeholder="Nombre del cliente" autocomplete="off">
+            <div class="v-search__list" data-v-search-list="cliente"></div>
+          </div>
+        </div>
+        <div class="v-field"><label>Concepto</label><input class="v-inp" id="v-concepto" placeholder="Servicio o concepto"></div>
       </div>
       <div class="v-grid2">
-        <div class="v-field"><label>Consultora</label><input class="v-inp" id="v-consultora" placeholder="Ej. IMDAC"></div>
-        <div class="v-field"><label>Importe</label><input class="v-inp" id="v-importe" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="v-field"><label>Importe</label><input class="v-inp v-inp--money" id="v-importe" type="number" min="0" step="0.01" placeholder="0.00" inputmode="decimal"></div>
+        <div class="v-field"><label>¿Incluye IVA?</label>
+          <div class="v-combo" data-v-combo="iva">
+            <button type="button" class="v-inp v-combo__btn" data-v-combo-toggle="iva">
+              <span data-v-combo-label="iva">Sí (16%)</span>
+              <svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="v-combo__list" data-v-combo-list="iva">
+              <div class="v-combo__opt is-active" data-v-combo-opt="iva::si">Sí (16%)</div>
+              <div class="v-combo__opt" data-v-combo-opt="iva::no">No (exento)</div>
+            </div>
+          </div>
+          <input type="hidden" id="v-iva" value="si">
+        </div>
       </div>
       <div class="v-grid2">
         <div class="v-field"><label>Fecha de pago</label><input class="v-inp" id="v-fecha" type="date" value="${hoy()}"></div>
-        <div class="v-field"><label>Método de pago</label><select class="v-inp" id="v-metodo">${METODOS.map((m) => `<option>${m}</option>`).join("")}</select></div>
+        <div></div>
       </div>
       <div class="v-grid2">
-        <div class="v-field"><label>Referencia / Folio</label><input class="v-inp" id="v-ref" placeholder="0001234567"></div>
-        <div class="v-field"><label>Banco emisor</label><select class="v-inp" id="v-banco">${BANCOS.map((b) => `<option>${b}</option>`).join("")}</select></div>
+        <div class="v-field">
+          <label>Método de pago</label>
+          ${comboHTML("metodo", METODOS, METODOS[0])}
+          <div class="v-field" data-v-otro-wrap="metodo" style="display:none;margin-top:.5rem">
+            <input class="v-inp" id="v-metodo-otro" placeholder="Especifica el método de pago">
+          </div>
+        </div>
+        <div class="v-field"><label>Referencia / Folio</label><input class="v-inp" id="v-ref" placeholder="Número de rastreo del banco (opcional en efectivo)"></div>
+      </div>
+      <div class="v-grid2">
+        <div class="v-field">
+          <label>Banco emisor</label>
+          ${comboHTML("banco", BANCOS, BANCOS[0])}
+          <div class="v-field" data-v-otro-wrap="banco" style="display:none;margin-top:.5rem">
+            <input class="v-inp" id="v-banco-otro" placeholder="Especifica el banco">
+          </div>
+        </div>
+        <div></div>
       </div>
       <div class="v-field">
         <label>Comprobante (imagen o PDF)</label>
@@ -264,6 +366,19 @@
     if (!cliente) { toast("Captura el nombre del cliente", "warn"); return; }
     if (!concepto) { toast("Captura el concepto o servicio", "warn"); return; }
     if (!importe) { toast("Captura el importe del pago", "warn"); return; }
+
+    // Si eligieron "Otro" en Método/Banco, se manda lo que escribieron en
+    // vez del literal "Otro" — y es obligatorio especificar cuál.
+    let metodoPago = g("v-metodo");
+    if (metodoPago === "Otro") {
+      metodoPago = g("v-metodo-otro");
+      if (!metodoPago) { toast("Especifica el método de pago", "warn"); return; }
+    }
+    let banco = g("v-banco");
+    if (banco === "Otro") {
+      banco = g("v-banco-otro");
+      if (!banco) { toast("Especifica el banco emisor", "warn"); return; }
+    }
 
     const btn = document.querySelector("[data-v-guardar]");
     if (btn) { btn.disabled = true; btn.textContent = "Guardando..."; }
@@ -284,12 +399,12 @@
         headers: authHeaders(true),
         body: JSON.stringify({
           cliente, concepto,
-          consultoraId: null, // OT-0014: consultora sigue como texto por ahora
           importe,
+          incluyeIva: g("v-iva") === "si",
           fechaPago: g("v-fecha"),
-          metodoPago: g("v-metodo"),
+          metodoPago,
           referencia: g("v-ref"),
-          banco: g("v-banco"),
+          banco,
           notas: g("v-notas"),
           comprobantePath,
         }),
@@ -299,7 +414,7 @@
 
       closeModal();
       toast("Pago registrado · queda Pendiente");
-      await render();
+      await recargarDatos();
     } catch (e) {
       toast("Error al guardar: " + e.message, "warn");
     } finally {
@@ -315,7 +430,7 @@
     let evidencia = `<p class="v-noevi">Cargando comprobante...</p>`;
     let acciones = "";
     const soyCreador = v.created_by === miId();
-    if (esValidador() && !soyCreador) {
+    if (esValidador() && (!soyCreador || puedeAutovalidar())) {
       if (v.estado === "pendiente") acciones = `<button class="btn btn--primary" data-v-tomar="${v.id}">Tomar para revisión</button>`;
       else if (v.estado === "revision") acciones = `<button class="btn btn--ghost v-btn-bad" data-v-rech="${v.id}">Rechazar</button><button class="btn btn--primary" data-v-conf="${v.id}">Confirmar pago</button>`;
     }
@@ -323,9 +438,9 @@
       <h2 class="v-h2">Pago ${v.folio}</h2>
       <span class="v-badge ${e.cls}" style="margin-bottom:.8rem;display:inline-block">${e.txt}</span>
       <div class="v-det">
-        ${detRow("Cliente", v.cliente)}${detRow("Concepto", v.concepto)}${detRow("Consultora", v.consultora_id ? idCorto(v.consultora_id) : "")}
-        ${detRow("Importe", money(v.importe))}${detRow("Fecha de pago", fmtFecha(v.fecha_pago))}${detRow("Método", v.metodo_pago)}
-        ${detRow("Referencia", v.referencia)}${detRow("Banco", v.banco)}
+        ${detRow("Cliente", v.cliente)}${detRow("Concepto", v.concepto)}
+        ${detRow("Importe", money(v.importe))}${detRow("IVA", v.incluye_iva === false ? "No (exento)" : "Sí (16%)")}${detRow("Fecha de pago", fmtFecha(v.fecha_pago))}${detRow("Método", v.metodo_pago)}
+        ${detRow("Referencia", v.referencia)}${detRow("Banco", v.banco)}${detRow("Registrado por", nombreVendedor(v.vendedor_id))}
         ${v.notas ? detRow("Notas", v.notas) : ""}
       </div>
       <div class="v-evi-wrap"><label class="v-evi-lbl">Comprobante</label><div data-v-evi>${evidencia}</div></div>
@@ -355,7 +470,14 @@
       if (!data.ok) { toast(data.error || "No se pudo completar la acción", "warn"); return; }
       closeModal();
       toast(msgOk);
-      await render();
+      // Conexión Ventas↔Contabilidad: si la venta se confirmó pero la
+      // póliza no se pudo generar, se muestra una advertencia extra para
+      // que la contadora lo revise (la venta SÍ se confirmó, solo falta
+      // el registro contable).
+      if (data.polizaWarning) {
+        setTimeout(function () { toast("⚠ Póliza no generada: " + data.polizaWarning, "warn"); }, 500);
+      }
+      await recargarDatos();
       document.dispatchEvent(new CustomEvent("contateck:ventas-cambio"));
     } catch (e) {
       toast("Error: " + e.message, "warn");
@@ -388,6 +510,62 @@
     }
     const file = e.target.closest("[data-v-file]");
     if (file) { const inp = document.getElementById("v-comprobante"); if (inp) inp.click(); return; }
+    // ---------- Combo propio (Método de pago / Banco) ----------
+    const toggle = e.target.closest("[data-v-combo-toggle]");
+    if (toggle) {
+      const id = toggle.getAttribute("data-v-combo-toggle");
+      const list = document.querySelector(`[data-v-combo-list="${id}"]`);
+      const abierta = list && list.classList.contains("is-open");
+      cerrarCombos();
+      if (list && !abierta) list.classList.add("is-open");
+      return;
+    }
+    const opt = e.target.closest("[data-v-combo-opt]");
+    if (opt) {
+      const [id, valor] = opt.getAttribute("data-v-combo-opt").split("::");
+      const hidden = document.getElementById("v-" + id);
+      const label = document.querySelector(`[data-v-combo-label="${id}"]`);
+      if (hidden) hidden.value = valor;
+      if (label) label.textContent = valor;
+      document.querySelectorAll(`[data-v-combo-opt^="${id}::"]`).forEach((o) => o.classList.toggle("is-active", o === opt));
+      cerrarCombos();
+      // "Otro" revela un campo de texto libre para especificar — sin
+      // esto, elegir "Otro" no dejaba forma de decir cuál era.
+      const otroWrap = document.querySelector(`[data-v-otro-wrap="${id}"]`);
+      if (otroWrap) otroWrap.style.display = valor === "Otro" ? "" : "none";
+      return;
+    }
+    if (!e.target.closest(".v-combo")) cerrarCombos();
+  });
+  function cerrarCombos() {
+    document.querySelectorAll(".v-combo__list.is-open").forEach((l) => l.classList.remove("is-open"));
+  }
+
+  // ---------- Buscador de Cliente: filtra mientras se escribe ----------
+  document.addEventListener("input", (e) => {
+    if (e.target.id !== "v-cliente") return;
+    const texto = e.target.value.trim().toLowerCase();
+    const list = document.querySelector('[data-v-search-list="cliente"]');
+    if (!list) return;
+    if (!texto) { list.classList.remove("is-open"); list.innerHTML = ""; return; }
+    const coincidencias = clientesUsados().filter((c) => c.toLowerCase().includes(texto)).slice(0, 6);
+    if (!coincidencias.length) { list.classList.remove("is-open"); list.innerHTML = ""; return; }
+    list.innerHTML = coincidencias.map((c) => `<div class="v-combo__opt" data-v-search-opt="${c}">${c}</div>`).join("");
+    list.classList.add("is-open");
+  });
+  document.addEventListener("click", (e) => {
+    const opt = e.target.closest("[data-v-search-opt]");
+    if (opt) {
+      const input = document.getElementById("v-cliente");
+      if (input) input.value = opt.getAttribute("data-v-search-opt");
+      const list = document.querySelector('[data-v-search-list="cliente"]');
+      if (list) { list.classList.remove("is-open"); list.innerHTML = ""; }
+      return;
+    }
+    if (!e.target.closest(".v-search")) {
+      const list = document.querySelector('[data-v-search-list="cliente"]');
+      if (list) list.classList.remove("is-open");
+    }
   });
 
   document.addEventListener("change", (e) => {
@@ -452,6 +630,27 @@
     .v-inp{background:var(--inp,rgba(255,255,255,.04));border:1px solid var(--line,rgba(255,255,255,.1));border-radius:10px;padding:.6rem .75rem;color:var(--text,#fff);font-family:inherit;font-size:.9rem;width:100%}
     .v-inp:focus{outline:none;border-color:var(--brand,#6E8BFF);box-shadow:0 0 0 3px rgba(110,139,255,.14)}
     select.v-inp{cursor:pointer}
+    /* Importe: se quitan las flechitas nativas del navegador — solo
+       sumaban/restaban centavos con cada clic, poco útil para un monto
+       y se veía inconsistente con el resto del formulario. */
+    .v-inp--money::-webkit-outer-spin-button,.v-inp--money::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+    .v-inp--money{-moz-appearance:textfield}
+    /* Combo propio (Método de pago / Banco) — reemplaza <select> nativo
+       porque el navegador dibuja las <option> con estilo del sistema
+       operativo, no con el CSS del sitio (por eso se veían blancas). */
+    .v-combo{position:relative}
+    .v-search{position:relative}
+    .v-search__list{display:none;position:absolute;top:100%;left:0;right:0;z-index:30;max-height:220px;overflow-y:auto;
+      background:var(--card,#10151f);border:1px solid var(--line,rgba(255,255,255,.12));border-radius:10px;margin-top:.3rem;box-shadow:0 20px 50px -15px rgba(0,0,0,.6)}
+    .v-search__list.is-open{display:block}
+    .v-combo__btn{display:flex;align-items:center;justify-content:space-between;gap:.5rem;text-align:left;cursor:pointer}
+    .v-combo__btn svg{flex-shrink:0;color:var(--muted,#8b98ad)}
+    .v-combo__list{display:none;position:absolute;top:100%;left:0;right:0;z-index:30;max-height:220px;overflow-y:auto;
+      background:var(--card,#10151f);border:1px solid var(--line,rgba(255,255,255,.12));border-radius:10px;margin-top:.3rem;box-shadow:0 20px 50px -15px rgba(0,0,0,.6)}
+    .v-combo__list.is-open{display:block}
+    .v-combo__opt{padding:.55rem .75rem;cursor:pointer;font-size:.86rem;color:var(--text,#cfd6e2);border-bottom:1px solid var(--line,rgba(255,255,255,.06))}
+    .v-combo__opt:last-child{border-bottom:0}
+    .v-combo__opt:hover,.v-combo__opt.is-active{background:var(--brand,#6E8BFF);color:#fff}
     .v-file{display:flex;align-items:center;gap:.6rem;padding:.7rem .8rem;border:1.5px dashed var(--line,rgba(255,255,255,.18));border-radius:10px;color:var(--muted,#8b98ad);cursor:pointer;font-size:.86rem;transition:.15s}
     .v-file:hover{border-color:var(--brand,#6E8BFF);color:var(--text,#fff)}
     .v-modal__foot{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1.2rem}

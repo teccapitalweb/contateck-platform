@@ -51,6 +51,26 @@ export async function listarEquipo(accessToken, log = console) {
   return { ok: true, equipo: data || [] };
 }
 
+// OT-mejoras-ventas: versión ligera de listarEquipo — SIN el candado de
+// ROLES_GESTIONAN y SIN datos sensibles (nada de email/activo/rol). Solo
+// id + nombre. Existe porque cosas básicas como "¿quién registró este
+// pago?" (Ventas y Pagos) las necesita cualquier persona de la empresa,
+// no solo RH/admin/director — la política RLS perfiles_select_empresa ya
+// permite que cualquier usuario autenticado lea nombres de su misma
+// empresa, así que este endpoint no abre ningún hueco de seguridad
+// nuevo: solo expone a nivel de API lo que la base ya permitía leer.
+export async function listarNombresEquipo(accessToken, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  const { data, error } = await supabase
+    .from('perfiles')
+    .select('id, nombre')
+    .order('nombre', { ascending: true });
+  if (error) { log.warn('[postgres] listarNombresEquipo:', error.message); return { ok: false, error: error.message }; }
+  return { ok: true, equipo: data || [] };
+}
+
 export async function cambiarEstadoMiembro(accessToken, miembroId, activo, log = console) {
   const rol = await obtenerRolUsuario(accessToken, log);
   if (!ROLES_GESTIONAN.includes(rol)) return { ok: false, error: 'No tienes permiso para esto (tu rol no lo permite).' };

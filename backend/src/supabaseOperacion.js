@@ -17,6 +17,10 @@ function clienteComoUsuario(accessToken) {
 // Devuelve { empleados: [...], polizas: [...] } para la empresa del usuario
 // (RLS ya filtra). null si Postgres no está listo, no hay permiso (ej. un
 // vendedor no puede leer empleados) o algo falla.
+// OT-mejoras-SAT: polizas ahora también trae origen/cfdi_uuid (mapeado a
+// cfdiUuid) — sin esto, DIOT y el candado de duplicados solo funcionaban
+// en el navegador donde se importó el XML, nunca al sincronizar desde
+// otro dispositivo/usuario del equipo.
 export async function obtenerEmpleadosYPolizas(accessToken, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase || !accessToken) return null;
@@ -24,7 +28,7 @@ export async function obtenerEmpleadosYPolizas(accessToken, log = console) {
   try {
     const [{ data: empleados, error: errEmp }, { data: polizas, error: errPol }] = await Promise.all([
       supabase.from('empleados').select('id, nombre, puesto, sueldo, estado'),
-      supabase.from('polizas').select('id, folio, tipo, fecha, concepto, monto, estado'),
+      supabase.from('polizas').select('id, folio, tipo, fecha, concepto, monto, estado, origen, cfdi_uuid'),
     ]);
 
     // errEmp puede ser normal si el rol del usuario no tiene permiso de
@@ -32,7 +36,10 @@ export async function obtenerEmpleadosYPolizas(accessToken, log = console) {
     // simplemente esa lista queda vacía.
     return {
       empleados: errEmp ? [] : (empleados || []),
-      polizas: errPol ? [] : (polizas || []),
+      polizas: errPol ? [] : (polizas || []).map((p) => ({
+        id: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto,
+        monto: p.monto, estado: p.estado, origen: p.origen || null, cfdiUuid: p.cfdi_uuid || null,
+      })),
     };
   } catch (err) {
     log.error('[postgres] Error al consultar empleados/polizas:', err.message);
