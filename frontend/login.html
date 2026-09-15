@@ -9,10 +9,132 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<style id="rediseno-panel-izquierdo">
+  /* ================================================================
+     Rediseño visual del panel izquierdo del login.
+     Solo estilos: no toca ids, formularios ni scripts reales.
+     ================================================================ */
+  .auth__brand{position:relative; overflow:hidden;}
+  .auth__brand::before,
+  .auth__brand::after{
+    content:''; position:absolute; border-radius:50%;
+    filter:blur(70px); pointer-events:none; z-index:0;
+  }
+  .auth__brand::before{
+    width:420px; height:420px; top:-8%; left:-15%;
+    background:radial-gradient(circle, rgba(110,139,255,.32), transparent 65%);
+    animation:orbA 11s ease-in-out infinite;
+  }
+  .auth__brand::after{
+    width:360px; height:360px; bottom:6%; right:-18%;
+    background:radial-gradient(circle, rgba(242,184,75,.2), transparent 65%);
+    animation:orbB 13s ease-in-out infinite;
+  }
+  @keyframes orbA{
+    0%,100%{transform:translate(0,0) scale(1);}
+    50%{transform:translate(40px,30px) scale(1.12);}
+  }
+  @keyframes orbB{
+    0%,100%{transform:translate(0,0) scale(1);}
+    50%{transform:translate(-35px,-25px) scale(1.15);}
+  }
+  .auth__brand .brand,
+  .auth__brand .auth__pitch,
+  .auth__brand .auth__ledger{position:relative; z-index:1;}
+
+  .auth__brand .brand__mark{
+    animation:markGlow 3.5s ease-in-out infinite;
+  }
+  @keyframes markGlow{
+    0%,100%{box-shadow:0 8px 22px -8px rgba(242,184,75,.5);}
+    50%{box-shadow:0 10px 30px -6px rgba(242,184,75,.85);}
+  }
+
+  .auth__brand .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:6px 14px; border-radius:100px;
+    background:rgba(110,139,255,.12);
+    border:1px solid rgba(110,139,255,.3);
+    color:#6E8BFF; font-weight:600;
+  }
+  .auth__brand .eyebrow::before{
+    content:''; width:6px; height:6px; border-radius:50%;
+    background:#34D399; box-shadow:0 0 0 3px rgba(52,211,153,.2);
+    animation:dotPulse 2s ease-in-out infinite;
+  }
+  @keyframes dotPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+  .auth__brand .auth__pitch h2{
+    font-size:clamp(1.9rem, 2.6vw, 2.5rem);
+    font-weight:700; line-height:1.12;
+  }
+  .auth__brand .auth__pitch h2 .grad{
+    background:linear-gradient(120deg, #6E8BFF, #F2B84B 130%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .auth__brand .auth__pitch p{font-size:1.02rem;}
+
+  .auth__brand .brand,
+  .auth__brand .auth__pitch .eyebrow,
+  .auth__brand .auth__pitch h2,
+  .auth__brand .auth__pitch p,
+  .auth__brand .auth__ledger{
+    opacity:0; transform:translateY(18px);
+    animation:brandIn .7s cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  .auth__brand .brand{animation-delay:.05s;}
+  .auth__brand .auth__pitch .eyebrow{animation-delay:.18s;}
+  .auth__brand .auth__pitch h2{animation-delay:.3s;}
+  .auth__brand .auth__pitch p{animation-delay:.42s;}
+  .auth__brand .auth__ledger{animation-delay:.56s;}
+  @keyframes brandIn{to{opacity:1; transform:translateY(0);}}
+
+  .auth__brand .ledger{
+    animation:ledgerGlow 4s ease-in-out infinite;
+    transition:transform .35s cubic-bezier(.22,.61,.36,1);
+  }
+  .auth__brand .ledger:hover{transform:translateY(-4px);}
+  @keyframes ledgerGlow{
+    0%,100%{box-shadow:0 20px 44px -22px rgba(110,139,255,.35), 0 0 0 1px rgba(110,139,255,.1);}
+    50%{box-shadow:0 24px 54px -18px rgba(110,139,255,.55), 0 0 22px 2px rgba(110,139,255,.18);}
+  }
+
+  .auth__brand .ledger__bar .deb{animation:fillBar 1.4s cubic-bezier(.22,.61,.36,1) .7s both;}
+  .auth__brand .ledger__bar .hab{animation:fillBar 1.4s cubic-bezier(.22,.61,.36,1) .85s both;}
+  @keyframes fillBar{from{width:0 !important;}to{width:50%;}}
+
+  .auth__brand .ledger__bar{position:relative;}
+  .auth__brand .ledger__bar::before{
+    content:''; position:absolute; top:0; bottom:0; width:36%;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+    animation:barShine 3.6s ease-in-out 2.4s infinite;
+    z-index:2;
+  }
+  @keyframes barShine{
+    0%{left:-40%;}
+    45%,100%{left:110%;}
+  }
+
+  .auth__brand .ledger__bal{
+    opacity:0; transform:scale(.85);
+    animation:balPop .5s cubic-bezier(.22,.61,.36,1) 2.1s forwards;
+  }
+  @keyframes balPop{to{opacity:1; transform:scale(1);}}
+  .auth__brand .ledger__bal svg{
+    filter:drop-shadow(0 0 6px rgba(52,211,153,.7));
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .auth__brand *, .auth__brand::before, .auth__brand::after{
+      animation-duration:.001ms !important;
+      animation-delay:0ms !important;
+      animation-iteration-count:1 !important;
+    }
+  }
+</style>
 </head>
 <body>
 <main class="auth">
-
   <!-- Panel de marca -->
   <aside class="auth__brand">
     <a href="index.html" class="brand">
@@ -21,7 +143,7 @@
     </a>
     <div class="auth__pitch">
       <span class="eyebrow">Panel contable</span>
-      <h2>Tu cierre del mes empieza aquí.</h2>
+      <h2>Tu cierre del mes <span class="grad">empieza aquí.</span></h2>
       <p>Pólizas, CFDI, nómina y declaraciones — sincronizados y cuadrados en tiempo real.</p>
     </div>
     <!-- Firma: cuadre Debe/Haber -->
@@ -99,5 +221,28 @@
 <script src="app.js"></script>
 <script src="supabase-config.js?v=2"></script>
 <script type="module" src="auth-login.js"></script>
+<script id="conteo-decorativo-ledger">
+  // Decorativo: anima los $6,460,000 contando desde cero al cargar la página.
+  // No toca el login real, no depende de ningún id del formulario.
+  (function () {
+    try {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var nums = document.querySelectorAll('.auth__brand .ledger__nums b');
+      if (!nums.length) return;
+      nums.forEach(function (el) {
+        var target = 6460000;
+        var t0 = null;
+        function step(ts) {
+          if (!t0) t0 = ts;
+          var p = Math.min((ts - t0) / 1500, 1);
+          var eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = '$' + Math.round(target * eased).toLocaleString('en-US');
+          if (p < 1) requestAnimationFrame(step);
+        }
+        setTimeout(function () { requestAnimationFrame(step); }, 750);
+      });
+    } catch (e) { /* decorativo: si falla, no pasa nada */ }
+  })();
+</script>
 </body>
 </html>
