@@ -38,7 +38,76 @@ export async function crearNomina(accessToken, { periodicidad, fechaInicio, fech
     log.warn('[postgres] crear_nomina:', error.message);
     return { ok: false, error: error.message };
   }
-  return { ok: true, nomina: data };
+  // Conexión Nómina↔Contabilidad: la nómina guardada genera su póliza
+  // de Egreso automáticamente (Cargo Gastos / Abono Bancos por el neto
+  // pagado). Si la póliza falla, la nómina SÍ queda guardada (el pago
+  // ya ocurrió) y se devuelve una advertencia para que contabilidad la
+  // registre a mano — mismo criterio que la conexión de Ventas.
+  let polizaWarning = null;
+  const rPol = await generarPolizaNomina(supabase, {
+    periodicidad, fechaInicio, fechaFin,
+    empleados: data && data.empleados_pagados,
+    totalNeto: data && Number(data.total_neto),
+  }, log);
+  if (!rPol.ok) {
+    polizaWarning = rPol.error || 'No se pudo generar la póliza contable.';
+    log.warn('[postgres] crearNomina: nómina guardada pero póliza falló:', polizaWarning);
+  }
+
+  return { ok: true, nomina: data, polizaWarning };
+}
+
+// Lee los códigos de las cuentas Bancos y Gastos desde la configuración
+// contable (RLS limita a la empresa del usuario — no hace falta filtrar).
+async function cuentasParaNomina(supabase, log) {
+  const { data, error } = await supabase
+    .from('configuracion_contable')
+    .select('cuenta_bancos_id, cuenta_gastos_id')
+    .maybeSingle();
+  if (error || !data || !data.cuenta_bancos_id || !data.cuenta_gastos_id) {
+    log.warn('[postgres] cuentasParaNomina:', error?.message || 'config incompleta');
+    return null;
+  }
+  const { data: cuentas, error: e2 } = await supabase
+    .from('cuentas_contables')
+    .select('id, codigo')
+    .in('id', [data.cuenta_bancos_id, data.cuenta_gastos_id]);
+  if (e2 || !cuentas || cuentas.length < 2) return null;
+  const mapa = {};
+  cuentas.forEach((c) => { mapa[c.id] = c.codigo; });
+  return { bancos: mapa[data.cuenta_bancos_id], gastos: mapa[data.cuenta_gastos_id] };
+}
+
+const ETIQUETA_PERIODO = { semanal: 'semanal', catorcenal: 'catorcenal', quincenal: 'quincenal', mensual: 'mensual' };
+
+async function generarPolizaNomina(supabase, n, log) {
+  if (!n.totalNeto || n.totalNeto <= 0) {
+    return { ok: false, error: 'Neto de la nómina inválido para la póliza.' };
+  }
+  const cuentas = await cuentasParaNomina(supabase, log);
+  if (!cuentas || !cuentas.bancos || !cuentas.gastos) {
+    return { ok: false, error: 'Cuentas contables (Bancos/Gastos) no configuradas — la póliza no se generó.' };
+  }
+  const concepto = 'Nómina ' + (ETIQUETA_PERIODO[n.periodicidad] || n.periodicidad) +
+    ' ' + n.fechaInicio + ' a ' + n.fechaFin + ' · ' + (n.empleados || '?') + ' empleado(s)';
+  const partidas = [
+    { codigo: cuentas.gastos, debe: n.totalNeto, haber: 0, descripcion: 'Sueldos del periodo' },
+    { codigo: cuentas.bancos, debe: 0, haber: n.totalNeto, descripcion: 'Pago de nómina' },
+  ];
+  // Fecha de la póliza: el fin del periodo (día de pago típico).
+  const { data, error } = await supabase.rpc('crear_poliza_completa', {
+    p_tipo: 'Egreso',
+    p_fecha: n.fechaFin,
+    p_concepto: concepto,
+    p_partidas: partidas,
+    p_origen: 'nominas',
+    p_cfdi_uuid: null,
+  });
+  if (error) {
+    log.warn('[postgres] generarPolizaNomina:', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, poliza: data };
 }
 
 // Lista de nóminas pagadas (encabezados), más reciente primero. La RLS

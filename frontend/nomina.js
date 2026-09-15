@@ -370,8 +370,16 @@
       const data = await resp.json();
       if (!data.ok) { toast("No se pudo guardar la nómina: " + (data.error || "error"), "warn"); return; }
       toast("Nómina aprobada y guardada · " + pre.filas.length + " empleado(s)", "ok");
+      // Conexión Nómina↔Contabilidad: si la nómina se guardó pero la
+      // póliza no se pudo generar, se avisa para registrarla a mano.
+      if (data.polizaWarning) {
+        setTimeout(function () { toast("⚠ Póliza no generada: " + data.polizaWarning, "warn"); }, 500);
+      }
       salirPrenomina();
       cargarHistorial();
+      // Avisar a Contabilidad para que traiga la póliza recién generada
+      // sin que el usuario tenga que recargar la página.
+      document.dispatchEvent(new CustomEvent("contateck:nominas-cambio"));
     } catch (e) {
       toast("Error al guardar la nómina: " + e.message, "warn");
     } finally {

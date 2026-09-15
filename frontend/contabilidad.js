@@ -2398,7 +2398,7 @@ ${ctas}
       <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
         <td class="num" style="text-align:right">$${fmt(debe)}</td><td class="num" style="text-align:right">$${fmt(haber)}</td></tr></tfoot></table></div>
       <div class="cont-foot" style="display:flex;align-items:center;justify-content:space-between">
-        <div>${p.origen === "ventas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Ventas ' + esc(p.concepto || '').split(' — ')[0].replace('Venta ', '') + '</span>' : ''}</div>
+        <div>${p.origen === "ventas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Ventas ' + esc(p.concepto || '').split(' — ')[0].replace('Venta ', '') + '</span>' : (p.origen === "nominas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Nómina</span>' : '')}</div>
         <div style="display:flex;gap:.5rem">
         <button class="btn btn--ghost" data-cont-close>Cerrar</button>
         ${botonAnularDuplicada(p)}
@@ -2453,7 +2453,7 @@ ${ctas}
     // desde Ventas NO se editan — si algo está mal, se corrige desde la
     // venta misma (rechazar y re-registrar), no editando la póliza por
     // atrás, porque eso rompería la consistencia entre los dos módulos.
-    if (p.origen === "ventas") return "";
+    if (p.origen === "ventas" || p.origen === "nominas") return "";
     return `<button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button>`;
   }
 
@@ -3103,6 +3103,27 @@ ${ctas}
     if (cambiado) guardarPolizas(arr);
     return cambiado;
   }
+
+  // Refresco en vivo (Ventas/Nómina → Contabilidad): cuando otro módulo
+  // genera una póliza automática, la foto CONTATECK_POLIZAS_PG con la
+  // que arrancó esta página ya quedó vieja — se vuelve a pedir al
+  // backend y se sincroniza, sin que el usuario tenga que recargar.
+  async function refrescarPolizasDesdeBackend() {
+    try {
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const token = window.CONTATECK_SUPABASE_TOKEN;
+      if (!token) return;
+      const r = await fetch(BACKEND + "/api/operacion", { headers: { Authorization: "Bearer " + token } });
+      const data = await r.json();
+      if (data && data.ok && data.fuente === "postgres") {
+        window.CONTATECK_POLIZAS_PG = data.polizas || [];
+        const cambiado = await sincronizarPolizasDesdePostgres();
+        if (cambiado) renderTodo();
+      }
+    } catch (e) { /* sin conexión: la póliza se verá al recargar */ }
+  }
+  document.addEventListener("contateck:ventas-cambio", refrescarPolizasDesdeBackend);
+  document.addEventListener("contateck:nominas-cambio", refrescarPolizasDesdeBackend);
 
   // OT-0025: tras una corrección, trae del backend la original (ya
   // marcada 'corregida'), la reversa y la corregida CON sus partidas, y
