@@ -11,35 +11,35 @@
 <style>
   /* ============ TOKENS (tema claro real del panel CONTATECK) ============ */
   :root{
-    --ink-900:#EEF2F9;
-    --ink-850:#F4F7FC;
-    --ink-800:#FFFFFF;
-    --ink-700:#FFFFFF;
-    --ink-650:#F5F8FD;
-    --ink-600:#E8EEF8;
-    --line:rgba(15,23,42,.09);
-    --line-strong:rgba(15,23,42,.16);
+    --ink-900:#070B14;
+    --ink-850:#0A101E;
+    --ink-800:#0C1322;
+    --ink-700:#111A2D;
+    --ink-650:#15203A;
+    --ink-600:#1B2843;
+    --line:rgba(148,163,184,.14);
+    --line-strong:rgba(148,163,184,.24);
 
-    --text:#0E1626;
-    --muted:#56657F;
-    --faint:#8A97AE;
+    --text:#E9EEF8;
+    --muted:#94A2BD;
+    --faint:#5E6B85;
 
-    --brand:#3F5BE6;
-    --brand-2:#3048C9;
-    --brand-soft:rgba(63,91,230,.10);
-    --gold:#C98A12;
-    --gold-soft:rgba(201,138,18,.12);
+    --brand:#6E8BFF;
+    --brand-2:#4F6BE0;
+    --brand-soft:rgba(110,139,255,.14);
+    --gold:#F2B84B;
+    --gold-soft:rgba(242,184,75,.14);
 
-    --up:#0FA968;
-    --up-soft:rgba(15,169,104,.12);
-    --down:#E04860;
+    --up:#34D399;
+    --up-soft:rgba(52,211,153,.13);
+    --down:#FB7185;
 
-    --glass:rgba(255,255,255,.82);
-    --glass-brd:rgba(15,23,42,.14);
+    --glass:rgba(38,50,79,.72);
+    --glass-brd:rgba(148,163,184,.30);
 
     --radius:16px;
     --radius-lg:24px;
-    --shadow:0 30px 54px -18px rgba(63,91,230,.28), 0 10px 22px -12px rgba(15,23,42,.12);
+    --shadow:0 30px 60px -16px rgba(110,139,255,.4), 0 10px 24px -10px rgba(0,0,0,.6);
 
     --display:'Montserrat',system-ui,sans-serif;
     --body:'Montserrat',system-ui,sans-serif;
@@ -70,9 +70,9 @@
   .bg-grid{
     position:fixed; inset:0; z-index:-2;
     background-image:
-      radial-gradient(ellipse 900px 560px at 18% -8%, rgba(63,91,230,.10), transparent 60%),
-      radial-gradient(ellipse 700px 500px at 100% 18%, rgba(201,138,18,.06), transparent 55%),
-      linear-gradient(var(--ink-900), #FFFFFF 45%);
+      radial-gradient(ellipse 900px 560px at 18% -8%, rgba(110,139,255,.10), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 18%, rgba(242,184,75,.06), transparent 55%),
+      linear-gradient(var(--ink-900), var(--ink-900));
   }
   .bg-lines{
     position:fixed; inset:0; z-index:-1; opacity:.35; pointer-events:none;
@@ -84,7 +84,7 @@
   /* ============ nav ============ */
   header{
     position:sticky; top:0; z-index:50;
-    background:rgba(255,255,255,.78);
+    background:rgba(7,11,20,.72);
     backdrop-filter:blur(14px);
     border-bottom:1px solid var(--line);
   }
@@ -158,9 +158,9 @@
     position:absolute; inset:-8%;
     border-radius:40px;
     background:
-      radial-gradient(ellipse 60% 55% at 28% 30%, rgba(63,91,230,.22), transparent 70%),
-      radial-gradient(ellipse 55% 50% at 78% 68%, rgba(201,138,18,.16), transparent 70%),
-      radial-gradient(ellipse 70% 60% at 50% 85%, rgba(15,169,104,.10), transparent 70%);
+      radial-gradient(ellipse 60% 55% at 28% 30%, rgba(110,139,255,.38), transparent 70%),
+      radial-gradient(ellipse 55% 50% at 78% 68%, rgba(242,184,75,.24), transparent 70%),
+      radial-gradient(ellipse 70% 60% at 50% 85%, rgba(52,211,153,.16), transparent 70%);
     filter:blur(6px);
     z-index:0;
   }
@@ -350,7 +350,7 @@
   }
   .feat{
     position:relative;
-    background:linear-gradient(165deg, #FFFFFF, var(--ink-850));
+    background:linear-gradient(165deg, var(--ink-850), var(--ink-800));
     border:1px solid var(--line);
     border-radius:20px;
     padding:32px 28px;
@@ -377,15 +377,15 @@
      en táctil, la anima sola un keyframe (ver bloque @media hover:none abajo) */
   .feat::after{
     content:''; position:absolute; inset:0; pointer-events:none; opacity:0;
-    background-image:radial-gradient(circle, rgba(63,91,230,.14), transparent 65%);
+    background-image:radial-gradient(circle, rgba(110,139,255,.14), transparent 65%);
     background-repeat:no-repeat; background-size:260px 260px;
     background-position:var(--mx,50%) var(--my,50%);
     transition:opacity .35s var(--ease);
   }
   .feat:hover{
     transform:translateY(-7px);
-    border-color:rgba(63,91,230,.30);
-    box-shadow:0 28px 46px -22px rgba(63,91,230,.30), 0 8px 18px -10px rgba(15,23,42,.10);
+    border-color:rgba(110,139,255,.30);
+    box-shadow:0 28px 46px -22px rgba(110,139,255,.30), 0 8px 18px -10px rgba(15,23,42,.10);
   }
   .feat:hover::before{transform:scaleX(1);}
   .feat:hover::after{opacity:1;}
@@ -394,12 +394,12 @@
     display:flex; align-items:center; justify-content:center;
     background:linear-gradient(150deg, var(--brand), var(--brand-2));
     color:#FFFFFF;
-    box-shadow:0 12px 20px -10px rgba(63,91,230,.55);
+    box-shadow:0 12px 20px -10px rgba(110,139,255,.55);
     transition:transform .4s var(--ease);
     position:relative; z-index:1;
   }
   .feat:hover .ico{transform:scale(1.08) rotate(-4deg);}
-  .feat.gold .ico{background:linear-gradient(150deg, var(--gold), #B87A0E); box-shadow:0 12px 20px -10px rgba(201,138,18,.5);}
+  .feat.gold .ico{background:linear-gradient(150deg, var(--gold), #B87A0E); box-shadow:0 12px 20px -10px rgba(242,184,75,.5);}
   .feat .ico svg{width:23px; height:23px;}
   .feat h3{font-size:1.1rem; margin-bottom:11px; position:relative; z-index:1;}
   .feat p{color:var(--muted); font-size:.93rem; position:relative; z-index:1;}
@@ -408,7 +408,7 @@
      pero en automático, para que no dependan de pasar el mouse ---- */
   @media (hover:none){
     .feat{
-      box-shadow:0 18px 32px -22px rgba(63,91,230,.22);
+      box-shadow:0 18px 32px -22px rgba(110,139,255,.22);
       animation:featBreathe 5s ease-in-out infinite;
     }
     .feat:nth-child(2){animation-delay:.6s;}
@@ -458,7 +458,7 @@
   .showcase-copy ul{list-style:none; margin-top:26px; display:flex; flex-direction:column; gap:14px;}
   .showcase-copy li{
     display:flex; gap:16px; align-items:flex-start;
-    background:#FFFFFF; border:1px solid var(--line); border-radius:16px; padding:18px 20px;
+    background:var(--ink-850); border:1px solid var(--line); border-radius:16px; padding:18px 20px;
     opacity:0; transform:translateX(-16px);
     transition:opacity .55s var(--ease), transform .55s var(--ease),
                 border-color .3s var(--ease), box-shadow .3s var(--ease), background .3s var(--ease);
@@ -467,12 +467,12 @@
   .showcase-copy li:nth-child(1){transition-delay:0s;}
   .showcase-copy li:nth-child(2){transition-delay:.12s;}
   .showcase-copy li:nth-child(3){transition-delay:.24s;}
-  .showcase-copy li:hover{border-color:rgba(63,91,230,.28); box-shadow:0 18px 30px -20px rgba(63,91,230,.3); background:var(--ink-850);}
+  .showcase-copy li:hover{border-color:rgba(110,139,255,.32); box-shadow:0 18px 30px -20px rgba(110,139,255,.35); background:var(--ink-800);}
   .showcase-copy li .dot{
     width:30px; height:30px; border-radius:9px; flex:none; margin-top:1px;
     background:linear-gradient(150deg, var(--up), #0C8657); color:#fff;
     display:flex; align-items:center; justify-content:center;
-    box-shadow:0 10px 16px -8px rgba(15,169,104,.5);
+    box-shadow:0 10px 16px -8px rgba(52,211,153,.5);
   }
   .showcase-copy li .dot svg{width:14px; height:14px;}
   .showcase-copy li b{display:block; margin-bottom:3px;}
@@ -494,7 +494,7 @@
   .steps.in::after{width:calc(66.8% - 8px);}
   .step{
     position:relative; z-index:1;
-    background:#FFFFFF; border:1px solid var(--line); border-radius:20px; padding:30px 26px;
+    background:var(--ink-850); border:1px solid var(--line); border-radius:20px; padding:30px 26px;
     opacity:0; transform:translateY(24px);
     transition:opacity .6s var(--ease), transform .6s var(--ease), box-shadow .35s var(--ease), border-color .35s var(--ease);
   }
@@ -502,15 +502,15 @@
   .step:nth-child(1){transition-delay:0s;}
   .step:nth-child(2){transition-delay:.15s;}
   .step:nth-child(3){transition-delay:.3s;}
-  .step:hover{transform:translateY(-6px); box-shadow:0 24px 40px -22px rgba(63,91,230,.28); border-color:rgba(63,91,230,.25);}
+  .step:hover{transform:translateY(-6px); box-shadow:0 24px 40px -22px rgba(110,139,255,.28); border-color:rgba(110,139,255,.25);}
   .step-num{
     width:38px; height:38px; border-radius:11px;
     background:linear-gradient(150deg, var(--brand), var(--brand-2)); color:#fff;
     font-family:var(--display); font-size:.95rem; font-weight:700;
     display:flex; align-items:center; justify-content:center; margin-bottom:18px;
-    box-shadow:0 10px 18px -8px rgba(63,91,230,.5);
+    box-shadow:0 10px 18px -8px rgba(110,139,255,.5);
   }
-  .step:nth-child(3) .step-num{background:linear-gradient(150deg, var(--gold), #B87A0E); box-shadow:0 10px 18px -8px rgba(201,138,18,.5);}
+  .step:nth-child(3) .step-num{background:linear-gradient(150deg, var(--gold), #B87A0E); box-shadow:0 10px 18px -8px rgba(242,184,75,.5);}
   .step-tag{color:var(--brand); font-size:.78rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;}
   .step h3{font-size:1.1rem; margin-bottom:10px;}
   .step p{color:var(--muted); font-size:.92rem;}
@@ -532,7 +532,7 @@
   .plans-toggle .knob{
     position:absolute; top:5px; left:5px; height:calc(100% - 10px); width:calc(50% - 5px);
     background:linear-gradient(135deg, var(--brand), var(--brand-2));
-    border-radius:100px; box-shadow:0 10px 20px -8px rgba(63,91,230,.5);
+    border-radius:100px; box-shadow:0 10px 20px -8px rgba(110,139,255,.5);
     transition:transform .38s var(--ease);
   }
   .plans-toggle.annual .knob{transform:translateX(100%);}
@@ -544,21 +544,21 @@
 
   .plan-single{max-width:400px; margin:0 auto;}
   .plan-card{
-    position:relative; background:#FFFFFF; border:1px solid var(--line); border-radius:var(--radius-lg);
+    position:relative; background:var(--ink-850); border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:40px 36px; overflow:hidden;
     transition:transform .4s var(--ease), box-shadow .4s var(--ease), border-color .4s var(--ease);
   }
-  .plan-card:hover{transform:translateY(-6px); box-shadow:0 30px 50px -24px rgba(63,91,230,.28);}
+  .plan-card:hover{transform:translateY(-6px); box-shadow:0 30px 50px -24px rgba(110,139,255,.28);}
   .plan-card.featured{
     background:linear-gradient(165deg, #0C1322, #0A101E);
     border-color:rgba(110,139,255,.35);
-    box-shadow:0 30px 54px -24px rgba(63,91,230,.4);
+    box-shadow:0 30px 54px -24px rgba(110,139,255,.4);
   }
   .plan-badge{
     position:absolute; top:22px; right:22px;
     background:linear-gradient(135deg, var(--gold), #B87A0E); color:#fff;
     font-size:.72rem; font-weight:700; padding:6px 13px; border-radius:100px;
-    box-shadow:0 8px 16px -6px rgba(201,138,18,.5);
+    box-shadow:0 8px 16px -6px rgba(242,184,75,.5);
   }
   .plan-name{font-size:1.02rem; color:var(--muted); margin-bottom:6px;}
   .plan-price{display:flex; align-items:baseline; gap:8px; margin-bottom:6px;}
@@ -571,7 +571,7 @@
     transition:transform .25s var(--ease), box-shadow .25s var(--ease);
   }
   .plan-cta:hover{transform:translateY(-2px);}
-  .plan-cta.solid{background:linear-gradient(135deg, var(--brand), var(--brand-2)); color:#fff; box-shadow:0 14px 26px -12px rgba(63,91,230,.55);}
+  .plan-cta.solid{background:linear-gradient(135deg, var(--brand), var(--brand-2)); color:#fff; box-shadow:0 14px 26px -12px rgba(110,139,255,.55);}
   .plan-cta.outline{background:transparent; border:1px solid var(--line-strong); color:var(--text);}
   .plan-list{list-style:none; display:flex; flex-direction:column; gap:13px;}
   .plan-list li{display:flex; gap:10px; align-items:flex-start; font-size:.9rem; color:var(--muted);}
@@ -598,16 +598,8 @@
   .cta .hero-actions{justify-content:center; position:relative;}
 
   /* ============ footer ============ */
-  /* Footer en modo oscuro: redefine las variables de color solo dentro
-     de <footer>, así todo lo que ya usa var(--text)/var(--muted)/etc.
-     adentro cambia solo, sin duplicar reglas. El resto de la página
-     sigue en claro. */
   footer{
-    --ink-850:#0A101E;
-    --line:rgba(148,163,184,.16); --line-strong:rgba(148,163,184,.26);
-    --text:#E9EEF8; --muted:#94A2BD; --faint:#5E6B85;
-    --brand-soft:rgba(110,139,255,.16);
-    background:linear-gradient(165deg, #0A101E, #070B14);
+    background:linear-gradient(165deg, var(--ink-850), var(--ink-900));
     border-top:1px solid var(--line);
     padding:50px 0 34px;
   }
@@ -636,7 +628,7 @@
     display:flex; flex-direction:column; gap:14px;
   }
   .ia-tag{display:flex; align-items:center; gap:8px; color:#94A2BD; font-size:.78rem; margin-bottom:2px;}
-  .ia-tag i{width:7px; height:7px; border-radius:50%; background:var(--up); box-shadow:0 0 0 3px rgba(15,169,104,.25); animation:pulseDot 2s ease-in-out infinite;}
+  .ia-tag i{width:7px; height:7px; border-radius:50%; background:var(--up); box-shadow:0 0 0 3px rgba(52,211,153,.25); animation:pulseDot 2s ease-in-out infinite;}
   @keyframes pulseDot{0%,100%{opacity:1;}50%{opacity:.4;}}
   .ia-msg{max-width:88%; padding:12px 16px; border-radius:14px; font-size:.9rem; line-height:1.45;}
   .ia-msg.user{align-self:flex-end; background:linear-gradient(135deg, var(--brand), var(--brand-2)); color:#fff; border-bottom-right-radius:4px;}
@@ -660,7 +652,6 @@
       <a href="#modulos">Módulos</a>
       <a href="#ia">IA Contable</a>
       <a href="#planes">Planes</a>
-      <a href="login.html">Iniciar sesión</a>
     </div>
     <a href="login.html" class="btn btn--primary">Entrar al panel</a>
   </nav>
@@ -681,7 +672,7 @@
         <a href="#modulos" class="btn btn--ghost">Ver módulos</a>
       </div>
       <div class="trust-row">
-        <div class="trust-item"><b>6 módulos</b><span>En el MVP</span></div>
+        <div class="trust-item"><b>7 módulos</b><span>En el MVP</span></div>
         <div class="trust-item"><b>CFDI 4.0</b><span>REP y complementos</span></div>
         <div class="trust-item"><b>Multiempresa</b><span>Y consolidación</span></div>
       </div>
@@ -724,50 +715,66 @@
   </section>
 
   <!-- ============ LOGOS / SOCIAL PROOF ============ -->
+  <div class="logos-strip">
+    <p class="strip-label">Ya lo usan despachos y consultoras aliadas</p>
+    <div class="marquee">
+      <div class="marquee-track">
+        <span><i></i>Despacho A</span><span><i></i>Consultora B</span><span><i></i>Grupo C</span><span><i></i>Despacho D</span><span><i></i>Asesoría E</span><span><i></i>Firma F</span><span><i></i>Contadores G</span>
+        <span><i></i>Despacho A</span><span><i></i>Consultora B</span><span><i></i>Grupo C</span><span><i></i>Despacho D</span><span><i></i>Asesoría E</span><span><i></i>Firma F</span><span><i></i>Contadores G</span>
+      </div>
+    </div>
+  </div>
+
 
   <!-- ============ FEATURES ============ -->
   <section class="wrap" id="modulos">
     <div class="section-head reveal">
       <div class="eyebrow-badge"><i></i>Lo que incluye el MVP</div>
-      <h2 class="reveal-text" data-grad="3">Seis módulos. Un solo sistema contable.</h2>
+      <h2 class="reveal-text" data-grad="3">Siete módulos. Un solo sistema contable.</h2>
       <p>Del registro de pólizas al timbrado fiscal, con un asistente de IA en cada paso del proceso.</p>
     </div>
     <div class="feat-grid" id="featGrid">
       <div class="feat">
         <span class="modn">01</span>
-        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 0 2 2h13"/><path d="M9 7h6M9 11h6"/></svg></span>
-        <h3>Contabilidad General</h3>
-        <p>Catálogo de cuentas configurable, pólizas, asientos automáticos y reportes financieros. Multiempresa y consolidación.</p>
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg></span>
+        <h3>Dashboard</h3>
+        <p>Un vistazo rápido a cómo va tu empresa: ventas, gastos y utilidad, sin tener que revisar módulo por módulo.</p>
       </div>
       <div class="feat">
         <span class="modn">02</span>
-        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
-        <h3>SAT y Fiscal México</h3>
-        <p>Descarga masiva de XML, validación de CFDI, cálculo de IVA, ISR y retenciones, DIOT y contabilidad electrónica.</p>
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 0 2 2h13"/><path d="M9 7h6M9 11h6"/></svg></span>
+        <h3>Contabilidad</h3>
+        <p>Catálogo de cuentas y pólizas. El sistema no te deja guardar un movimiento si Debe y Haber no cuadran.</p>
       </div>
       <div class="feat">
         <span class="modn">03</span>
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3v8M8 3v8"/></svg></span>
+        <h3>Ventas y Pagos</h3>
+        <p>Se registra el cobro y se sube el comprobante. Otra persona lo revisa antes de darlo por bueno.</p>
+      </div>
+      <div class="feat">
+        <span class="modn">04</span>
         <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4L10 21l-2-1.4L6 21z"/><path d="M9.5 8h5M9.5 12h5"/></svg></span>
         <h3>Facturación</h3>
-        <p>CFDI 4.0, notas de crédito, REP y complementos. Timbrado masivo, cancelación y facturación recurrente.</p>
+        <p>Factura, nota de crédito y complemento de pago, timbrados ante el SAT, con PDF y XML listos para enviar.</p>
       </div>
       <div class="feat">
-        <span class="modn">08</span>
+        <span class="modn">05</span>
         <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3 3 0 0 1 0 5.4M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg></span>
         <h3>Nómina</h3>
-        <p>Cálculo de sueldos, finiquitos y aguinaldos. ISR, IMSS, INFONAVIT y Fonacot. Timbrado de CFDI Nómina.</p>
+        <p>Empleados, sueldos y bajas de cada empresa que llevas, todo desde el mismo lugar.</p>
       </div>
       <div class="feat">
-        <span class="modn">14</span>
-        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg></span>
-        <h3>Dashboard Ejecutivo</h3>
-        <p>Indicadores de ventas, utilidad y liquidez. Comparativos mensuales, trimestrales y alertas en tiempo real.</p>
+        <span class="modn">06</span>
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <h3>SAT y Fiscal</h3>
+        <p>Descarga de XML, validación de CFDI y cálculo de impuestos, en un solo lugar.</p>
       </div>
       <div class="feat gold">
-        <span class="modn">15</span>
+        <span class="modn">07</span>
         <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7z"/><path d="M18.5 14.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg></span>
         <h3>IA Contable</h3>
-        <p>Chat contable, automatización XML a contabilidad, auditor inteligente y monitoreo de obligaciones para despachos.</p>
+        <p>Un asistente que revisa tus movimientos, detecta errores y te avisa antes de que lo haga el SAT.</p>
       </div>
     </div>
   </section>
