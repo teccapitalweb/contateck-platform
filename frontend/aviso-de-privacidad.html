@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aviso de privacidad · CONTATECK</title>
+<meta name="description" content="Aviso de privacidad de CONTATECK: qué datos recopilamos, para qué los usamos y cómo ejercer tus derechos ARCO.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink-900:#070B14; --ink-850:#0A101E; --ink-800:#0C1322;
+    --line:rgba(148,163,184,.14); --line-strong:rgba(148,163,184,.24);
+    --text:#E9EEF8; --muted:#94A2BD; --faint:#5E6B85;
+    --brand:#6E8BFF; --brand-2:#4F6BE0; --brand-soft:rgba(110,139,255,.14);
+    --gold:#F2B84B; --gold-soft:rgba(242,184,75,.14);
+    --up:#34D399; --up-soft:rgba(52,211,153,.13);
+    --radius-lg:24px;
+    --shadow:0 30px 54px -18px rgba(110,139,255,.22), 0 10px 22px -12px rgba(0,0,0,.5);
+    --display:'Montserrat',system-ui,sans-serif; --body:'Montserrat',system-ui,sans-serif;
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--ink-900); color:var(--text); font-family:var(--body); line-height:1.6; -webkit-font-smoothing:antialiased;}
+  @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important; transition-duration:.001ms !important; scroll-behavior:auto !important;}}
+  a{color:inherit; text-decoration:none;}
+  :focus-visible{outline:2px solid var(--brand); outline-offset:3px; border-radius:4px;}
+  .wrap{max-width:880px; margin:0 auto; padding:0 28px;}
+  h1,h2,h3{font-family:var(--display); font-weight:600; letter-spacing:-.01em;}
+
+  .bg-grid{position:fixed; inset:0; z-index:-2; background:
+    radial-gradient(ellipse 900px 560px at 18% -8%, rgba(110,139,255,.10), transparent 60%),
+    var(--ink-900);}
+
+  header{position:sticky; top:0; z-index:50; background:rgba(7,11,20,.72); backdrop-filter:blur(14px); border-bottom:1px solid var(--line);}
+  nav{display:flex; align-items:center; justify-content:space-between; padding:18px 28px; max-width:1180px; margin:0 auto;}
+  .logo{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:700; font-size:1.15rem; color:var(--text);}
+  .logo-mark{width:34px; height:34px; border-radius:9px; background:linear-gradient(145deg, var(--brand), var(--brand-2)); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 20px -8px var(--brand);}
+  .logo-mark svg{width:18px; height:18px;}
+  .btn{display:inline-flex; align-items:center; gap:8px; padding:10px 20px; border-radius:11px; font-size:.9rem; font-weight:600; border:1px solid var(--line-strong); transition:border-color .2s var(--ease), background .2s var(--ease);}
+  .btn:hover{border-color:var(--brand); background:var(--brand-soft);}
+
+  .page-head{padding:64px 0 40px;}
+  .eyebrow-badge{display:inline-flex; align-items:center; gap:8px; padding:7px 14px; border-radius:100px; background:var(--brand-soft); border:1px solid rgba(110,139,255,.28); font-size:.82rem; color:var(--brand); font-weight:500; margin-bottom:20px;}
+  .eyebrow-badge i{width:6px; height:6px; border-radius:50%; background:var(--up); box-shadow:0 0 0 3px var(--up-soft); flex:none;}
+  .page-head h1{font-size:clamp(1.9rem,3.6vw,2.6rem); margin-bottom:14px;}
+  .page-head p{color:var(--muted); font-size:1.02rem;}
+  .updated{color:var(--faint); font-size:.85rem; margin-top:10px;}
+
+  main{padding-bottom:90px;}
+  .legal-card{background:linear-gradient(165deg, var(--ink-850), var(--ink-800)); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:44px 42px; margin-bottom:22px;}
+  .legal-card h2{display:flex; align-items:baseline; gap:12px; font-size:1.22rem; margin-bottom:14px;}
+  .legal-card h2 .n{color:var(--brand); font-variant-numeric:tabular-nums;}
+  .legal-card p{color:var(--muted); font-size:.96rem; margin-bottom:12px;}
+  .legal-card p:last-child{margin-bottom:0;}
+  .legal-card ul{color:var(--muted); font-size:.96rem; margin:10px 0 12px 20px;}
+  .legal-card li{margin-bottom:8px;}
+  .legal-card strong{color:var(--text); font-weight:600;}
+  .arco-box{background:var(--brand-soft); border:1px solid rgba(110,139,255,.3); border-radius:14px; padding:20px 22px; margin-top:8px;}
+  .arco-box p{color:var(--text); margin-bottom:6px;}
+  .arco-box a{color:var(--brand); font-weight:600;}
+
+  footer{border-top:1px solid var(--line); padding:44px 0 30px; background:linear-gradient(165deg, var(--ink-850), var(--ink-900));}
+  .foot-bottom{color:var(--faint); font-size:.82rem; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; max-width:1180px; margin:0 auto; padding:0 28px;}
+  .foot-bottom a{color:var(--muted); transition:color .2s;}
+  .foot-bottom a:hover{color:var(--brand);}
+
+  @media (max-width:640px){.legal-card{padding:30px 24px;}}
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+
+<header>
+  <nav>
+    <a href="index.html" class="logo">
+      <span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#0A0F1C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></span>
+      CONTATECK
+    </a>
+    <a href="index.html" class="btn">Volver al inicio</a>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap page-head">
+    <div class="eyebrow-badge"><i></i>Protección de datos personales</div>
+    <h1>Aviso de privacidad</h1>
+    <p>Cómo recopilamos, usamos y protegemos los datos personales de quienes usan CONTATECK, conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares.</p>
+    <p class="updated">Última actualización: septiembre de 2026</p>
+  </div>
+
+  <div class="wrap">
+
+    <div class="legal-card">
+      <h2><span class="n">1.</span> Responsable del tratamiento de tus datos</h2>
+      <p>CONTATECK ("nosotros", "la plataforma") es responsable de recabar, usar y proteger tus datos personales conforme a este aviso. Puedes contactarnos en cualquier momento a través del correo señalado en la sección 7.</p>
+      <p><em>Nota para el equipo: sustituir aquí con la razón social exacta, RFC y domicilio fiscal de la entidad que opera CONTATECK antes de publicar este documento.</em></p>
+    </div>
+
+    <div class="legal-card">
+      <h2><span class="n">2.</span> Qué datos recopilamos</h2>
+      <p>Dependiendo de cómo uses la plataforma, podemos recabar:</p>
+      <ul>
+        <li><strong>Datos de la cuenta:</strong> nombre, correo electrónico y empresa a la que perteneces.</li>
+        <li><strong>Datos fiscales de tu empresa:</strong> RFC, régimen fiscal, código postal y demás datos necesarios para emitir comprobantes fiscales (CFDI) conforme a las disposiciones del SAT.</li>
+        <li><strong>Datos de clientes y empleados que tú registras</strong> en la plataforma (RFC, nombre, correo, puesto, sueldo), como parte del servicio de contabilidad y nómina que ofrecemos a tu empresa.</li>
+        <li><strong>Datos de uso:</strong> registros de acceso, dirección IP y actividad dentro del panel, con fines de seguridad y auditoría.</li>
+      </ul>
+    </div>
+
+    <div class="legal-card">
+      <h2><span class="n">3.</span> Para qué usamos tus datos</h2>
+      <ul>
+        <li>Timbrar comprobantes fiscales digitales ante el SAT, a través de un proveedor autorizado de certificación (PAC).</li>
+        <li>Generar registros contables, reportes y cálculos de nómina de tu empresa.</li>
+        <li>Aislar y proteger la información de cada empresa dentro de la plataforma, de forma que ningún otro cliente pueda verla.</li>
+        <li>Darte soporte técnico y comunicarte cambios relevantes del servicio.</li>
+        <li>Cumplir obligaciones legales y fiscales aplicables.</li>
+      </ul>
+    </div>
+
+    <div class="legal-card">
+      <h2><span class="n">4.</span> Con quién compartimos tus datos</h2>
+      <p>No vendemos tus datos personales. Los compartimos únicamente cuando es necesario para operar el servicio:</p>
+      <ul>
+        <li>Con el proveedor autorizado de certificación (PAC) que timbra tus comprobantes ante el SAT, como parte legal del proceso de facturación electrónica.</li>
+        <li>Con proveedores de infraestructura (hospedaje y base de datos) que almacenan la información de forma segura, bajo acuerdos de confidencialidad.</li>
+        <li>Cuando una autoridad competente lo requiera conforme a la ley.</li>
+      </ul>
+    </div>
+
+    <div class="legal-card">
+      <h2><span class="n">5.</span> Cómo protegemos tu información</h2>
+      <p>Cada empresa dentro de CONTATECK tiene sus datos aislados a nivel de base de datos, de forma que un usuario nunca puede acceder a información de otra empresa, aunque comparta la misma plataforma. El acceso dentro de cada empresa está además limitado según el rol de cada persona (director, contador, vendedor, auditor).</p>
+    </div>
+
+    <div class="legal-card">
+      <h2><span class="n">6.</span> Cuánto tiempo conservamos tus datos</h2>
+      <p>Conservamos tus datos mientras tu empresa mantenga una cuenta activa en la plataforma, y posteriormente durante el plazo que exijan las disposiciones fiscales y contables aplicables en México, después del cual se eliminan o anonimizan de forma segura.</p>
+    </div>
+
+    <div class="legal-card">
+      <h2><span class="n">7.</span> Tus derechos ARCO</h2>
+      <p>Tienes derecho a Acceder, Rectificar y Cancelar tus datos personales, así como a Oponerte a su uso (derechos ARCO), y a revocar tu consentimiento en cualquier momento.</p>
+      <div class="arco-box">
+        <p>Para ejercer estos derechos, escríbenos a:</p>
+        <p><a href="mailto:privacidad@contateck.mx">privacidad@contateck.mx</a></p>
+      </div>
+    </div>
+
+    <div class="legal-card">
+      <h2><span class="n">8.</span> Cambios a este aviso</h2>
+      <p>Podemos actualizar este aviso de privacidad. Cuando lo hagamos, publicaremos la nueva versión en esta misma página con su fecha de actualización.</p>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="foot-bottom">
+    <span>© 2026 CONTATECK · Tehuacán, Puebla, México</span>
+    <a href="terminos-y-condiciones.html">Términos y condiciones</a>
+  </div>
+</footer>
+
+</body>
+</html>
