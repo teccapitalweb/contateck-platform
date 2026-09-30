@@ -76,11 +76,21 @@ export function construirFactura(datos = {}) {
   const retIva = Number(ret.iva) || 0;
   const retIsr = Number(ret.isr) || 0;
 
+  // Tasa de IVA trasladado — las 4 únicas que existen en la ley mexicana:
+  // 16% (general), 8% (estímulo zona fronteriza), 0% (tasa cero, art. 2-A)
+  // y Exento (art. 9, sin traslado de impuesto). Por default sigue siendo
+  // 16% para no cambiar el comportamiento de facturas ya probadas.
+  const tasaIva = datos.tasaIva !== undefined ? String(datos.tasaIva) : '16';
+  const esExento = tasaIva === 'exento';
+  const tasaIvaDecimal = esExento ? 0 : Number(tasaIva) / 100;
+
   const items = conceptos.map((c, i) => {
     const cantidad = Number(c.cantidad || 1);
     const precio = Number(c.precioUnitario || 0);
     const taxes = [
-      { taxCode: '002', taxTypeCode: 'Tasa', taxRate: '0.160000', taxFlagCode: 'T' }, // IVA 16% trasladado
+      esExento
+        ? { taxCode: '002', taxTypeCode: 'Exento', taxFlagCode: 'T' } // IVA exento: sin tasa, por definición legal
+        : { taxCode: '002', taxTypeCode: 'Tasa', taxRate: tasaIvaDecimal.toFixed(6), taxFlagCode: 'T' },
     ];
     if (retIva > 0) taxes.push({ taxCode: '002', taxTypeCode: 'Tasa', taxRate: retIva.toFixed(6), taxFlagCode: 'R' }); // IVA retenido
     if (retIsr > 0) taxes.push({ taxCode: '001', taxTypeCode: 'Tasa', taxRate: retIsr.toFixed(6), taxFlagCode: 'R' }); // ISR retenido

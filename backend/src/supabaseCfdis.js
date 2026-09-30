@@ -86,6 +86,8 @@ export async function guardarCfdi(accessToken, resumen, raw, log = console) {
       receptor_nombre: resumen.receptorNombre || null,
       emisor_rfc: resumen.emisorRfc || null,
       estatus: resumen.estatus || 'vigente',
+      metodo_pago: resumen.metodoPago || null,
+      forma_pago: resumen.formaPago || null,
       raw: raw || null,
     })
     .select()
@@ -108,7 +110,7 @@ export async function listarCfdis(accessToken, log = console) {
 
   const { data, error } = await supabase
     .from('cfdis')
-    .select('id, fiscalapi_id, uuid_sat, serie, folio, tipo, total, fecha, receptor_rfc, receptor_nombre, estatus, created_at')
+    .select('id, fiscalapi_id, uuid_sat, serie, folio, tipo, total, fecha, receptor_rfc, receptor_nombre, estatus, metodo_pago, created_at')
     .order('created_at', { ascending: false })
     .limit(200);
 

@@ -22,54 +22,104 @@
     if (p.length !== 3) return iso || "";
     return `${parseInt(p[2], 10)} ${m[parseInt(p[1], 10) - 1] || ""}`;
   };
+  // OT-0020: toast local — data-firestore.js tiene la suya pero es módulo
+  // ES (no global), así que este archivo necesita su propia copia. Usa el
+  // mismo contenedor [data-toasts] y las mismas clases CSS del dashboard.
+  function toast(msg, type = "info", ms = 3200) {
+    const wrap = document.querySelector("[data-toasts]");
+    if (!wrap) { try { console.log("[toast:" + type + "]", msg); } catch (e) {} return; }
+    const iconos = {
+      ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+      info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+      warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+      err: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
+    };
+    const el = document.createElement("div");
+    el.className = "toast toast--" + type;
+    el.innerHTML = (iconos[type] || iconos.info) + "<span>" + msg + "</span>";
+    wrap.appendChild(el);
+    setTimeout(() => { el.classList.add("is-out"); setTimeout(() => el.remove(), 320); }, ms);
+  }
 
-  /* ---------- Catálogo base (código agrupador SAT, simplificado) ---------- */
-  // nivel 1 = cuenta de mayor (acumula, no afectable) · nivel 2 = detalle (afectable)
-  const CATALOGO_BASE = [
-    { codigo: "100", nombre: "Activo",                  nat: "Deudora",   nivel: 1, padre: null  },
-    { codigo: "101", nombre: "Caja",                    nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "102", nombre: "Bancos",                  nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "105", nombre: "Clientes",                nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "115", nombre: "Inventarios",             nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "118", nombre: "IVA acreditable",         nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "151", nombre: "Equipo de cómputo",       nat: "Deudora",   nivel: 2, padre: "100" },
-    { codigo: "200", nombre: "Pasivo",                  nat: "Acreedora", nivel: 1, padre: null  },
-    { codigo: "201", nombre: "Proveedores",             nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "205", nombre: "Acreedores diversos",     nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "209", nombre: "IVA trasladado",          nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "213", nombre: "Impuestos por pagar",     nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "216", nombre: "Sueldos por pagar",       nat: "Acreedora", nivel: 2, padre: "200" },
-    { codigo: "300", nombre: "Capital contable",        nat: "Acreedora", nivel: 1, padre: null  },
-    { codigo: "301", nombre: "Capital social",          nat: "Acreedora", nivel: 2, padre: "300" },
-    { codigo: "305", nombre: "Resultado del ejercicio", nat: "Acreedora", nivel: 2, padre: "300" },
-    { codigo: "400", nombre: "Ingresos",                nat: "Acreedora", nivel: 1, padre: null  },
-    { codigo: "401", nombre: "Ventas y servicios",      nat: "Acreedora", nivel: 2, padre: "400" },
-    { codigo: "402", nombre: "Productos financieros",   nat: "Acreedora", nivel: 2, padre: "400" },
-    { codigo: "500", nombre: "Costos y gastos",         nat: "Deudora",   nivel: 1, padre: null  },
-    { codigo: "501", nombre: "Costo de ventas",         nat: "Deudora",   nivel: 2, padre: "500" },
-    { codigo: "601", nombre: "Gastos de operación",     nat: "Deudora",   nivel: 2, padre: "500" },
-    { codigo: "602", nombre: "Gastos de administración",nat: "Deudora",   nivel: 2, padre: "500" },
-    { codigo: "603", nombre: "Gastos de venta",         nat: "Deudora",   nivel: 2, padre: "500" },
-  ];
-
-  /* ---------- Persistencia (localStorage) ---------- */
-  const K_CUENTAS = "contateck_cuentas";
+  /* ---------- Persistencia ---------- */
+  // OT-Cuentas: el catálogo ya NO vive en localStorage — cada empresa
+  // tiene su propio catálogo real y compartido en Postgres (mismo
+  // patrón que ya usan las pólizas en este mismo archivo: un caché en
+  // memoria que se alimenta de Postgres al cargar, y cada escritura va
+  // directo al backend). localStorage solo queda como respaldo mientras
+  // carga la primera vez, para no mostrar la pantalla vacía un instante.
   const K_POLIZAS = "contateck_polizas";
   const K_FOLIOS  = "contateck_folios";
+  const K_CUENTAS_CACHE = "contateck_cuentas_cache"; // solo respaldo de lectura, nunca la fuente de verdad
+
+  let _cuentasCache = null; // null = todavía no ha cargado de Postgres
 
   function leerCuentas() {
+    if (_cuentasCache) return _cuentasCache;
     try {
-      const raw = JSON.parse(localStorage.getItem(K_CUENTAS) || "null");
+      const raw = JSON.parse(localStorage.getItem(K_CUENTAS_CACHE) || "null");
       if (Array.isArray(raw) && raw.length) return raw;
-    } catch (e) { /* siembra abajo */ }
-    // Primera vez: sembrar catálogo base con id.
-    const sembrado = CATALOGO_BASE.map((c, i) => ({ id: "c" + (i + 1), ...c }));
-    guardarCuentas(sembrado);
-    return sembrado;
+    } catch (e) {}
+    return [];
   }
   function guardarCuentas(arr) {
-    try { localStorage.setItem(K_CUENTAS, JSON.stringify(arr || [])); return true; }
-    catch (e) { return false; }
+    _cuentasCache = arr || [];
+    try { localStorage.setItem(K_CUENTAS_CACHE, JSON.stringify(_cuentasCache)); } catch (e) {}
+    return true;
+  }
+
+  // Convierte una fila de Postgres (snake_case, minúsculas) al formato
+  // que usa el resto de este archivo (nat: "Deudora"/"Acreedora"), e
+  // infiere "padre" por el primer dígito del código (100→mayor de 101,
+  // 102... — mismo Código Agrupador del SAT que ya usa el Dashboard).
+  function desdePostgres(filas) {
+    const mayores = filas.filter((c) => c.nivel === 1);
+    return filas.map((c) => {
+      const padre = c.nivel === 1 ? null : (mayores.find((m) => m.codigo[0] === c.codigo[0]) || {}).codigo || null;
+      return { id: c.id, codigo: c.codigo, nombre: c.nombre, nat: c.naturaleza === "deudora" ? "Deudora" : "Acreedora", nivel: c.nivel, padre, activo: c.activo !== false };
+    }).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "es", { numeric: true }));
+  }
+
+  async function cargarCatalogoReal() {
+    try {
+      // Espera a que auth-guard.js termine de poner el token de sesión —
+      // sin esto, si esta función corre antes de que la sesión cargue
+      // (variable de una recarga a otra), se rendía en silencio sin ni
+      // siquiera intentar preguntarle a Postgres.
+      const inicio = Date.now();
+      while (!window.CONTATECK_SUPABASE_TOKEN && Date.now() - inicio < 4000) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+      if (!cfg || !t) return false;
+      const resp = await fetch(cfg.url + "/rest/v1/cuentas_contables?select=*&order=codigo.asc", {
+        headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey },
+      });
+      const data = await resp.json();
+      if (!Array.isArray(data)) return false;
+      guardarCuentas(desdePostgres(data));
+      return true;
+    } catch (e) { return false; }
+  }
+  // OT-0027-fix: la config contable (roles -> cuentas reales) se guardaba
+  // bien en Postgres, pero window.CONTATECK_CONFIG_CONTABLE_PG solo se
+  // llenaba dentro del handler de "Guardar configuración" — nunca se leía
+  // del servidor al abrir el módulo. Resultado: en cualquier sesión nueva
+  // (recarga, otra pestaña, otro día) la variable regresaba a {} y
+  // determinacionIVA()/cuentaRol() veían "no configurado" aunque sí
+  // existiera guardado, mostrando $0.00 en SAT/Declaraciones.
+  async function cargarConfigContable() {
+    try {
+      const inicio = Date.now();
+      while (!window.CONTATECK_SUPABASE_TOKEN && Date.now() - inicio < 4000) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      if (!window.CONTATECK_SUPABASE_TOKEN) return false;
+      const r = await window.CTPostgres.leerConfigContable();
+      if (!r || !r.ok) return false;
+      window.CONTATECK_CONFIG_CONTABLE_PG = r.config || {};
+      return true;
+    } catch (e) { return false; }
   }
   function leerPolizas() {
     try {
@@ -82,38 +132,77 @@
     try { localStorage.setItem(K_POLIZAS, JSON.stringify(arr || [])); return true; }
     catch (e) { return false; }
   }
-  function siguienteFolio(tipo) {
+  // OT-0012: el folio "de verdad" ahora lo genera Postgres de forma atómica
+  // dentro de crear_poliza_completa (ver siguiente_folio en la base) —
+  // así dos dispositivos/usuarios de la misma empresa nunca repiten folio.
+  // Esta función local queda SOLO como respaldo cuando no hay sesión de
+  // Postgres (modo local puro): el prefijo LOCAL- deja claro que ese
+  // folio no es definitivo y no debe usarse para reportes fiscales.
+  function siguienteFolioLocal(tipo) {
     let folios = {};
     try { folios = JSON.parse(localStorage.getItem(K_FOLIOS) || "{}") || {}; } catch (e) {}
     const letra = tipo === "Ingreso" ? "I" : tipo === "Egreso" ? "E" : "D";
     const n = (folios[letra] || 0) + 1;
     folios[letra] = n;
     try { localStorage.setItem(K_FOLIOS, JSON.stringify(folios)); } catch (e) {}
-    return `${letra}-${String(n).padStart(5, "0")}`;
+    return `LOCAL-${letra}-${String(n).padStart(5, "0")}`;
   }
 
   /* ---------- API de datos ---------- */
   function getCuentas() { return leerCuentas().slice(); }
-  function getCuentasAfectables() { return getCuentas().filter((c) => c.nivel === 2); }
+  function getCuentasAfectables() { return getCuentas().filter((c) => c.nivel === 2 && c.activo !== false); }
   function getCuentaPorCodigo(codigo) { return getCuentas().find((c) => c.codigo === codigo) || null; }
-  function saveCuenta(cuenta) {
-    const arr = leerCuentas();
-    cuenta = cuenta || {};
-    if (cuenta.id) {
-      const i = arr.findIndex((c) => c.id === cuenta.id);
-      if (i >= 0) arr[i] = { ...arr[i], ...cuenta };
-      else arr.push(cuenta);
-    } else {
-      cuenta.id = "c" + Date.now() + Math.floor(Math.random() * 1000);
-      arr.push(cuenta);
-    }
-    arr.sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "es", { numeric: true }));
-    guardarCuentas(arr);
-    return cuenta;
+  function getCuentaPorId(id) { return id ? getCuentas().find((c) => c.id === id) || null : null; }
+
+  // ---------- OT-0020: Configuración contable de la empresa ----------
+  // Reemplaza los códigos de cuenta que antes estaban quemados en el
+  // código (102, 105, 201, 401, 209, 118, 601). Cada empresa mapea sus
+  // propias cuentas reales una sola vez, en Configuración contable.
+  const ROLES_CONFIG_CONTABLE = {
+    bancos: "cuenta_bancos_id", clientes: "cuenta_clientes_id", proveedores: "cuenta_proveedores_id",
+    ventas: "cuenta_ventas_id", ivaTrasladado: "cuenta_iva_trasladado_id", ivaAcreditable: "cuenta_iva_acreditable_id",
+    gastos: "cuenta_gastos_id",
+  };
+  function configContable() { return window.CONTATECK_CONFIG_CONTABLE_PG || {}; }
+  // Regresa la cuenta configurada para ese rol, o null si la empresa
+  // todavía no la configuró — NUNCA una cuenta adivinada de respaldo.
+  function cuentaRol(rol) {
+    const campo = ROLES_CONFIG_CONTABLE[rol];
+    if (!campo) return null;
+    return getCuentaPorId(configContable()[campo]);
   }
-  function deleteCuenta(id) {
-    const arr = leerCuentas().filter((c) => c.id !== id);
-    return guardarCuentas(arr);
+  const NOMBRES_ROL = {
+    bancos: "Bancos", clientes: "Clientes", proveedores: "Proveedores", ventas: "Ventas y servicios",
+    ivaTrasladado: "IVA trasladado", ivaAcreditable: "IVA acreditable", gastos: "Gastos de operación",
+  };
+  // Mensaje de error con botón directo a la pantalla de configuración —
+  // el handler global de [data-cont-config-contable] ya lo escucha.
+  function errorConfigHTML(texto) {
+    const esConfig = /Falta configurar|no está configurada/i.test(texto || "");
+    return `<div class="cont-err">${esc(texto)}${esConfig
+      ? `<div style="margin-top:.5rem"><button type="button" class="btn btn--sm btn--primary" data-cont-config-contable>Abrir Configuración contable</button></div>` : ""}</div>`;
+  }
+  async function saveCuenta(cuenta) {
+    cuenta = cuenta || {};
+    const payload = { codigo: cuenta.codigo, nombre: cuenta.nombre, naturaleza: cuenta.nat === "Deudora" ? "deudora" : "acreedora", nivel: cuenta.nivel };
+    let r;
+    if (cuenta.id) r = await window.CTPostgres.actualizar("cuentas_contables", cuenta.id, payload);
+    else r = await window.CTPostgres.crear("cuentas_contables", payload);
+    if (!r.ok) return { ok: false, error: r.error || "No se pudo guardar la cuenta." };
+    await cargarCatalogoReal(); // refresca el caché con lo que Postgres de verdad tiene
+    return { ok: true, cuenta: r.registro };
+  }
+  async function deleteCuenta(id) {
+    const r = await window.CTPostgres.eliminar("cuentas_contables", id);
+    if (!r.ok) return { ok: false, error: r.error || "No se pudo desactivar la cuenta." };
+    await cargarCatalogoReal();
+    return { ok: true };
+  }
+  async function reactivarCuenta(id) {
+    const r = await window.CTPostgres.reactivar("cuentas_contables", id);
+    if (!r.ok) return { ok: false, error: r.error || "No se pudo reactivar la cuenta." };
+    await cargarCatalogoReal();
+    return { ok: true };
   }
   function getPolizas() {
     return leerPolizas().slice().sort((a, b) => (b.creada || 0) - (a.creada || 0));
@@ -132,27 +221,46 @@
     if (!poliza.id) {
       poliza.id = "p" + Date.now() + Math.floor(Math.random() * 1000);
       poliza.creada = Date.now();
-      if (!poliza.folio) poliza.folio = siguienteFolio(poliza.tipo);
       let rechazado = false;
       if (window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
         try {
+          // OT-0012: NO se manda folio — Postgres lo genera de forma
+          // atómica y lo regresa junto con el id.
+          // OT-mejoras-SAT: origen/cfdiUuid ahora sí se mandan y se
+          // guardan en Postgres — antes solo vivían en localStorage,
+          // así que DIOT y el candado de duplicados se perdían en
+          // cualquier navegador/usuario distinto al que importó el XML.
           const r = await window.CTPostgres.crearPolizaCompleta({
-            folio: poliza.folio, tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
+            tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
+            origen: poliza.origen || null, cfdiUuid: poliza.cfdiUuid || null,
           });
-          if (r.ok) { poliza.pgId = r.id; poliza.origen = "postgres"; }
-          else { pgError = r.error; rechazado = true; }
-        } catch (e) { pgError = e.message; poliza.origen = "local"; }
-      } else { poliza.origen = "local"; }
+          if (r.ok) {
+            poliza.pgId = r.id; poliza.folio = r.folio;
+            // OT-mejoras-SAT fix: antes esto pisaba "cfdi-recibido"/"cfdi"
+            // con "postgres" a fuerzas — perdiendo el origen real que
+            // necesita DIOT. Solo se marca "postgres" si no traía ya
+            // un origen propio (pólizas manuales/Diario).
+            if (!poliza.origen) poliza.origen = "postgres";
+          } else {
+            pgError = r.error; rechazado = true;
+            poliza.duplicado = !!r.duplicado;
+          }
+        } catch (e) { pgError = e.message; poliza.origen = poliza.origen || "local"; }
+      } else { poliza.origen = poliza.origen || "local"; }
+      // Solo cae al folio local (marcado LOCAL-) si de plano no hubo
+      // sesión de Postgres — nunca como fallback silencioso de un error.
+      if (!poliza.folio) poliza.folio = siguienteFolioLocal(poliza.tipo);
       if (!rechazado) arr.push(poliza);
     } else {
       const i = arr.findIndex((p) => p.id === poliza.id);
       const existente = i >= 0 ? arr[i] : null;
+      let cambioContable = false;
       if (existente && existente.pgId && window.CTPostgres && window.CONTATECK_SUPABASE_TOKEN) {
         try {
           const r = await window.CTPostgres.actualizarPolizaCompleta(existente.pgId, {
             tipo: poliza.tipo, fecha: poliza.fecha, concepto: poliza.concepto, partidas: partidasPayload,
           });
-          if (!r.ok) pgError = r.error;
+          if (!r.ok) { pgError = r.error; cambioContable = !!r.cambioContable; }
         } catch (e) { pgError = e.message; }
       }
       if (!pgError) {
@@ -160,7 +268,9 @@
         else arr.push(poliza);
         guardarPolizas(arr);
       }
-      return { poliza: pgError ? existente : poliza, pgError };
+      // OT-0025: cambioContable indica que se intentó cambiar cuentas/importes
+      // de una póliza real — el llamador debe ofrecer el flujo de corrección.
+      return { poliza: pgError ? existente : poliza, pgError, cambioContable, pgId: existente ? existente.pgId : null };
     }
     guardarPolizas(arr);
     return { poliza, pgError };
@@ -204,15 +314,48 @@
     return round2(cuenta.nat === "Deudora" ? debe - haber : haber - debe);
   }
   // Balanza de comprobación: una fila por cuenta afectable con cargos/abonos/saldo.
+  // OT-Balanza (mejora): movimientos de una cuenta ANTES del periodo
+  // seleccionado — para el "Saldo inicial". Si no hay periodo activo
+  // ("Todo el ejercicio"), no hay saldo inicial: se arranca en cero.
+  function movimientosPreviosCuenta(codigo) {
+    if (!periodoActivo) return { debe: 0, haber: 0 };
+    let debe = 0, haber = 0;
+    // Una póliza es "previa" si su año-mes es estrictamente menor al
+    // periodo activo (compara como número AAAAMM para evitar líos).
+    const corte = periodoActivo.anio * 100 + periodoActivo.mes;
+    leerPolizas().forEach((p) => {
+      const parts = String(p.fecha || "").split("-");
+      if (parts.length !== 3) return;
+      const ym = parseInt(parts[0], 10) * 100 + parseInt(parts[1], 10);
+      if (ym >= corte) return; // no es previa
+      (p.asientos || []).forEach((a) => {
+        if (a.codigo === codigo) { debe += num(a.debe); haber += num(a.haber); }
+      });
+    });
+    return { debe: round2(debe), haber: round2(haber) };
+  }
+
   function balanza() {
+    const hayPeriodo = !!periodoActivo;
     const filas = getCuentasAfectables().map((c) => {
       const { debe, haber } = movimientosCuenta(c.codigo);
-      const saldo = c.nat === "Deudora" ? debe - haber : haber - debe;
+      // Saldo inicial (neto según naturaleza) con lo previo al periodo.
+      const prev = movimientosPreviosCuenta(c.codigo);
+      const saldoInicial = c.nat === "Deudora" ? round2(prev.debe - prev.haber) : round2(prev.haber - prev.debe);
+      // Saldo final = saldo inicial + movimientos del periodo (según naturaleza).
+      const movNeto = c.nat === "Deudora" ? (debe - haber) : (haber - debe);
+      const saldo = round2(saldoInicial + movNeto);
+      // Saldo atípico: cuenta de naturaleza deudora que termina en
+      // acreedor (o viceversa) — posible error de captura. saldo<0
+      // significa que quedó del lado contrario a su naturaleza.
+      const atipico = saldo < -0.01;
       return {
         codigo: c.codigo, nombre: c.nombre, nat: c.nat,
+        saldoInicial,
         debe: round2(debe), haber: round2(haber),
         saldoDeudor: c.nat === "Deudora" ? round2(Math.max(saldo, 0)) : (saldo < 0 ? round2(-saldo) : 0),
         saldoAcreedor: c.nat === "Acreedora" ? round2(Math.max(saldo, 0)) : (saldo < 0 ? round2(-saldo) : 0),
+        atipico,
       };
     });
     const tot = filas.reduce((t, f) => ({
@@ -220,7 +363,7 @@
       saldoDeudor: t.saldoDeudor + f.saldoDeudor, saldoAcreedor: t.saldoAcreedor + f.saldoAcreedor,
     }), { debe: 0, haber: 0, saldoDeudor: 0, saldoAcreedor: 0 });
     Object.keys(tot).forEach((k) => (tot[k] = round2(tot[k])));
-    return { filas, tot, cuadra: Math.abs(tot.debe - tot.haber) < 0.01 };
+    return { filas, tot, hayPeriodo, cuadra: Math.abs(tot.debe - tot.haber) < 0.01, atipicos: filas.filter((f) => f.atipico).length };
   }
 
   /* ============================================================
@@ -249,32 +392,44 @@
   function cfdiKey(cfdi) { return String(cfdi.uuidFull || cfdi.id || cfdi.folio || ""); }
 
   // Genera el objeto póliza (sin guardar) a partir de un CFDI emitido.
+  // OT-0020: las cuentas ya NO están quemadas — salen de Configuración
+  // contable. Si falta alguna, regresa { error } en vez de adivinar.
   function cfdiAPoliza(cfdi) {
     const { subtotal, iva, total } = montosCfdi(cfdi);
     const folioRef = cfdi.folio || (cfdi.uuidFull ? cfdi.uuidFull.slice(0, 8) : "CFDI");
     const cli = cfdi.cliente || "Cliente";
     const base = { fecha: fechaISOcfdi(cfdi), cfdiUuid: cfdi.uuidFull || "", origen: "cfdi" };
+    const cBancos = cuentaRol("bancos"), cClientes = cuentaRol("clientes"),
+          cVentas = cuentaRol("ventas"), cIvaTrasladado = cuentaRol("ivaTrasladado");
+    const faltantes = [];
+    if (!cBancos) faltantes.push(NOMBRES_ROL.bancos);
+    if (!cClientes) faltantes.push(NOMBRES_ROL.clientes);
+    if (cfdi.tipo !== "P" && !cVentas) faltantes.push(NOMBRES_ROL.ventas);
+    if (cfdi.tipo !== "P" && !cIvaTrasladado) faltantes.push(NOMBRES_ROL.ivaTrasladado);
+    if (faltantes.length) {
+      return { error: `Falta configurar: ${faltantes.join(", ")}. Ve a Configuración contable antes de importar.` };
+    }
     if (cfdi.tipo === "P") { // REP: pago recibido → Bancos / Clientes
       return Object.assign(base, { tipo: "Ingreso", concepto: `Cobro CFDI ${folioRef} · ${cli}`,
         asientos: [
-          { codigo: "102", nombre: "Bancos",   debe: total, haber: 0 },
-          { codigo: "105", nombre: "Clientes", debe: 0, haber: total },
+          { codigo: cBancos.codigo, nombre: cBancos.nombre, debe: total, haber: 0 },
+          { codigo: cClientes.codigo, nombre: cClientes.nombre, debe: 0, haber: total },
         ] });
     }
     if (cfdi.tipo === "E") { // Nota de crédito: reversa de venta
       return Object.assign(base, { tipo: "Egreso", concepto: `Nota de crédito ${folioRef} · ${cli}`,
         asientos: [
-          { codigo: "401", nombre: "Ventas y servicios", debe: subtotal, haber: 0 },
-          { codigo: "209", nombre: "IVA trasladado",      debe: iva, haber: 0 },
-          { codigo: "105", nombre: "Clientes",            debe: 0, haber: total },
+          { codigo: cVentas.codigo, nombre: cVentas.nombre, debe: subtotal, haber: 0 },
+          { codigo: cIvaTrasladado.codigo, nombre: cIvaTrasladado.nombre, debe: iva, haber: 0 },
+          { codigo: cClientes.codigo, nombre: cClientes.nombre, debe: 0, haber: total },
         ] });
     }
     // Factura de ingreso (tipo I): Clientes / Ventas + IVA trasladado
     return Object.assign(base, { tipo: "Ingreso", concepto: `Factura ${folioRef} · ${cli}`,
       asientos: [
-        { codigo: "105", nombre: "Clientes",            debe: total, haber: 0 },
-        { codigo: "401", nombre: "Ventas y servicios",  debe: 0, haber: subtotal },
-        { codigo: "209", nombre: "IVA trasladado",      debe: 0, haber: iva },
+        { codigo: cClientes.codigo, nombre: cClientes.nombre, debe: total, haber: 0 },
+        { codigo: cVentas.codigo, nombre: cVentas.nombre, debe: 0, haber: subtotal },
+        { codigo: cIvaTrasladado.codigo, nombre: cIvaTrasladado.nombre, debe: 0, haber: iva },
       ] });
   }
 
@@ -294,9 +449,19 @@
     const cont = getContabilizados();
     return leerCfdis().filter((c) => c && c.estado !== "cancelada" && cont.indexOf(cfdiKey(c)) < 0);
   }
-  function contabilizarCfdi(cfdi) {
-    savePoliza(cfdiAPoliza(cfdi));
+  async function contabilizarCfdi(cfdi) {
+    const poliza = cfdiAPoliza(cfdi);
+    if (poliza.error) return poliza.error; // el llamador decide cómo mostrarlo
+    // Fix (ago-2026): antes no se esperaba savePoliza() ni se revisaba su
+    // resultado — si fallaba de fondo (ruta faltante, cuenta sin
+    // configurar, etc.) el error se perdía en silencio y la factura se
+    // marcaba como "contabilizada" en localStorage aunque la póliza
+    // nunca se hubiera creado de verdad en el servidor. Ahora sí se
+    // espera y solo se marca si realmente se guardó.
+    const { pgError } = await savePoliza(poliza);
+    if (pgError) return pgError;
     marcarContabilizado(cfdiKey(cfdi));
+    return null;
   }
 
   /* ---------- Importar CFDI recibido (XML de proveedor) ---------- */
@@ -326,19 +491,29 @@
       total, subtotal, iva,
       rfcEmisor: ga(emisor, "Rfc"), nombreEmisor: ga(emisor, "Nombre"),
       uuid: ga(tfd, "UUID"), fecha: (ga(comp, "Fecha") || "").slice(0, 10) || hoyISO(),
+      // OT-0023: para persistir la factura como documento propio y
+      // distinguir PUE/PPD igual que ya se hace con las emitidas (OT-0019).
+      serie: ga(comp, "Serie") || "", folio: ga(comp, "Folio") || "",
+      metodoPago: ga(comp, "MetodoPago") || "", formaPago: ga(comp, "FormaPago") || "",
     };
   }
   function xmlAPolizaGasto(d) {
     const total = d.total, subtotal = d.subtotal, iva = d.iva;
     const ref = d.uuid ? d.uuid.slice(0, 8) : (d.rfcEmisor || "XML");
+    // OT-0020: cuentas desde Configuración contable, nunca quemadas.
+    const cGastos = cuentaRol("gastos"), cIvaA = cuentaRol("ivaAcreditable"), cProv = cuentaRol("proveedores");
+    const faltantes = [!cGastos && NOMBRES_ROL.gastos, !cIvaA && NOMBRES_ROL.ivaAcreditable, !cProv && NOMBRES_ROL.proveedores].filter(Boolean);
+    if (faltantes.length) {
+      return { error: `Falta configurar: ${faltantes.join(", ")}. Ve a Configuración contable antes de importar el XML.` };
+    }
     return {
       tipo: "Egreso", fecha: d.fecha || hoyISO(), cfdiUuid: d.uuid || "", origen: "cfdi-recibido",
       proveedorRfc: d.rfcEmisor || "", proveedorNombre: d.nombreEmisor || "",
       concepto: `Gasto CFDI ${ref} · ${d.nombreEmisor || d.rfcEmisor || "Proveedor"}`,
       asientos: [
-        { codigo: "601", nombre: "Gastos de operación", debe: subtotal, haber: 0 },
-        { codigo: "118", nombre: "IVA acreditable",     debe: iva, haber: 0 },
-        { codigo: "201", nombre: "Proveedores",         debe: 0, haber: total },
+        { codigo: cGastos.codigo, nombre: cGastos.nombre, debe: subtotal, haber: 0 },
+        { codigo: cIvaA.codigo,   nombre: cIvaA.nombre,   debe: iva, haber: 0 },
+        { codigo: cProv.codigo,   nombre: cProv.nombre,   debe: 0, haber: total },
       ],
     };
   }
@@ -371,14 +546,26 @@
      BLOQUE 2 · Estados financieros
      ============================================================ */
   function grupoDetalle(codMayor) {
+    // Fix (ago-2026): antes se usaba Math.abs(saldoCuenta(c)), lo que le
+    // quitaba el signo a TODAS las cuentas — incluidas las atípicas
+    // (ej. Caja con saldo acreedor). Eso hacía que una cuenta con saldo
+    // del lado equivocado SUMARA al total en vez de RESTAR, inflando
+    // artificialmente Activo/Gastos y provocando que el Balance General
+    // nunca cuadrara aunque cada póliza individual sí estuviera bien.
+    // Ahora se respeta el signo real: una cuenta atípica resta del total,
+    // que es matemáticamente lo correcto en partida doble.
     return getCuentas().filter((c) => c.padre === codMayor)
-      .map((c) => ({ codigo: c.codigo, nombre: c.nombre, saldo: Math.abs(saldoCuenta(c)) }))
+      .map((c) => ({ codigo: c.codigo, nombre: c.nombre, saldo: saldoCuenta(c) }))
       .filter((x) => x.saldo !== 0);
   }
   // Estado de Resultados: Ingresos − Costos y gastos = Utilidad
   function estadoResultados() {
     const ingresos = grupoDetalle("400");
-    const gastos = grupoDetalle("500");
+    // Fix (ago-2026): existen 2 grupos de mayor para egresos —
+    // "500 Costos y gastos" y "600 Gastos" — pero antes solo se sumaba
+    // el 500, dejando fuera cuentas como 601/602/603 (Gastos de
+    // operación/administración/venta) de la utilidad del ejercicio.
+    const gastos = [...grupoDetalle("500"), ...grupoDetalle("600")];
     const totalIngresos = round2(ingresos.reduce((s, x) => s + x.saldo, 0));
     const totalGastos = round2(gastos.reduce((s, x) => s + x.saldo, 0));
     return { ingresos, gastos, totalIngresos, totalGastos, utilidad: round2(totalIngresos - totalGastos) };
@@ -429,12 +616,13 @@ ${ctas}
 
   // Determinación de IVA del periodo
   function determinacionIVA() {
-    const cT = getCuentaPorCodigo("209"), cA = getCuentaPorCodigo("118");
+    const cT = cuentaRol("ivaTrasladado"), cA = cuentaRol("ivaAcreditable");
     const trasladado = cT ? Math.abs(saldoCuenta(cT)) : 0;
     const acreditable = cA ? Math.abs(saldoCuenta(cA)) : 0;
     const resultado = round2(trasladado - acreditable);
     return { trasladado: round2(trasladado), acreditable: round2(acreditable), resultado,
-      aCargo: resultado > 0 ? resultado : 0, aFavor: resultado < 0 ? round2(-resultado) : 0 };
+      aCargo: resultado > 0 ? resultado : 0, aFavor: resultado < 0 ? round2(-resultado) : 0,
+      configurado: !!(cT && cA) };
   }
 
   // DIOT: operaciones con proveedores (de pólizas de gasto contabilizadas desde CFDI recibido)
@@ -442,9 +630,21 @@ ${ctas}
     const provs = {};
     polizasDelPeriodo().forEach((p) => {
       if (p.origen !== "cfdi-recibido") return;
+      // OT-mejoras-SAT: una póliza anulada (duplicado) o ya corregida
+      // (su versión vieja, antes del ajuste) ya no debe sumar aquí —
+      // su efecto real quedó cancelado por la reversa. Solo cuentan las
+      // que siguen activas ('ok'). Sin este filtro, ahora que origen
+      // persiste correctamente en Postgres, una póliza anulada volvería
+      // a aparecer en DIOT con su monto original, ya sin efecto real.
+      if (p.estado && p.estado !== "ok") return;
       const rfc = p.proveedorRfc || "—";
       const nom = p.proveedorNombre || (p.concepto || "").split("·").pop().trim();
-      const ivaA = (p.asientos || []).filter((a) => a.codigo === "118").reduce((s, a) => s + num(a.debe), 0);
+      const ivaA = (p.asientos || []).filter((a) => a.codigo === (cuentaRol("ivaAcreditable") || {}).codigo).reduce((s, a) => s + num(a.debe), 0);
+      // OT-0020: "base" clasifica gasto por 4 códigos distintos (601, 602,
+      // 603, 501) — no es un solo rol de configuracion_contable, es una
+      // clasificación de "qué cuentas cuentan como gasto deducible para
+      // DIOT" más amplia. Se deja tal cual por ahora — needs su propia
+      // conversación con la contadora sobre qué cuentas debe incluir.
       const base = (p.asientos || []).filter((a) => a.codigo === "601" || a.codigo === "602" || a.codigo === "603" || a.codigo === "501").reduce((s, a) => s + num(a.debe), 0);
       if (!provs[rfc]) provs[rfc] = { rfc, nombre: nom, base: 0, iva: 0, ops: 0 };
       provs[rfc].base = round2(provs[rfc].base + base);
@@ -472,10 +672,20 @@ ${ctas}
 
   /* ---------- CSS ---------- */
   const css = `
+    .fac-sat-field{position:relative}
+    .fac-sat-results{display:none;position:absolute;top:100%;left:0;right:0;z-index:20;max-height:280px;overflow-y:auto;
+      background:var(--ink-800,#0d1322);border:1px solid var(--line,#1a2540);border-radius:10px;margin-top:.3rem;box-shadow:0 20px 50px -15px rgba(0,0,0,.6)}
+    .fac-sat-results.is-open{display:block}
+    .fac-sat-opt{padding:.55rem .75rem;cursor:pointer;font-size:.82rem;border-bottom:1px solid var(--line,#1a2540);line-height:1.3}
+    .fac-sat-opt:last-child{border-bottom:0}
+    .fac-sat-opt:hover,.fac-sat-opt.is-active{background:var(--brand-soft,rgba(110,139,255,.1))}
+    .fac-sat-opt b{color:var(--brand,#6E8BFF);font-family:var(--mono,monospace);font-size:.78rem}
+    .fac-sat-hint{padding:.55rem .75rem;font-size:.78rem;color:var(--faint,#5b6680)}
     .cont-modal{position:fixed;inset:0;z-index:120;display:none;align-items:center;justify-content:center;padding:1.2rem;background:rgba(2,6,15,.6);backdrop-filter:blur(4px)}
     .cont-modal.is-open{display:flex}
     .cont-modal__card{background:var(--ink-800,#0d1322);border:1px solid var(--line,#1a2540);border-radius:18px;
-      width:100%;max-width:680px;max-height:90vh;overflow:auto;box-shadow:0 30px 80px -20px rgba(0,0,0,.7)}
+      width:100%;max-width:680px;max-height:90vh;overflow:auto;box-shadow:0 30px 80px -20px rgba(0,0,0,.7);transition:max-width .15s ease}
+    .cont-modal--wide .cont-modal__card{max-width:1040px}
     .cont-modal__head{display:flex;align-items:center;justify-content:space-between;padding:1.1rem 1.3rem;border-bottom:1px solid var(--line,#1a2540);position:sticky;top:0;background:var(--ink-800,#0d1322);z-index:2}
     .cont-modal__head h3{margin:0;font-size:1.05rem}
     .cont-modal__x{background:none;border:0;color:var(--muted,#8a93a6);cursor:pointer;padding:.3rem;border-radius:8px;width:30px;height:30px;font-size:1rem}
@@ -492,6 +702,8 @@ ${ctas}
     .cont-as-debe::-webkit-outer-spin-button,.cont-as-debe::-webkit-inner-spin-button,
     .cont-as-haber::-webkit-outer-spin-button,.cont-as-haber::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
     .cont-as-debe,.cont-as-haber{-moz-appearance:textfield;appearance:textfield}
+    .no-spin::-webkit-outer-spin-button,.no-spin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+    .no-spin{-moz-appearance:textfield;appearance:textfield}
     .cont-as-x{background:none;border:0;color:var(--down,#FB7185);cursor:pointer;font-size:1rem;border-radius:7px;height:38px}
     .cont-as-x:hover{background:rgba(251,113,133,.12)}
     .cont-totales{margin-top:1rem;padding:1rem;border:1px solid var(--line,#1a2540);border-radius:12px;background:var(--ink-900,rgba(255,255,255,.02))}
@@ -510,6 +722,11 @@ ${ctas}
     @media(max-width:560px){.cont-plantillas{grid-template-columns:1fr}}
     .cont-plantilla{text-align:left;padding:1rem;border:1px solid var(--line,#1a2540);border-radius:12px;background:var(--ink-900,rgba(255,255,255,.02));cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:.25rem}
     .cont-plantilla:hover{border-color:var(--brand,#6E8BFF);background:var(--brand-soft,rgba(110,139,255,.08));transform:translateY(-1px)}
+    .cont-plantilla.is-bloqueada{cursor:not-allowed;opacity:.72}
+    .cont-plantilla.is-bloqueada:hover{border-color:var(--line,#1a2540);background:var(--ink-900,rgba(255,255,255,.02));transform:none}
+    .cont-badge-metodo{display:inline-block;font-size:.68rem;font-weight:700;padding:.08rem .4rem;border-radius:6px;margin-left:.35rem;vertical-align:middle}
+    .cont-badge-metodo.is-pue{background:rgba(60,180,100,.15);color:#3cb464}
+    .cont-badge-metodo.is-ppd{background:rgba(224,160,48,.15);color:#e0a030}
     .cont-plantilla b{font-size:.94rem}
     .cont-plantilla span{font-size:.78rem;color:var(--muted,#9aa)}
     .cont-rapido-card{margin-top:1rem;padding:1.1rem;border:1px solid var(--brand,#6E8BFF);border-radius:12px;background:var(--brand-soft,rgba(110,139,255,.05))}
@@ -553,7 +770,44 @@ ${ctas}
   const cbody = modal.querySelector("[data-cont-body]");
   const ctitle = modal.querySelector("[data-cont-title]");
   const openModal = (t) => { ctitle.textContent = t; modal.classList.add("is-open"); };
-  const closeModal = () => modal.classList.remove("is-open");
+  const closeModal = () => { modal.classList.remove("is-open"); modal.classList.remove("cont-modal--wide"); };
+
+  // ---------- Confirmación/aviso propios (nunca el confirm()/alert() del
+  // navegador — se ven genéricos, muestran la URL técnica, y no combinan
+  // con el resto de la app) ----------
+  function ctConfirm(mensaje, textoBoton) {
+    return new Promise((resolve) => {
+      const el = document.createElement("div");
+      el.className = "cont-modal is-open";
+      el.innerHTML = `<div class="cont-modal__card" style="max-width:420px">
+        <div class="cont-modal__body" style="padding-top:1.4rem">
+          <p style="margin:0 0 1.3rem;color:var(--text,#e8ecf3);font-size:.95rem;line-height:1.5">${esc(mensaje)}</p>
+          <div class="cont-foot"><button class="btn btn--ghost" data-ct-no>Cancelar</button>
+            <button class="btn btn--primary" data-ct-si>${esc(textoBoton || "Aceptar")}</button></div>
+        </div></div>`;
+      document.body.appendChild(el);
+      const cerrar = (val) => { document.body.removeChild(el); resolve(val); };
+      el.addEventListener("click", (e) => {
+        if (e.target === el || e.target.closest("[data-ct-no]")) cerrar(false);
+        else if (e.target.closest("[data-ct-si]")) cerrar(true);
+      });
+    });
+  }
+  function ctAlert(mensaje) {
+    return new Promise((resolve) => {
+      const el = document.createElement("div");
+      el.className = "cont-modal is-open";
+      el.innerHTML = `<div class="cont-modal__card" style="max-width:420px">
+        <div class="cont-modal__body" style="padding-top:1.4rem">
+          <p style="margin:0 0 1.3rem;color:var(--text,#e8ecf3);font-size:.95rem;line-height:1.5">${esc(mensaje)}</p>
+          <div class="cont-foot"><button class="btn btn--primary" data-ct-ok>Entendido</button></div>
+        </div></div>`;
+      document.body.appendChild(el);
+      el.addEventListener("click", (e) => {
+        if (e.target === el || e.target.closest("[data-ct-ok]")) { document.body.removeChild(el); resolve(); }
+      });
+    });
+  }
 
   /* ---------- Render: KPIs ---------- */
   function renderStats() {
@@ -570,18 +824,23 @@ ${ctas}
   }
 
   /* ---------- Render: catálogo de cuentas ---------- */
+  const ICO_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>';
+
   function renderCatalogo() {
     const el = document.querySelector("[data-cuentas]");
     if (!el) return;
     el.innerHTML = getCuentas().map((c) => {
       const esMayor = c.nivel === 1;
+      const inactiva = c.activo === false;
       const acciones = esMayor ? "" :
         `<button class="ract" data-cont-mayor="${c.codigo}" title="Libro mayor">${ICO_BOOK}</button>` +
         `<button class="ract" data-cont-edit-cta="${c.id}" title="Editar">${ICO_EDIT}</button>` +
-        `<button class="ract ract--del" data-cont-del-cta="${c.id}" title="Eliminar">${ICO_DEL}</button>`;
-      return `<tr${esMayor ? ' style="background:var(--ink-900,rgba(255,255,255,.02))"' : ""}>
+        (inactiva
+          ? `<button class="ract" data-cont-reactivar-cta="${c.id}" title="Reactivar">${ICO_UNDO}</button>`
+          : `<button class="ract ract--del" data-cont-del-cta="${c.id}" title="Desactivar">${ICO_DEL}</button>`);
+      return `<tr${esMayor ? ' style="background:var(--ink-900,rgba(255,255,255,.02))"' : (inactiva ? ' style="opacity:.5"' : "")}>
         <td class="num"${esMayor ? ' style="font-weight:700"' : ""}>${esc(c.codigo)}</td>
-        <td style="${esMayor ? "font-weight:700" : "padding-left:1.7rem"}">${esc(c.nombre)}</td>
+        <td style="${esMayor ? "font-weight:700" : "padding-left:1.7rem"}">${esc(c.nombre)}${inactiva ? ' <span class="pill pill--late" style="margin-left:.4rem">Inactiva</span>' : ""}</td>
         <td>${c.nat}</td>
         <td class="num" style="text-align:right${esMayor ? ";font-weight:700" : ""}">$${fmt(saldoCuenta(c))}</td>
         <td class="row-act">${acciones}</td></tr>`;
@@ -589,13 +848,25 @@ ${ctas}
   }
 
   /* ---------- Render: tabla de pólizas ---------- */
+  let filtroPolizas = "";
   function renderPolizasTabla() {
     const el = document.querySelector("[data-polizas]");
     if (!el) return;
-    const pol = getPolizas();
-    if (!pol.length) { el.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Aún no hay pólizas. Crea la primera con <b>Nueva póliza</b>.</td></tr>`; return; }
+    let pol = getPolizas();
+    if (filtroPolizas.trim()) {
+      const q = filtroPolizas.trim().toLowerCase();
+      pol = pol.filter((p) => (p.folio || "").toLowerCase().includes(q) || (p.concepto || "").toLowerCase().includes(q));
+    }
+    if (!pol.length) {
+      el.innerHTML = filtroPolizas.trim()
+        ? `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Sin resultados para "${esc(filtroPolizas)}".</td></tr>`
+        : `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Aún no hay pólizas. Crea la primera con <b>Nueva póliza</b>.</td></tr>`;
+      return;
+    }
     el.innerHTML = pol.map((p) => {
-      const monto = (p.asientos || []).reduce((s, a) => s + num(a.debe), 0);
+      // FIX 2: pólizas nacidas en Postgres (ej. cobranza) llegan sin
+      // asientos locales — se usa el monto que ya manda el backend.
+      const monto = (p.asientos || []).reduce((s, a) => s + num(a.debe), 0) || num(p.monto);
       return `<tr>
         <td class="num">${esc(p.folio)}</td>
         <td>${esc(p.tipo)}</td>
@@ -605,7 +876,9 @@ ${ctas}
         <td><span class="pill pill--ok">Cuadrada</span></td>
         <td class="row-act">
           <button class="ract" data-cont-ver="${p.id}" title="Ver">${ICO_EYE}</button>
-          <button class="ract ract--del" data-cont-del-pol="${p.id}" title="Eliminar">${ICO_DEL}</button></td></tr>`;
+          ${p.pgId
+            ? ``
+            : `<button class="ract ract--del" data-cont-del-pol="${p.id}" title="Eliminar (solo local)">${ICO_DEL}</button>`}</td></tr>`;
     }).join("");
   }
 
@@ -615,7 +888,7 @@ ${ctas}
     if (!pane) return;
     const ctas = getCuentasAfectables();
     const sel = codigoSel || (ctas[0] && ctas[0].codigo) || "";
-    const opts = ctas.map((c) => `<option value="${c.codigo}"${c.codigo === sel ? " selected" : ""}>${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join("");
+    const ctaSel = getCuentaPorCodigo(sel);
     const cta = getCuentaPorCodigo(sel);
     let saldoAcum = 0;
     const movs = sel ? movimientosCuenta(sel).movs : [];
@@ -628,8 +901,11 @@ ${ctas}
     }).join("") : `<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:2rem">Esta cuenta no tiene movimientos.</td></tr>`;
     pane.innerHTML = `<div class="card">
       <div class="cont-mayor-head">
-        <div class="field" style="margin:0;max-width:360px"><label>Cuenta</label>
-          <select class="input" data-mayor-cuenta>${opts || '<option value="">Sin cuentas</option>'}</select></div>
+        <div class="field fac-sat-field" style="margin:0;max-width:360px"><label>Cuenta</label>
+          <input class="input cuenta-busca mayor-cuenta-busca" placeholder="Escribe para buscar…" autocomplete="off" value="${ctaSel ? esc(ctaSel.codigo + " · " + ctaSel.nombre) : ""}">
+          <input type="hidden" data-mayor-cuenta value="${esc(sel)}">
+          <div class="fac-sat-results"></div>
+        </div>
         ${cta ? `<div class="cont-mayor-saldo"><span>Saldo actual</span><b>$${fmt(saldoCuenta(cta))}</b></div>` : ""}
       </div>
       <div style="overflow-x:auto;margin-top:1rem">
@@ -639,28 +915,251 @@ ${ctas}
   }
 
   /* ---------- Render: Balanza de comprobación ---------- */
+  /* ================================================================
+     OT-0024 · Tab "Cuentas por Pagar" — todas las facturas de
+     proveedor (pagadas o no), cada una con acceso a su historial de
+     pagos y comprobante PDF. Espejo de lo que ya existe para clientes
+     en Facturación, adaptado al patrón de tabs de Contabilidad.
+     ================================================================ */
+  const HIST_FORMAS_PAGO = { "01": "Efectivo", "02": "Cheque nominativo", "03": "Transferencia", "04": "Tarjeta de crédito", "28": "Tarjeta de débito", "99": "Otro" };
+  let provHistState = null; // { factura, pagos } mientras el modal de historial está abierto
+  function fechaCortaHist(iso) {
+    if (!iso) return "—";
+    try { const d = new Date(iso); return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }); } catch (e) { return iso; }
+  }
+  function fechaHoraHist(iso) {
+    if (!iso) return "—";
+    try { const d = new Date(iso); return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }) + " " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return iso; }
+  }
+  function nombreArchivoHist(path) { return path ? (path.split("/").pop() || path) : null; }
+  async function firmarComprobanteHist(path) {
+    const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+    if (!cfg || !t || !path) return null;
+    try {
+      const resp = await fetch(cfg.url + "/storage/v1/object/sign/documentos/" + path, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresIn: 3600 }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.signedURL) return null;
+      return cfg.url + "/storage/v1" + data.signedURL;
+    } catch (e) { return null; }
+  }
+  const pillEstadoPagoHist = (p) => p.estado === "confirmado" ? '<span class="pill pill--ok">Confirmado</span>'
+    : p.estado === "cancelado" ? '<span class="pill pill--late">Cancelado</span>' : '<span class="pill pill--pend">Registrado</span>';
+
+  let provFacturasCache = []; // OT-0024 fix: evita re-pedir todo el listado nada más para abrir un historial
+  async function renderProveedores() {
+    const pane = document.querySelector('[data-pane="proveedores"]');
+    if (!pane) return;
+    pane.innerHTML = `<div class="card"><p class="cont-hint">Cargando facturas de proveedor…</p></div>`;
+    const r = (window.CTPostgres && window.CTPostgres.listarCfdisProveedorTodas)
+      ? await window.CTPostgres.listarCfdisProveedorTodas()
+      : { ok: false, error: "Sin conexión con el backend." };
+    if (!r.ok) { pane.innerHTML = `<div class="card"><div class="cont-err">${esc(r.error || "No se pudieron cargar las facturas.")}</div></div>`; return; }
+    // Pendientes primero — así lo más accionable queda arriba, y ver una
+    // "Liquidada" hasta abajo no contradice lo que el usuario esperaba.
+    const facturas = (r.facturas || []).sort((a, b) => {
+      const pa = num(a.saldo_pendiente) > 0 ? 0 : 1, pb = num(b.saldo_pendiente) > 0 ? 0 : 1;
+      return pa - pb;
+    });
+    provFacturasCache = facturas;
+    const fila = (f) => {
+      const esPPD = f.metodo_pago === "PPD";
+      const badge = f.metodo_pago ? `<span class="cont-badge-metodo ${esPPD ? "is-ppd" : "is-pue"}">${esc(f.metodo_pago)}</span>` : "";
+      const liquidada = num(f.saldo_pendiente) <= 0;
+      return `<tr>
+        <td class="num" style="white-space:nowrap">${esc(f.folio || "—")}</td>
+        <td>${esc(f.emisor_nombre || "Proveedor")}</td>
+        <td style="white-space:nowrap">${esc(fechaCortaHist(f.fecha))} ${badge}</td>
+        <td class="num" style="text-align:right;white-space:nowrap">$${fmt(num(f.total))}</td>
+        <td class="num" style="text-align:right;white-space:nowrap">$${fmt(num(f.saldo_pendiente))}</td>
+        <td style="white-space:nowrap">${liquidada ? '<span class="pill pill--ok">Liquidada</span>' : '<span class="pill pill--pend">Pendiente</span>'}</td>
+        <td><button class="ract" data-provhist-abrir="${esc(f.cfdi_proveedor_id)}" title="Historial de pagos"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></button></td></tr>`;
+    };
+    pane.innerHTML = `<div class="card">
+      <h3 style="margin:0 0 .2rem;font-size:.95rem">Auxiliar de facturas</h3>
+      <p class="cont-hint" style="margin-top:0">Historial completo por factura — pendientes y ya liquidadas. El saldo total que le debes a proveedores (la cuenta de control) vive en Libro Mayor, cuenta <b>201 · Proveedores</b>.</p>
+      <div class="toolbar"><div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-provbusca placeholder="Buscar por folio o proveedor…"></div></div>
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>Folio</th><th>Proveedor</th><th>Fecha</th><th style="text-align:right">Total</th><th style="text-align:right">Saldo</th><th>Estado</th><th></th></tr></thead>
+        <tbody data-provfilas>${facturas.length ? facturas.map(fila).join("") : `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Aún no hay facturas de proveedor. Impórtalas desde Pólizas → "Importar XML recibido".</td></tr>`}</tbody>
+      </table></div></div>`;
+    const busca = pane.querySelector("[data-provbusca]");
+    if (busca) busca.addEventListener("input", () => {
+      const q = busca.value.trim().toLowerCase();
+      const filtradas = q ? facturas.filter((f) => (f.folio || "").toLowerCase().includes(q) || (f.emisor_nombre || "").toLowerCase().includes(q)) : facturas;
+      pane.querySelector("[data-provfilas]").innerHTML = filtradas.length ? filtradas.map(fila).join("") : `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2rem">Sin resultados para "${esc(busca.value)}".</td></tr>`;
+    });
+  }
+
+  async function abrirHistorialProveedor(cfdiProveedorId) {
+    // OT-0024 fix: la factura ya está en memoria (se acaba de renderizar
+    // la tabla) — antes se volvía a pedir TODO el listado al backend
+    // solo para encontrar una que ya teníamos, por eso tardaba.
+    const f = provFacturasCache.find((x) => x.cfdi_proveedor_id === cfdiProveedorId) || {};
+    openModal("Historial de pagos · " + (f.folio || ""));
+    modal.classList.add("cont-modal--wide");
+    cbody.innerHTML = `<p class="cont-hint">Cargando pagos…</p>`;
+    const rp = (window.CTPostgres && window.CTPostgres.listarPagosProveedor)
+      ? await window.CTPostgres.listarPagosProveedor(cfdiProveedorId)
+      : { ok: false, error: "Sin conexión con el backend." };
+    if (!rp.ok) {
+      cbody.innerHTML = `<div class="cont-err">${esc(rp.error || "No se pudieron cargar los pagos.")}</div>
+        <div class="cont-foot"><button class="btn btn--ghost" data-cont-close>Cerrar</button></div>`;
+      return;
+    }
+    provHistState = { factura: f, pagos: rp.pagos || [] };
+    renderProvHistLista();
+  }
+
+  function renderProvHistLista() {
+    if (!provHistState) return;
+    const { factura: f, pagos } = provHistState;
+    openModal("Historial de pagos · " + (f.folio || ""));
+    const totalPagado = pagos.filter((p) => p.estado === "confirmado").reduce((s, p) => s + num(p.monto), 0);
+    const totalFactura = num(f.total);
+    const saldo = round2(totalFactura - totalPagado);
+    const filas = pagos.map((p, i) => {
+      const quien = (p.registradoPor ? "Registró: " + esc(p.registradoPor) : "") + (p.confirmadoPor ? (p.registradoPor ? " · " : "") + "Confirmó: " + esc(p.confirmadoPor) : "");
+      return `<tr>
+        <td class="num" style="white-space:nowrap">${fechaCortaHist(p.fechaPago)}</td>
+        <td class="num" style="text-align:right;white-space:nowrap">$${fmt(num(p.monto))}</td>
+        <td style="white-space:nowrap">${esc(HIST_FORMAS_PAGO[p.formaPago] || p.formaPago || "—")}</td>
+        <td style="white-space:nowrap">${pillEstadoPagoHist(p)}</td>
+        <td class="num" style="white-space:nowrap">${p.polizaFolio ? esc(p.polizaFolio) : '<span style="color:var(--faint);font-size:.78rem">Pendiente</span>'}</td>
+        <td style="font-size:.78rem;color:var(--muted)">${quien || "—"}</td>
+        <td><button class="ract" data-provhist-det="${i}" title="Ver detalle del pago"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15c.7-1.2 1.1-2.2 1.1-3 0-3-4.5-7-10.3-7S1.7 9 1.7 12s4.5 7 10.3 7c1.6 0 3.1-.3 4.4-.8"/><circle cx="12" cy="12" r="3"/></svg></button></td></tr>`;
+    }).join("");
+    cbody.innerHTML = `
+      <div style="background:var(--ink-900,rgba(255,255,255,.03));border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.88rem">
+        <div><b>${esc(f.folio || "—")}</b> · ${esc(f.emisor_nombre || "")} ${f.metodo_pago ? " · <b>" + esc(f.metodo_pago) + "</b>" : ""}</div>
+        <div style="margin-top:.3rem">Total: $${fmt(totalFactura)} &nbsp;·&nbsp; Pagado: $${fmt(totalPagado)} &nbsp;·&nbsp; <b>Saldo: $${fmt(saldo)}</b></div></div>
+      ${pagos.length
+        ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Fecha</th><th style="text-align:right">Monto</th><th>Forma</th><th>Estado</th><th>Póliza</th><th>Trazabilidad</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+        : `<p class="cont-hint">Esta factura todavía no tiene pagos registrados.</p>`}
+      <div class="cont-foot"><button class="btn btn--ghost" data-cont-close>Cerrar</button></div>`;
+  }
+
+  function renderProvHistDetalle(idx) {
+    if (!provHistState) return;
+    const { factura: f, pagos } = provHistState;
+    const p = pagos[idx];
+    if (!p) return;
+    openModal("Detalle del pago " + (p.folioPago || "") + " · " + (f.folio || ""));
+    const filaDato = (etiqueta, valor) => `<div style="display:flex;justify-content:space-between;gap:1rem;padding:.45rem 0;border-bottom:1px solid var(--line,#1a2540)"><span style="color:var(--muted);font-size:.84rem">${etiqueta}</span><span style="text-align:right">${valor}</span></div>`;
+    const nombreComp = nombreArchivoHist(p.comprobantePath);
+    const btnMini = (attrs, texto) => `<button class="btn btn--ghost" style="padding:.15rem .6rem;font-size:.76rem" ${attrs}>${texto}</button>`;
+    const docRow = (nombre, tipo, acciones) => `<tr><td style="font-size:.84rem">${nombre}</td><td style="font-size:.78rem;color:var(--muted)">${tipo}</td><td style="white-space:nowrap">${acciones}</td></tr>`;
+    const documentosHTML = `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Documento</th><th>Tipo</th><th>Acciones</th></tr></thead><tbody>` +
+      (p.comprobantePath
+        ? docRow("📎 " + esc(nombreComp), "Evidencia adjunta",
+            btnMini(`data-provhist-comprobante="${esc(p.comprobantePath)}" data-comp-modo="ver"`, "Ver") + " " +
+            btnMini(`data-provhist-comprobante="${esc(p.comprobantePath)}" data-comp-modo="descargar" data-comp-nombre="${esc(nombreComp)}"`, "Descargar"))
+        : docRow("📎 Sin evidencia adjunta", "Evidencia adjunta", `<span style="color:var(--faint);font-size:.76rem">No adjuntada</span>`)) +
+      docRow("📄 Comprobante de pago " + esc(p.folioPago || ""), "Generado por Contateck",
+        btnMini(`data-provcomp-interno="${esc(p.id)}" data-ci-modo="ver"`, "Ver") + " " +
+        btnMini(`data-provcomp-interno="${esc(p.id)}" data-ci-modo="descargar"`, "Descargar")) +
+      `</tbody></table></div>`;
+    cbody.innerHTML = `
+      <button class="btn btn--ghost" data-provhist-volver style="margin-bottom:1rem;padding:.3rem .8rem">← Volver al historial</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.2rem">
+        <div>
+          <h4 style="margin:.2rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Datos del pago</h4>
+          ${filaDato("Monto", "<b>$" + fmt(num(p.monto)) + "</b>")}
+          ${filaDato("Fecha del pago", esc(fechaCortaHist(p.fechaPago)))}
+          ${filaDato("Forma de pago", esc(HIST_FORMAS_PAGO[p.formaPago] || p.formaPago || "—"))}
+          ${filaDato("Cuenta de origen", p.cuentaOrigen ? esc(p.cuentaOrigen) : "—")}
+          ${filaDato("Referencia", p.referencia ? esc(p.referencia) : "—")}
+          ${filaDato("Notas", p.notas ? esc(p.notas) : "—")}
+          ${filaDato("Estado", pillEstadoPagoHist(p))}
+          <h4 style="margin:1.1rem 0 .4rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Documentos de la operación</h4>
+          ${documentosHTML}
+          <div data-provci-preview style="display:none;margin-top:.6rem"></div>
+          ${p.comprobantePath ? `<div style="margin-top:.6rem"><div style="font-size:.72rem;color:var(--faint);margin-bottom:.25rem">Vista previa de la evidencia adjunta: <b>${esc(nombreComp)}</b></div><div data-provcomp-preview style="border:1px solid var(--line,#1a2540);border-radius:10px;min-height:60px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--ink-900,rgba(255,255,255,.02))"><span style="color:var(--faint);font-size:.8rem">Cargando…</span></div></div>` : ""}
+        </div>
+        <div>
+          <h4 style="margin:.2rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Información contable</h4>
+          ${filaDato("Póliza relacionada", p.polizaFolio ? "<b>" + esc(p.polizaFolio) + "</b>" : '<span style="color:var(--faint)">Póliza contable pendiente</span>')}
+          <h4 style="margin:1.1rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Documento fiscal (factura del proveedor)</h4>
+          ${filaDato("Factura (CFDI)", esc(f.folio || "—") + (f.metodo_pago ? " · " + esc(f.metodo_pago) : ""))}
+          <h4 style="margin:1.1rem 0 .6rem;font-size:.8rem;letter-spacing:.06em;color:var(--faint);text-transform:uppercase">Trazabilidad</h4>
+          ${filaDato("Registrado por", (p.registradoPor ? esc(p.registradoPor) : "—") + '<br><span style="color:var(--faint);font-size:.76rem">' + fechaHoraHist(p.creadoEn) + '</span>')}
+          ${filaDato("Confirmado por", p.confirmadoPor ? (esc(p.confirmadoPor) + '<br><span style="color:var(--faint);font-size:.76rem">' + fechaHoraHist(p.confirmadoEn) + '</span>') : '<span style="color:var(--faint)">Aún sin confirmar</span>')}
+        </div>
+      </div>
+      <div class="cont-foot" style="margin-top:1.2rem"><button class="btn btn--ghost" data-cont-close>Cerrar</button></div>`;
+    if (p.comprobantePath) cargarPreviewComprobanteProv(p.comprobantePath);
+  }
+
+  async function cargarPreviewComprobanteProv(path) {
+    const box = cbody.querySelector("[data-provcomp-preview]");
+    if (!box) return;
+    const url = await firmarComprobanteHist(path);
+    if (!url) { box.innerHTML = `<span style="color:var(--faint);font-size:.8rem;padding:.8rem">No se pudo cargar la vista previa.</span>`; return; }
+    const ext = (path.split(".").pop() || "").toLowerCase();
+    if (["png", "jpg", "jpeg", "gif", "webp"].indexOf(ext) >= 0) box.innerHTML = `<img src="${url}" alt="Comprobante" style="max-width:100%;max-height:340px;display:block">`;
+    else if (ext === "pdf") box.innerHTML = `<embed src="${url}" type="application/pdf" style="width:100%;height:340px">`;
+    else box.innerHTML = `<span style="color:var(--faint);font-size:.8rem;padding:.8rem">Vista previa no disponible para .${esc(ext)}.</span>`;
+  }
+
+  async function abrirComprobanteInternoProv(pagoId, modo, btn) {
+    const box = cbody.querySelector("[data-provci-preview]");
+    try {
+      if (btn) btn.disabled = true;
+      if (modo === "ver" && box) { box.style.display = "block"; box.innerHTML = `<span style="color:var(--faint);font-size:.8rem">Generando comprobante…</span>`; }
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/pagos-proveedor/" + pagoId + "/comprobante-pdf", {
+        headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
+      });
+      if (!resp.ok) {
+        let detalle = ""; try { const j = await resp.json(); detalle = [j.error, j.details].filter(Boolean).join(" — "); } catch (e2) {}
+        throw new Error("(" + resp.status + ") " + (detalle || "PDF no disponible."));
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      if (modo === "descargar") {
+        const a = document.createElement("a"); a.href = url; a.download = "ComprobantePagoProveedor_" + pagoId.slice(0, 8) + ".pdf";
+        document.body.appendChild(a); a.click(); a.remove();
+      } else if (box) {
+        box.innerHTML = `<div style="font-size:.72rem;color:var(--faint);margin-bottom:.25rem">Comprobante de pago generado por Contateck</div><embed src="${url}" type="application/pdf" style="width:100%;height:480px;border:1px solid var(--line,#1a2540);border-radius:10px">`;
+      }
+    } catch (e) {
+      const msg = "No se pudo generar el comprobante: " + e.message;
+      if (box && modo === "ver") { box.style.display = "block"; box.innerHTML = `<div style="color:#FB7185;font-size:.82rem;padding:.5rem 0">${esc(msg)}</div>`; }
+      toast(msg, "error", 6000);
+    } finally { if (btn) btn.disabled = false; }
+  }
+
   function renderBalanza() {
     const pane = document.querySelector('[data-pane="balanza"]');
     if (!pane) return;
     const b = balanza();
-    const filas = b.filas.map((f) => `<tr>
-      <td class="num">${esc(f.codigo)}</td><td>${esc(f.nombre)}</td>
+    const colIni = b.hayPeriodo; // solo mostrar "Saldo inicial" cuando hay mes seleccionado
+    const filas = b.filas.map((f) => `<tr${f.atipico ? ' style="background:rgba(251,113,133,.06)"' : ""}>
+      <td class="num">${esc(f.codigo)}</td>
+      <td>${esc(f.nombre)}${f.atipico ? ` <span title="Saldo atípico: esta cuenta es de naturaleza ${esc(f.nat)} pero quedó del lado contrario — revisa sus pólizas" style="color:#FB7185;font-weight:700;cursor:help">⚠</span>` : ""}</td>
+      ${colIni ? `<td class="num" style="text-align:right;color:var(--muted)">${f.saldoInicial ? (f.saldoInicial < 0 ? "-$" + fmt(Math.abs(f.saldoInicial)) : "$" + fmt(f.saldoInicial)) : "—"}</td>` : ""}
       <td class="num" style="text-align:right">$${fmt(f.debe)}</td>
       <td class="num" style="text-align:right">$${fmt(f.haber)}</td>
-      <td class="num" style="text-align:right">${f.saldoDeudor ? "$" + fmt(f.saldoDeudor) : "—"}</td>
-      <td class="num" style="text-align:right">${f.saldoAcreedor ? "$" + fmt(f.saldoAcreedor) : "—"}</td></tr>`).join("");
+      <td class="num" style="text-align:right${f.atipico ? ";color:#FB7185;font-weight:700" : ""}">${f.saldoDeudor ? "$" + fmt(f.saldoDeudor) : "—"}</td>
+      <td class="num" style="text-align:right${f.atipico ? ";color:#FB7185;font-weight:700" : ""}">${f.saldoAcreedor ? "$" + fmt(f.saldoAcreedor) : "—"}</td></tr>`).join("");
+    const nCols = colIni ? 7 : 6;
     pane.innerHTML = `<div class="card">
       <div style="overflow-x:auto">
         <table class="tbl"><thead><tr><th>Código</th><th>Cuenta</th>
+          ${colIni ? `<th style="text-align:right">Saldo inicial</th>` : ""}
           <th style="text-align:right">Cargos</th><th style="text-align:right">Abonos</th>
           <th style="text-align:right">Saldo deudor</th><th style="text-align:right">Saldo acreedor</th></tr></thead>
-        <tbody>${filas || `<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:2rem">Sin movimientos todavía.</td></tr>`}</tbody>
-        <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
+        <tbody>${filas || `<tr><td colspan="${nCols}" style="text-align:center;color:var(--faint);padding:2rem">Sin movimientos todavía.</td></tr>`}</tbody>
+        <tfoot><tr style="font-weight:700"><td colspan="${colIni ? 3 : 2}" style="text-align:right">Totales</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.debe)}</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.haber)}</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.saldoDeudor)}</td>
           <td class="num" style="text-align:right">$${fmt(b.tot.saldoAcreedor)}</td></tr></tfoot></table></div>
-      <div class="cont-balanza-estado ${b.cuadra ? "is-ok" : "is-bad"}">${b.cuadra ? "✓ La balanza cuadra" : "⚠ La balanza no cuadra"}</div></div>`;
+      <div class="cont-balanza-estado ${b.cuadra ? "is-ok" : "is-bad"}">${b.cuadra ? "✓ La balanza cuadra" : "⚠ La balanza no cuadra"}</div>
+      ${b.atipicos ? `<div style="margin-top:.7rem;font-size:.85rem;color:#FB7185;display:flex;align-items:center;gap:.4rem">
+        <span style="font-size:1.1rem">⚠</span> ${b.atipicos} cuenta${b.atipicos > 1 ? "s" : ""} con saldo atípico (marcada${b.atipicos > 1 ? "s" : ""} en rojo) — una cuenta terminó del lado contrario a su naturaleza, lo que suele indicar un error de captura en sus pólizas.</div>` : ""}</div>`;
   }
 
   /* ---------- Descargar archivo (XML/texto) ---------- */
@@ -680,7 +1179,10 @@ ${ctas}
     const pane = document.querySelector('[data-pane="estados"]');
     if (!pane) return;
     const er = estadoResultados(), bg = balanceGeneral();
-    const fila = (x) => `<tr><td class="num">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td class="num" style="text-align:right">$${fmt(x.saldo)}</td></tr>`;
+    // Mismo fix de formato que en Balanza: con grupoDetalle ya sin
+    // Math.abs(), una cuenta atípica puede llegar con saldo negativo —
+    // se muestra "-$1,234.00" en vez de "$-1,234.00".
+    const fila = (x) => `<tr${x.saldo < 0 ? ' style="color:#FB7185"' : ""}><td class="num">${esc(x.codigo)}</td><td>${esc(x.nombre)}${x.saldo < 0 ? " ⚠" : ""}</td><td class="num" style="text-align:right">${x.saldo < 0 ? "-$" + fmt(Math.abs(x.saldo)) : "$" + fmt(x.saldo)}</td></tr>`;
     pane.innerHTML = `<div class="cont-ef-grid">
       <div class="card">
         <h3 class="cont-ef-titulo">Estado de Resultados</h3>
@@ -714,14 +1216,107 @@ ${ctas}
   }
 
   /* ---------- Render: SAT / Declaraciones (Bloque 3) ---------- */
+  // ============================================================
+  // OT-0026 · Cierre de periodos contables
+  // ============================================================
+  const MESES_NOMBRE = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  let periodosCache = null;
+
+  async function renderPeriodos() {
+    const pane = document.querySelector('[data-pane="periodos"]');
+    if (!pane) return;
+    pane.innerHTML = `<div class="card"><p style="color:var(--muted)">Cargando periodos…</p></div>`;
+    if (!window.CTPostgres || !window.CTPostgres.listarPeriodos) {
+      pane.innerHTML = `<div class="card"><p class="cont-hint">El cierre de periodos requiere conexión con el servidor.</p></div>`;
+      return;
+    }
+    let r;
+    try { r = await window.CTPostgres.listarPeriodos(); } catch (e) { r = null; }
+    if (!r || !r.ok) {
+      pane.innerHTML = `<div class="card"><p class="cont-err">No se pudo cargar la lista de periodos.</p></div>`;
+      return;
+    }
+    periodosCache = r.periodos || [];
+    // El Balance general (acumulado, no solo del mes) debe cuadrar antes
+    // de permitir cerrar cualquier periodo — reutiliza la misma lógica
+    // que ya se ve en la pestaña Balanza, sin duplicar cálculo.
+    const bg = balanceGeneral();
+    pane.innerHTML = `
+      <div class="card">
+        <h3 class="cont-ef-titulo">Periodos contables</h3>
+        <p style="color:var(--muted);font-size:.88rem;margin:.3rem 0 1rem">
+          Cerrar un periodo bloquea capturar o corregir pólizas con fecha dentro de ese mes.
+          La póliza original de un mes cerrado nunca se reabre — cualquier corrección posterior
+          se registra con la fecha de hoy, en el periodo actual.</p>
+        ${!bg.cuadra ? `<div class="cont-err" style="margin-bottom:1rem">El Balance general no cuadra ahorita mismo (diferencia entre Activo y Pasivo+Capital). No se puede cerrar ningún periodo hasta corregir eso — revisa la pestaña Balanza.</div>` : ""}
+        <table class="tbl"><thead><tr><th>Periodo</th><th>Estado</th><th>Cerrado</th><th></th></tr></thead>
+        <tbody>
+        ${periodosCache.length ? periodosCache.map((p) => `
+          <tr>
+            <td>${MESES_NOMBRE[p.mes]} ${p.anio}</td>
+            <td><span class="pill ${p.estado === "cerrado" ? "pill--pend" : "pill--ok"}">${p.estado === "cerrado" ? "Cerrado" : "Abierto"}</span></td>
+            <td>${p.cerradoEn ? esc(new Date(p.cerradoEn).toLocaleDateString("es-MX")) : "—"}</td>
+            <td>${p.estado === "abierto"
+              ? `<button class="btn btn--ghost btn--sm" data-cerrar-periodo="${p.anio}-${p.mes}" ${!bg.cuadra ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Cerrar periodo</button>
+                 ${!bg.cuadra ? '<span style="display:block;font-size:.72rem;color:var(--faint);margin-top:.25rem">Balance no cuadra</span>' : ""}`
+              : `<button class="btn btn--ghost btn--sm" disabled style="opacity:.4;cursor:not-allowed" title="Un periodo cerrado nunca se reabre — las correcciones se registran en el periodo actual">Periodo cerrado</button>`}</td>
+          </tr>`).join("")
+          : `<tr><td colspan="4" style="text-align:center;color:var(--faint);padding:1.5rem">Aún no hay pólizas capturadas.</td></tr>`}
+        </tbody></table>
+      </div>`;
+  }
+
+  // OT-mejoras-SAT: antes usaba el confirm() nativo del navegador (la
+  // ventanita fea "127.0.0.1:5500 dice...") — se reemplaza por un modal
+  // propio, mismo estilo que ya usan corrección/anulación de pólizas.
+  function abrirConfirmarCierrePeriodo(anio, mes) {
+    openModal(`Cerrar ${MESES_NOMBRE[mes]} ${anio}`);
+    cbody.innerHTML = `
+      <div style="background:rgba(251,191,113,.08);border:1px solid rgba(251,191,113,.3);border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FBBF71">Esta acción no se puede deshacer</b> — una vez cerrado, ${MESES_NOMBRE[mes]} ${anio}
+        nunca se vuelve a abrir. Ya no se podrán capturar ni corregir pólizas con fecha dentro de ese mes; cualquier
+        corrección posterior se registrará con la fecha de hoy, en el periodo actual.</div>
+      <p style="color:var(--muted);font-size:.88rem">¿Seguro que quieres cerrar <b>${MESES_NOMBRE[mes]} ${anio}</b>?</p>
+      <div data-cont-msg></div>
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-cierre-cancelar>Cancelar</button>
+        <button class="btn btn--primary" data-cierre-confirmar>Sí, cerrar periodo</button></div>`;
+    cierrePeriodoState = { anio, mes };
+  }
+
+  async function confirmarCerrarPeriodo() {
+    if (!cierrePeriodoState) return;
+    const { anio, mes } = cierrePeriodoState;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const btn = cbody.querySelector("[data-cierre-confirmar]"); if (btn) btn.disabled = true;
+    const r = await window.CTPostgres.cerrarPeriodo(anio, mes);
+    if (!r.ok) {
+      if (msg) msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo cerrar el periodo.")}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    cierrePeriodoState = null;
+    closeModal();
+    toast(`${MESES_NOMBRE[mes]} ${anio} quedó cerrado.`, "ok");
+    renderPeriodos();
+  }
+
   function renderSAT() {
     const pane = document.querySelector('[data-pane="sat"]');
     if (!pane) return;
-    const iva = determinacionIVA(), dt = diot(), rfc = getRfcEmisor(), per = getPeriodo();
+    const iva = determinacionIVA(), dt = diot(), rfc = getRfcEmisor(), per = getPeriodo(), b = balanza();
     const mes = per ? per.mes : (new Date().getMonth() + 1), anio = per ? per.anio : new Date().getFullYear();
     const diotFilas = dt.length ? dt.map((d) => `<tr><td class="num">${esc(d.rfc)}</td><td>${esc(d.nombre)}</td>
       <td class="num" style="text-align:right">$${fmt(d.base)}</td><td class="num" style="text-align:right">$${fmt(d.iva)}</td></tr>`).join("")
       : '<tr><td colspan="4" style="text-align:center;color:var(--faint);padding:1.5rem">Importa CFDI de proveedores (en Pólizas) para poblar la DIOT.</td></tr>';
+    // OT-mejoras-SAT: totales al pie — Declaranot/Declarabanco piden los
+    // acumulados de Base e IVA, no solo el detalle por proveedor.
+    const diotTotalBase = round2(dt.reduce((s, d) => s + num(d.base), 0));
+    const diotTotalIva = round2(dt.reduce((s, d) => s + num(d.iva), 0));
+    const diotFoot = dt.length ? `<tfoot><tr class="cont-ef-total"><td colspan="2">Total</td>
+      <td class="num" style="text-align:right">$${fmt(diotTotalBase)}</td>
+      <td class="num" style="text-align:right">$${fmt(diotTotalIva)}</td></tr></tfoot>` : "";
     pane.innerHTML = `
       <div class="card" style="margin-bottom:1rem">
         <h3 class="cont-ef-titulo">Contabilidad Electrónica · XML para el SAT</h3>
@@ -733,8 +1328,9 @@ ${ctas}
         </div>
         <div class="cont-foot" style="justify-content:flex-start;margin-top:.8rem">
           <button class="btn btn--primary" data-sat-xml-cat>Descargar XML Catálogo</button>
-          <button class="btn btn--primary" data-sat-xml-bal>Descargar XML Balanza</button>
+          <button class="btn btn--primary" data-sat-xml-bal ${!b.cuadra ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Descargar XML Balanza</button>
         </div>
+        ${!b.cuadra ? `<div class="cont-err" style="margin-top:.6rem">La Balanza de comprobación no cuadra ahorita mismo — el SAT rechaza el XML si los totales no coinciden. Corrige el descuadre en la pestaña Balanza antes de descargar.</div>` : ""}
       </div>
       <div class="cont-ef-grid">
         <div class="card">
@@ -749,8 +1345,13 @@ ${ctas}
           <h3 class="cont-ef-titulo">DIOT · Operaciones con terceros</h3>
           <div style="overflow-x:auto"><table class="tbl">
             <thead><tr><th>RFC</th><th>Proveedor</th><th style="text-align:right">Base</th><th style="text-align:right">IVA</th></tr></thead>
-            <tbody>${diotFilas}</tbody></table></div>
+            <tbody>${diotFilas}</tbody>${diotFoot}</table></div>
         </div>
+        <!-- PENDIENTE (no visible aún): ISR Provisional (Ingresos − Deducciones
+             autorizadas). Se agrega cuando el responsable contable defina qué
+             cuentas cuentan como deducción autorizada — mientras tanto se
+             deja fuera de pantalla para no mostrar algo que aún no calcula
+             nada real. -->
       </div>`;
   }
 
@@ -770,8 +1371,8 @@ ${ctas}
 
   function renderTodo() {
     renderPeriodoSelector();
-    renderStats(); renderCatalogo(); renderPolizasTabla(); renderBalanza(); renderMayor();
-    renderEstados(); renderSAT();
+    renderStats(); renderCatalogo(); renderPolizasTabla(); renderBalanza(); renderMayor(); renderProveedores();
+    renderEstados(); renderSAT(); renderPeriodos();
   }
 
   /* ---------- Modal: cuenta ---------- */
@@ -796,7 +1397,7 @@ ${ctas}
         <button class="btn btn--ghost" data-cont-close>Cancelar</button>
         <button class="btn btn--primary" data-cont-guardar-cta="${id || ""}">Guardar cuenta</button></div>`;
   }
-  function guardarCuentaForm(id) {
+  async function guardarCuentaForm(id) {
     const codigo = cbody.querySelector("#cta-codigo").value.trim();
     const nombre = cbody.querySelector("#cta-nombre").value.trim();
     const nat = cbody.querySelector("#cta-nat").value;
@@ -807,20 +1408,81 @@ ${ctas}
     if (dup) { msg.innerHTML = `<div class="cont-err">Ya existe una cuenta con el código ${esc(codigo)}.</div>`; return; }
     const cuenta = { codigo, nombre, nat, nivel: padre ? 2 : 1, padre };
     if (id) cuenta.id = id;
-    saveCuenta(cuenta);
+    const btn = cbody.querySelector("[data-cont-guardar-cta]");
+    if (btn) btn.disabled = true;
+    const r = await saveCuenta(cuenta);
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err">${esc(r.error)}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
     closeModal();
     renderTodo();
   }
 
-  /* ---------- Modal: póliza ---------- */
-  function cuentaOptions(sel) {
-    return `<option value="">— cuenta —</option>` + getCuentasAfectables()
-      .map((c) => `<option value="${c.codigo}"${c.codigo === sel ? " selected" : ""}>${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join("");
+  /* ---------- Modal: Configuración contable (OT-0020) ---------- */
+  // Cada empresa define UNA VEZ qué cuenta de su propio catálogo juega
+  // cada rol (Bancos, Clientes, etc.). Sin esto configurado, las
+  // funciones que generan pólizas automáticas se bloquean con mensaje
+  // claro — nunca adivinan una cuenta.
+  function openConfigContable() {
+    openModal("Configuración contable");
+    const cfg = configContable();
+    const campoRol = (rol) => {
+      const campo = ROLES_CONFIG_CONTABLE[rol];
+      const cta = getCuentaPorId(cfg[campo]);
+      return `<div class="field fac-sat-field"><label>${esc(NOMBRES_ROL[rol])}</label>
+        <input class="input cuenta-busca" placeholder="Escribe para buscar…" autocomplete="off" value="${cta ? esc(cta.codigo + " · " + cta.nombre) : ""}">
+        <input type="hidden" data-config-rol="${esc(rol)}" value="${cta ? esc(cta.codigo) : ""}">
+        <div class="fac-sat-results"></div>
+      </div>`;
+    };
+    cbody.innerHTML = `
+      <p class="cont-hint">Indica qué cuenta de tu catálogo corresponde a cada rol. El sistema usa esta configuración para armar las pólizas automáticas (Captura Rápida, importar facturas, cobranza) — mientras un rol esté vacío, las operaciones que lo necesiten se bloquean en vez de adivinar.</p>
+      ${Object.keys(ROLES_CONFIG_CONTABLE).map(campoRol).join("")}
+      <div data-cont-msg></div>
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-cont-close>Cancelar</button>
+        <button class="btn btn--primary" data-config-contable-guardar>Guardar configuración</button></div>`;
   }
+  async function guardarConfigContableForm() {
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const btn = cbody.querySelector("[data-config-contable-guardar]");
+    const payload = {};
+    cbody.querySelectorAll("[data-config-rol]").forEach((h) => {
+      const rol = h.getAttribute("data-config-rol");
+      const campo = ROLES_CONFIG_CONTABLE[rol];
+      if (!campo) return;
+      // El buscador unificado guarda el CÓDIGO en el hidden — aquí se
+      // convierte al id (uuid) que es lo que la tabla realmente guarda.
+      const cta = h.value ? getCuentaPorCodigo(h.value) : null;
+      payload[campo] = cta ? cta.id : null;
+    });
+    if (btn) btn.disabled = true;
+    const r = await window.CTPostgres.guardarConfigContable(payload);
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo guardar la configuración.")}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    window.CONTATECK_CONFIG_CONTABLE_PG = r.config || payload;
+    toast("Configuración contable guardada", "ok");
+    closeModal();
+  }
+
+  /* ---------- Modal: póliza ---------- */
+  // OT-0018: la línea de asiento ya no usa <select> plano — usa el mismo
+  // buscador tipo autocomplete que Captura Rápida y Libro Mayor, para que
+  // las 3 pantallas de Contabilidad se sientan del mismo sistema.
   function asientoRow(a) {
     a = a || {};
+    const ctaSel = a.codigo ? getCuentaPorCodigo(a.codigo) : null;
     return `<div class="cont-asiento">
-      <select class="input cont-as-cta">${cuentaOptions(a.codigo)}</select>
+      <div class="field fac-sat-field" style="margin:0">
+        <input class="input cuenta-busca" placeholder="Buscar cuenta…" autocomplete="off" value="${ctaSel ? esc(ctaSel.codigo + " · " + ctaSel.nombre) : ""}">
+        <input type="hidden" class="cont-as-cta" value="${esc(a.codigo || "")}">
+        <div class="fac-sat-results"></div>
+      </div>
       <input class="input cont-as-debe" type="number" min="0" step="0.01" placeholder="0.00" value="${a.debe || ""}">
       <input class="input cont-as-haber" type="number" min="0" step="0.01" placeholder="0.00" value="${a.haber || ""}">
       <button class="cont-as-x" data-cont-as-del title="Quitar línea">✕</button></div>`;
@@ -851,21 +1513,30 @@ ${ctas}
     { id: "gasto",    label: "Pagué un gasto",            desc: "Salió dinero por un gasto o compra", iva: true },
     { id: "pagoprov", label: "Le pagué a un proveedor",   desc: "Pago de una factura de proveedor",   iva: false },
   ];
-  function plantillaAPoliza(tipoId, total, concepto, conIva, fecha) {
+  function plantillaAPoliza(tipoId, total, concepto, conIva, fecha, cuentaBanco) {
     total = round2(total);
     const sub = conIva ? round2(total / 1.16) : total, iva = conIva ? round2(total - sub) : 0;
     const base = { fecha: fecha || hoyISO(), concepto: concepto, origen: "rapida" };
     const A = (codigo, nombre, debe, haber) => ({ codigo, nombre, debe, haber });
-    if (tipoId === "venta") return Object.assign(base, { tipo: "Ingreso", asientos: conIva
-      ? [A("102", "Bancos", total, 0), A("401", "Ventas y servicios", 0, sub), A("209", "IVA trasladado", 0, iva)]
-      : [A("102", "Bancos", total, 0), A("401", "Ventas y servicios", 0, total)] });
-    if (tipoId === "cobro") return Object.assign(base, { tipo: "Ingreso",
-      asientos: [A("102", "Bancos", total, 0), A("105", "Clientes", 0, total)] });
-    if (tipoId === "gasto") return Object.assign(base, { tipo: "Egreso", asientos: conIva
-      ? [A("601", "Gastos de operación", sub, 0), A("118", "IVA acreditable", iva, 0), A("102", "Bancos", 0, total)]
-      : [A("601", "Gastos de operación", total, 0), A("102", "Bancos", 0, total)] });
-    if (tipoId === "pagoprov") return Object.assign(base, { tipo: "Egreso",
-      asientos: [A("201", "Proveedores", total, 0), A("102", "Bancos", 0, total)] });
+    const cb = cuentaBanco || cuentaRol("bancos"); // respaldo si no se eligió nada en el campo
+    if (!cb) return { error: `Falta configurar: ${NOMBRES_ROL.bancos}. Ve a Configuración contable antes de capturar.` };
+    const bc = (debe, haber) => A(cb.codigo, cb.nombre, debe, haber);
+    if (tipoId === "venta") {
+      const cVentas = cuentaRol("ventas"), cIva = cuentaRol("ivaTrasladado");
+      if (!cVentas || (conIva && !cIva)) return { error: `Falta configurar: ${[!cVentas && NOMBRES_ROL.ventas, conIva && !cIva && NOMBRES_ROL.ivaTrasladado].filter(Boolean).join(", ")}. Ve a Configuración contable.` };
+      return Object.assign(base, { tipo: "Ingreso", asientos: conIva
+        ? [bc(total, 0), A(cVentas.codigo, cVentas.nombre, 0, sub), A(cIva.codigo, cIva.nombre, 0, iva)]
+        : [bc(total, 0), A(cVentas.codigo, cVentas.nombre, 0, total)] });
+    }
+    if (tipoId === "gasto") {
+      const cGastos = cuentaRol("gastos"), cIvaA = cuentaRol("ivaAcreditable");
+      if (!cGastos || (conIva && !cIvaA)) return { error: `Falta configurar: ${[!cGastos && NOMBRES_ROL.gastos, conIva && !cIvaA && NOMBRES_ROL.ivaAcreditable].filter(Boolean).join(", ")}. Ve a Configuración contable.` };
+      return Object.assign(base, { tipo: "Egreso", asientos: conIva
+        ? [A(cGastos.codigo, cGastos.nombre, sub, 0), A(cIvaA.codigo, cIvaA.nombre, iva, 0), bc(0, total)]
+        : [A(cGastos.codigo, cGastos.nombre, total, 0), bc(0, total)] });
+    }
+    // OT-0023: "pagoprov" ya no es captura libre — plantillaAPoliza ya
+    // no la maneja, ver renderProveedorForm/confirmarProveedor.
     return null;
   }
 
@@ -894,13 +1565,34 @@ ${ctas}
   function renderRapidoForm(tipoId) {
     const t = PLANTILLAS.find((x) => x.id === tipoId);
     if (!t) return;
+    // OT-0020: "Me pagó un cliente" ya no es captura libre — siempre
+    // parte de elegir la factura con saldo pendiente. Flujo aparte.
+    if (tipoId === "cobro") { renderCobroForm(); return; }
+    // OT-0023: mismo criterio para "Le pagué a un proveedor" — parte de
+    // elegir la factura de proveedor con saldo por pagar. "Pagué un
+    // gasto" SÍ sigue siendo captura libre a propósito (no todo gasto
+    // tiene una factura de proveedor detrás — ver conversación de OT-0023).
+    if (tipoId === "pagoprov") { renderProveedorForm(); return; }
     const ph = tipoId === "gasto" ? "Pago de renta de oficina" : tipoId === "venta" ? "Venta de consultoría" : "Factura A-123";
+    const bancoDefault = cuentaRol("bancos") || getCuentasAfectables()[0];
     cbody.querySelector("[data-rapido-form]").innerHTML = `
       <div class="cont-rapido-card">
         <div class="cont-rapido-titulo">${t.label}</div>
-        <div class="field"><label>Monto total ($)</label><input class="input" id="rap-monto" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        ${tipoId === "venta" ? `<button type="button" class="btn btn--ghost btn--sm" data-rapido-importar-cfdi="${tipoId}" style="margin-bottom:.8rem">⇩ Importar desde factura timbrada</button>` : ""}
+        <div class="field"><label>Monto total ($)</label><input class="input no-spin" id="rap-monto" type="number" min="0" step="0.01" placeholder="0.00"></div>
         <div class="field"><label>Concepto (¿de qué fue?)</label><input class="input" id="rap-concepto" placeholder="Ej. ${ph}"></div>
+        ${tipoId === "venta" ? `
+        <div class="field fac-sat-field"><label>Cliente (opcional)</label>
+          <input class="input rap-cliente-busca" placeholder="Escribe para buscar…" autocomplete="off">
+          <input type="hidden" id="rap-cliente-id" value="">
+          <div class="fac-sat-results"></div>
+        </div>` : ""}
         <div class="field"><label>Fecha</label><input class="input" id="rap-fecha" type="date" value="${hoyISO()}"></div>
+        <div class="field fac-sat-field"><label>¿A qué cuenta entró/salió el dinero?</label>
+          <input class="input cuenta-busca" placeholder="Escribe para buscar… (ej. bancos, caja)" autocomplete="off" value="${bancoDefault ? esc(bancoDefault.codigo + " · " + bancoDefault.nombre) : ""}">
+          <input type="hidden" id="rap-cuenta" value="${bancoDefault ? esc(bancoDefault.codigo) : ""}">
+          <div class="fac-sat-results"></div>
+        </div>
         ${t.iva ? `<label class="cont-check"><input type="checkbox" id="rap-iva" checked> El monto incluye IVA 16%</label>` : ""}
         <div data-cont-msg></div>
         <div class="cont-foot">
@@ -909,19 +1601,529 @@ ${ctas}
       </div>`;
     const mi = cbody.querySelector("#rap-monto"); if (mi) mi.focus();
   }
+
+  /* ================================================================
+     OT-0020 · "Me pagó un cliente" — flujo de cobranza real:
+     lista (facturas con saldo) → captura (datos del pago) →
+     resumen (Debe/Haber propuesto) → confirmar (genera póliza).
+     Estado del wizard vive en cobroState mientras el modal está abierto.
+     ================================================================ */
+  let cobroState = null;
+
+  function getCfdisSaldoLista() {
+    const raw = window.CONTATECK_CFDIS_SALDO_PG || [];
+    // FIX 1: la vista ya trae los campos planos (sin objeto cfdis anidado).
+    return raw.map((r) => ({
+      cfdiId: r.cfdi_id, total: num(r.total), pagado: num(r.pagado), saldo: num(r.saldo_pendiente),
+      folio: r.folio || "—", cliente: r.receptor_nombre || "Cliente", fecha: r.fecha || "",
+      metodoPago: r.metodo_pago || null, estatus: r.estatus || "vigente",
+    })).filter((c) => c.estatus !== "cancelado" && c.saldo > 0);
+  }
+
+  function renderCobroForm() {
+    cobroState = { paso: "lista" };
+    const facturas = getCfdisSaldoLista();
+    const filaFactura = (f) => {
+      const esPPD = f.metodoPago === "PPD";
+      const badge = f.metodoPago ? `<span class="cont-badge-metodo ${esPPD ? "is-ppd" : "is-pue"}">${esc(f.metodoPago)}</span>` : "";
+      return `<div class="cont-plantilla" data-cobro-factura="${esc(f.cfdiId)}" style="text-align:left">
+        <b>${esc(f.folio)} · ${esc(f.cliente)} ${badge}</b>
+        <span>Saldo: $${fmt(f.saldo)} <small style="color:var(--muted)">de $${fmt(f.total)}</small></span></div>`;
+    };
+    cbody.querySelector("[data-rapido-form]").innerHTML = `
+      <div class="cont-rapido-card">
+        <div class="cont-rapido-titulo">Me pagó un cliente</div>
+        ${!facturas.length
+          ? `<p class="cont-hint">No hay facturas con saldo pendiente de cobro.</p>`
+          : `<p class="cont-hint" style="margin-top:0">Elige la factura que te pagaron.</p>
+             <input class="input" data-cobro-busca placeholder="Buscar por folio o cliente…" autocomplete="off" style="margin-bottom:.8rem">
+             <div style="display:grid;gap:.5rem;max-height:340px;overflow:auto" data-cobro-lista>${facturas.map(filaFactura).join("")}</div>`}
+        <div class="cont-foot"><button class="btn btn--ghost" data-rapido-volver>← Cambiar</button></div>
+      </div>`;
+    const busca = cbody.querySelector("[data-cobro-busca]");
+    if (busca) busca.addEventListener("input", () => {
+      const q = busca.value.trim().toLowerCase();
+      const lista = cbody.querySelector("[data-cobro-lista]");
+      const filtradas = q ? facturas.filter((f) => f.folio.toLowerCase().includes(q) || f.cliente.toLowerCase().includes(q)) : facturas;
+      lista.innerHTML = filtradas.length ? filtradas.map(filaFactura).join("") : `<p class="cont-hint">Sin resultados para "${esc(busca.value)}".</p>`;
+    });
+  }
+
+  function renderCobroCaptura(f) {
+    cobroState = { paso: "captura", factura: f };
+    const cBanco = cuentaRol("bancos");
+    cbody.querySelector("[data-rapido-form]").innerHTML = `
+      <div class="cont-rapido-card">
+        <div class="cont-rapido-titulo">Me pagó un cliente</div>
+        <div class="cont-cfdi-resumen" style="background:var(--ink-900,rgba(255,255,255,.03));border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.88rem">
+          <div><b>${esc(f.folio)}</b> · ${esc(f.cliente)} · ${esc(fechaCorta(f.fecha))}</div>
+          <div style="margin-top:.3rem">Total factura: $${fmt(f.total)} &nbsp;·&nbsp; Pagado: $${fmt(f.pagado)}</div>
+          <div style="margin-top:.2rem;font-weight:700;color:var(--brand,#6E8BFF)">Saldo pendiente: $${fmt(f.saldo)}</div>
+        </div>
+        <div class="field"><label>Monto que está pagando ($)</label>
+          <input class="input no-spin" id="cobro-monto" type="number" min="0.01" max="${f.saldo}" step="0.01" value="${f.saldo}"></div>
+        <div class="field"><label>Fecha del pago</label><input class="input" id="cobro-fecha" type="date" value="${hoyISO()}"></div>
+        <div class="field"><label>Forma de pago</label><select class="input" id="cobro-forma">
+          <option value="03">Transferencia electrónica</option><option value="01">Efectivo</option>
+          <option value="02">Cheque nominativo</option><option value="04">Tarjeta de crédito</option>
+          <option value="28">Tarjeta de débito</option><option value="99">Otro</option></select></div>
+        <div class="field fac-sat-field"><label>¿A qué cuenta entró el dinero?</label>
+          <input class="input cuenta-busca" placeholder="Escribe para buscar… (ej. bancos, caja)" autocomplete="off" value="${cBanco ? esc(cBanco.codigo + " · " + cBanco.nombre) : ""}">
+          <input type="hidden" id="cobro-cuenta" value="${cBanco ? esc(cBanco.codigo) : ""}">
+          <div class="fac-sat-results"></div>
+        </div>
+        <div class="field"><label>Referencia (opcional)</label><input class="input" id="cobro-referencia" placeholder="Ej. folio de transferencia"></div>
+        <div class="field"><label>Notas (opcional)</label><input class="input" id="cobro-notas" placeholder="Observaciones"></div>
+        <div class="field"><label>Comprobante de pago (opcional)</label><input class="input" id="cobro-comprobante" type="file" accept="image/*,.pdf"></div>
+        <div data-cont-msg></div>
+        <div class="cont-foot">
+          <button class="btn btn--ghost" data-cobro-volver-lista>← Elegir otra factura</button>
+          <button class="btn btn--primary" data-cobro-continuar>Continuar</button></div>
+      </div>`;
+  }
+
+  // Mismo patrón de Storage que ya usan en ventas.js — bucket "documentos",
+  // carpeta por empresa, sin pasar el archivo por el backend.
+  async function subirComprobantePago(file) {
+    const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+    const empresaId = (window.CONTATECK_EMPRESA_PG || {}).id;
+    if (!cfg || !t || !empresaId) throw new Error("Sesión o configuración de Storage no disponible.");
+    // OT-0022: se conserva el nombre real del archivo (sanitizado) para
+    // que el historial muestre "recibo-bbva-enero.pdf" y no un genérico.
+    const nombreLimpio = (file.name || "comprobante.bin")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+    const path = empresaId + "/cobranza/" + Date.now() + Math.floor(Math.random() * 1000) + "/" + nombreLimpio;
+    const resp = await fetch(cfg.url + "/storage/v1/object/documentos/" + path, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey, "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!resp.ok) throw new Error("No se pudo subir el comprobante (" + resp.status + ").");
+    return path;
+  }
+
+  async function continuarCobro() {
+    const f = cobroState.factura;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const monto = num(cbody.querySelector("#cobro-monto").value);
+    const fecha = cbody.querySelector("#cobro-fecha").value || hoyISO();
+    const forma = cbody.querySelector("#cobro-forma").value;
+    const cuentaCodigo = (cbody.querySelector("#cobro-cuenta") || {}).value || "";
+    const referencia = cbody.querySelector("#cobro-referencia").value.trim();
+    const notas = cbody.querySelector("#cobro-notas").value.trim();
+    const fileInput = cbody.querySelector("#cobro-comprobante");
+    const cuenta = getCuentaPorCodigo(cuentaCodigo);
+    if (monto <= 0) { msg.innerHTML = `<div class="cont-err">Pon un monto mayor a cero.</div>`; return; }
+    if (monto > f.saldo) { msg.innerHTML = `<div class="cont-err">El monto no puede ser mayor al saldo pendiente ($${fmt(f.saldo)}).</div>`; return; }
+    if (!cuenta) { msg.innerHTML = `<div class="cont-err">Elige a qué cuenta entró el dinero.</div>`; return; }
+    const btn = cbody.querySelector("[data-cobro-continuar]"); if (btn) btn.disabled = true;
+    msg.innerHTML = "";
+    try {
+      let comprobanteUrl = null;
+      if (fileInput && fileInput.files && fileInput.files[0]) {
+        comprobanteUrl = await subirComprobantePago(fileInput.files[0]);
+      }
+      const r = await window.CTPostgres.registrarPagoCliente({
+        cfdiId: f.cfdiId, monto, fechaPago: fecha, formaPago: forma,
+        cuentaDestinoId: cuenta.id, referencia: referencia || null, notas: notas || null, comprobanteUrl,
+      });
+      if (!r.ok) { msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo registrar el pago.")}</div>`; if (btn) btn.disabled = false; return; }
+      renderCobroResumen({ pagoId: r.pagoId, factura: f, monto, cuenta });
+    } catch (e) {
+      msg.innerHTML = `<div class="cont-err">${esc(e.message || "Ocurrió un error.")}</div>`;
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function renderCobroResumen({ pagoId, factura, monto, cuenta }) {
+    cobroState = { paso: "resumen", pagoId, factura, monto, cuenta };
+    const cClientes = cuentaRol("clientes");
+    const saldoPosterior = round2(factura.saldo - monto);
+    cbody.querySelector("[data-rapido-form]").innerHTML = `
+      <div class="cont-rapido-card">
+        <div class="cont-rapido-titulo">Resumen de la operación</div>
+        <div style="font-size:.9rem;line-height:1.7">
+          <div>Factura: <b>${esc(factura.folio)}</b></div>
+          <div>Cliente: <b>${esc(factura.cliente)}</b></div>
+          <div>Monto recibido: <b>$${fmt(monto)}</b></div>
+          <div>Saldo anterior: $${fmt(factura.saldo)}</div>
+          <div>Saldo posterior: <b>$${fmt(saldoPosterior)}</b></div>
+        </div>
+        <div class="cont-asientos-head" style="margin-top:1rem"><span>Así se registrará contablemente</span><span></span><span></span><span></span></div>
+        <div style="font-size:.88rem;padding:.6rem 0;border-top:1px solid var(--line,#1a2540);border-bottom:1px solid var(--line,#1a2540)">
+          <div><b>Debe</b> — ${esc(cuenta.codigo)} · ${esc(cuenta.nombre)} — $${fmt(monto)}</div>
+          <div style="margin-top:.3rem"><b>Haber</b> — ${cClientes ? esc(cClientes.codigo) + " · " + esc(cClientes.nombre) : "⚠ Clientes no configurado"} — $${fmt(monto)}</div>
+        </div>
+        ${factura.metodoPago === "PPD" ? `<div style="margin-top:.8rem;padding:.6rem .8rem;border-radius:8px;background:rgba(224,160,48,.1);color:#e0a030;font-size:.83rem">
+          <b>Complemento de Pago (REP):</b> quedará como <b>Pendiente</b>. Este registro es la parte contable — el complemento fiscal ante el SAT se timbrará por separado cuando ese flujo esté habilitado. No se marcará nada como timbrado sin que realmente lo esté.
+        </div>` : ""}
+        <div data-cont-msg style="margin-top:.8rem"></div>
+        <div class="cont-foot">
+          <button class="btn btn--ghost" data-cobro-cancelar>Cancelar</button>
+          <button class="btn btn--primary" data-cobro-confirmar>Confirmar pago y generar póliza</button></div>
+      </div>`;
+  }
+
+  async function confirmarCobro() {
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const btn = cbody.querySelector("[data-cobro-confirmar]"); if (btn) btn.disabled = true;
+    const r = await window.CTPostgres.confirmarPagoCliente(cobroState.pagoId);
+    if (!r.ok) {
+      msg.innerHTML = errorConfigHTML(r.error || "No se pudo confirmar el pago.");
+      if (btn) btn.disabled = false;
+      return;
+    }
+    closeModal();
+    toast("Pago confirmado — póliza " + r.folio, "ok");
+    // FIX 2: la póliza aparece al instante en la tabla, sin esperar a
+    // recargar (nace en Postgres, así que se refleja localmente con sus
+    // asientos para que el monto y el detalle se vean completos).
+    try {
+      const f2 = cobroState.factura, cCli = cuentaRol("clientes");
+      const arr2 = leerPolizas();
+      arr2.unshift({
+        id: "pg-" + r.polizaId, pgId: r.polizaId, folio: r.folio, tipo: "Ingreso",
+        fecha: hoyISO(), creada: Date.now(), origen: "postgres", estado: "ok",
+        concepto: "Cobro CFDI " + (f2.folio || "") + " · " + (f2.cliente || ""),
+        monto: cobroState.monto,
+        asientos: [
+          { codigo: cobroState.cuenta.codigo, nombre: cobroState.cuenta.nombre, debe: cobroState.monto, haber: 0 },
+          cCli ? { codigo: cCli.codigo, nombre: cCli.nombre, debe: 0, haber: cobroState.monto } : null,
+        ].filter(Boolean),
+      });
+      guardarPolizas(arr2);
+    } catch (e2) { /* no crítico: se sincroniza al recargar */ }
+    // Refresca la lista de saldos sin recargar toda la sesión.
+    try {
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/cfdis-saldo", {
+        headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
+      });
+      const data = await resp.json();
+      if (data.ok) window.CONTATECK_CFDIS_SALDO_PG = data.facturas || [];
+    } catch (e) { /* silencioso: no crítico, se refresca solo al recargar */ }
+    renderTodo();
+  }
+
+  /* ================================================================
+     OT-0023 · Flujo "Le pagué a un proveedor" — espejo exacto del
+     flujo de cobro, con la dirección del dinero invertida: la cuenta
+     elegida es de dónde SALE el dinero, y el Debe es Proveedores
+     (baja el pasivo) en vez de Haber Clientes.
+     lista (facturas con saldo por pagar) → captura → resumen → confirmar.
+     ================================================================ */
+  let provState = null;
+  function getCfdisProveedorSaldoLista() {
+    const raw = window.CONTATECK_CFDIS_PROVEEDOR_SALDO_PG || [];
+    return raw.map((r) => ({
+      cfdiProveedorId: r.cfdi_proveedor_id, total: num(r.total), pagado: num(r.pagado), saldo: num(r.saldo_pendiente),
+      folio: r.folio || "—", proveedor: r.emisor_nombre || "Proveedor", fecha: r.fecha || "",
+      metodoPago: r.metodo_pago || null, estatus: r.estatus || "vigente",
+    })).filter((c) => c.estatus !== "cancelado" && c.saldo > 0);
+  }
+
+  function renderProveedorForm() {
+    provState = { paso: "lista" };
+    const facturas = getCfdisProveedorSaldoLista();
+    const filaFactura = (f) => {
+      const esPPD = f.metodoPago === "PPD";
+      const badge = f.metodoPago ? `<span class="cont-badge-metodo ${esPPD ? "is-ppd" : "is-pue"}">${esc(f.metodoPago)}</span>` : "";
+      return `<div class="cont-plantilla" data-prov-factura="${esc(f.cfdiProveedorId)}" style="text-align:left">
+        <b>${esc(f.folio)} · ${esc(f.proveedor)} ${badge}</b>
+        <span>Saldo: $${fmt(f.saldo)} <small style="color:var(--muted)">de $${fmt(f.total)}</small></span></div>`;
+    };
+    cbody.querySelector("[data-rapido-form]").innerHTML = `
+      <div class="cont-rapido-card">
+        <div class="cont-rapido-titulo">Le pagué a un proveedor</div>
+        ${!facturas.length
+          ? `<p class="cont-hint">No hay facturas de proveedor con saldo pendiente. Impórtalas primero desde "Importar XML recibido".</p>`
+          : `<p class="cont-hint" style="margin-top:0">Elige la factura que le estás pagando.</p>
+             <input class="input" data-prov-busca placeholder="Buscar por folio o proveedor…" autocomplete="off" style="margin-bottom:.8rem">
+             <div style="display:grid;gap:.5rem;max-height:340px;overflow:auto" data-prov-lista>${facturas.map(filaFactura).join("")}</div>`}
+        <div class="cont-foot"><button class="btn btn--ghost" data-rapido-volver>← Cambiar</button></div>
+      </div>`;
+    const busca = cbody.querySelector("[data-prov-busca]");
+    if (busca) busca.addEventListener("input", () => {
+      const q = busca.value.trim().toLowerCase();
+      const lista = cbody.querySelector("[data-prov-lista]");
+      const filtradas = q ? facturas.filter((f) => f.folio.toLowerCase().includes(q) || f.proveedor.toLowerCase().includes(q)) : facturas;
+      lista.innerHTML = filtradas.length ? filtradas.map(filaFactura).join("") : `<p class="cont-hint">Sin resultados para "${esc(busca.value)}".</p>`;
+    });
+  }
+
+  function renderProveedorCaptura(f) {
+    provState = { paso: "captura", factura: f };
+    const cBanco = cuentaRol("bancos");
+    cbody.querySelector("[data-rapido-form]").innerHTML = `
+      <div class="cont-rapido-card">
+        <div class="cont-rapido-titulo">Le pagué a un proveedor</div>
+        <div class="cont-cfdi-resumen" style="background:var(--ink-900,rgba(255,255,255,.03));border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.88rem">
+          <div><b>${esc(f.folio)}</b> · ${esc(f.proveedor)} · ${esc(fechaCorta(f.fecha))}</div>
+          <div style="margin-top:.3rem">Total factura: $${fmt(f.total)} &nbsp;·&nbsp; Pagado: $${fmt(f.pagado)}</div>
+          <div style="margin-top:.2rem;font-weight:700;color:var(--brand,#6E8BFF)">Saldo pendiente: $${fmt(f.saldo)}</div>
+        </div>
+        <div class="field"><label>Monto que estás pagando ($)</label>
+          <input class="input no-spin" id="prov-monto" type="number" min="0.01" max="${f.saldo}" step="0.01" value="${f.saldo}"></div>
+        <div class="field"><label>Fecha del pago</label><input class="input" id="prov-fecha" type="date" value="${hoyISO()}"></div>
+        <div class="field"><label>Forma de pago</label><select class="input" id="prov-forma">
+          <option value="03">Transferencia electrónica</option><option value="01">Efectivo</option>
+          <option value="02">Cheque nominativo</option><option value="04">Tarjeta de crédito</option>
+          <option value="28">Tarjeta de débito</option><option value="99">Otro</option></select></div>
+        <div class="field fac-sat-field"><label>¿De qué cuenta salió el dinero?</label>
+          <input class="input cuenta-busca" placeholder="Escribe para buscar… (ej. bancos, caja)" autocomplete="off" value="${cBanco ? esc(cBanco.codigo + " · " + cBanco.nombre) : ""}">
+          <input type="hidden" id="prov-cuenta" value="${cBanco ? esc(cBanco.codigo) : ""}">
+          <div class="fac-sat-results"></div>
+        </div>
+        <div class="field"><label>Referencia (opcional)</label><input class="input" id="prov-referencia" placeholder="Ej. folio de transferencia"></div>
+        <div class="field"><label>Notas (opcional)</label><input class="input" id="prov-notas" placeholder="Observaciones"></div>
+        <div class="field"><label>Comprobante de pago (opcional)</label><input class="input" id="prov-comprobante" type="file" accept="image/*,.pdf"></div>
+        <div data-cont-msg></div>
+        <div class="cont-foot">
+          <button class="btn btn--ghost" data-prov-volver-lista>← Elegir otra factura</button>
+          <button class="btn btn--primary" data-prov-continuar>Continuar</button></div>
+      </div>`;
+  }
+
+  // Mismo bucket/patrón de Storage que subirComprobantePago (cobro),
+  // solo cambia la carpeta para no mezclar evidencias de cobro y pago.
+  async function subirComprobantePagoProveedor(file) {
+    const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+    const empresaId = (window.CONTATECK_EMPRESA_PG || {}).id;
+    if (!cfg || !t || !empresaId) throw new Error("Sesión o configuración de Storage no disponible.");
+    const nombreLimpio = (file.name || "comprobante.bin")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+    const path = empresaId + "/pagos-proveedor/" + Date.now() + Math.floor(Math.random() * 1000) + "/" + nombreLimpio;
+    const resp = await fetch(cfg.url + "/storage/v1/object/documentos/" + path, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey, "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!resp.ok) throw new Error("No se pudo subir el comprobante (" + resp.status + ").");
+    return path;
+  }
+
+  async function continuarProveedor() {
+    const f = provState.factura;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const monto = num(cbody.querySelector("#prov-monto").value);
+    const fecha = cbody.querySelector("#prov-fecha").value || hoyISO();
+    const forma = cbody.querySelector("#prov-forma").value;
+    const cuentaCodigo = (cbody.querySelector("#prov-cuenta") || {}).value || "";
+    const referencia = cbody.querySelector("#prov-referencia").value.trim();
+    const notas = cbody.querySelector("#prov-notas").value.trim();
+    const fileInput = cbody.querySelector("#prov-comprobante");
+    const cuenta = getCuentaPorCodigo(cuentaCodigo);
+    if (monto <= 0) { msg.innerHTML = `<div class="cont-err">Pon un monto mayor a cero.</div>`; return; }
+    if (monto > f.saldo) { msg.innerHTML = `<div class="cont-err">El monto no puede ser mayor al saldo pendiente ($${fmt(f.saldo)}).</div>`; return; }
+    if (!cuenta) { msg.innerHTML = `<div class="cont-err">Elige de qué cuenta salió el dinero.</div>`; return; }
+    const btn = cbody.querySelector("[data-prov-continuar]"); if (btn) btn.disabled = true;
+    msg.innerHTML = "";
+    try {
+      let comprobanteUrl = null;
+      if (fileInput && fileInput.files && fileInput.files[0]) {
+        comprobanteUrl = await subirComprobantePagoProveedor(fileInput.files[0]);
+      }
+      const r = await window.CTPostgres.registrarPagoProveedor({
+        cfdiProveedorId: f.cfdiProveedorId, monto, fechaPago: fecha, formaPago: forma,
+        cuentaOrigenId: cuenta.id, referencia: referencia || null, notas: notas || null, comprobanteUrl,
+      });
+      if (!r.ok) { msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo registrar el pago.")}</div>`; if (btn) btn.disabled = false; return; }
+      renderProveedorResumen({ pagoId: r.pagoId, factura: f, monto, cuenta });
+    } catch (e) {
+      msg.innerHTML = `<div class="cont-err">${esc(e.message || "Ocurrió un error.")}</div>`;
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function renderProveedorResumen({ pagoId, factura, monto, cuenta }) {
+    provState = { paso: "resumen", pagoId, factura, monto, cuenta };
+    const cProv = cuentaRol("proveedores");
+    const saldoPosterior = round2(factura.saldo - monto);
+    cbody.querySelector("[data-rapido-form]").innerHTML = `
+      <div class="cont-rapido-card">
+        <div class="cont-rapido-titulo">Resumen de la operación</div>
+        <div style="font-size:.9rem;line-height:1.7">
+          <div>Factura: <b>${esc(factura.folio)}</b></div>
+          <div>Proveedor: <b>${esc(factura.proveedor)}</b></div>
+          <div>Monto pagado: <b>$${fmt(monto)}</b></div>
+          <div>Saldo anterior: $${fmt(factura.saldo)}</div>
+          <div>Saldo posterior: <b>$${fmt(saldoPosterior)}</b></div>
+        </div>
+        <div class="cont-asientos-head" style="margin-top:1rem"><span>Así se registrará contablemente</span><span></span><span></span><span></span></div>
+        <div style="font-size:.88rem;padding:.6rem 0;border-top:1px solid var(--line,#1a2540);border-bottom:1px solid var(--line,#1a2540)">
+          <div><b>Debe</b> — ${cProv ? esc(cProv.codigo) + " · " + esc(cProv.nombre) : "⚠ Proveedores no configurado"} — $${fmt(monto)}</div>
+          <div style="margin-top:.3rem"><b>Haber</b> — ${esc(cuenta.codigo)} · ${esc(cuenta.nombre)} — $${fmt(monto)}</div>
+        </div>
+        <div data-cont-msg style="margin-top:.8rem"></div>
+        <div class="cont-foot">
+          <button class="btn btn--ghost" data-prov-cancelar>Cancelar</button>
+          <button class="btn btn--primary" data-prov-confirmar>Confirmar pago y generar póliza</button></div>
+      </div>`;
+  }
+
+  async function confirmarProveedor() {
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const btn = cbody.querySelector("[data-prov-confirmar]"); if (btn) btn.disabled = true;
+    const r = await window.CTPostgres.confirmarPagoProveedor(provState.pagoId);
+    if (!r.ok) {
+      msg.innerHTML = errorConfigHTML(r.error || "No se pudo confirmar el pago.");
+      if (btn) btn.disabled = false;
+      return;
+    }
+    closeModal();
+    toast("Pago a proveedor confirmado — póliza " + r.folio, "ok");
+    try {
+      const f2 = provState.factura, cProv = cuentaRol("proveedores");
+      const arr2 = leerPolizas();
+      arr2.unshift({
+        id: "pg-" + r.polizaId, pgId: r.polizaId, folio: r.folio, tipo: "Egreso",
+        fecha: hoyISO(), creada: Date.now(), origen: "postgres", estado: "ok",
+        concepto: "Pago a proveedor " + (f2.folio || "") + " · " + (f2.proveedor || ""),
+        monto: provState.monto,
+        asientos: [
+          cProv ? { codigo: cProv.codigo, nombre: cProv.nombre, debe: provState.monto, haber: 0 } : null,
+          { codigo: provState.cuenta.codigo, nombre: provState.cuenta.nombre, debe: 0, haber: provState.monto },
+        ].filter(Boolean),
+      });
+      guardarPolizas(arr2);
+    } catch (e2) { /* no crítico: se sincroniza al recargar */ }
+    try {
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/cfdis-proveedor-saldo", {
+        headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
+      });
+      const data = await resp.json();
+      if (data.ok) window.CONTATECK_CFDIS_PROVEEDOR_SALDO_PG = data.facturas || [];
+    } catch (e) { /* silencioso */ }
+    renderTodo();
+  }
+
+  // ---------- Buscador de cliente (opcional) dentro de Captura rápida ----------
+  async function buscarRapCliente(input) {
+    const field = input.closest(".fac-sat-field");
+    if (!field) return;
+    const box = field.querySelector(".fac-sat-results");
+    const q = input.value.trim();
+    if (q.length < 2) { box.classList.remove("is-open"); box.innerHTML = ""; return; }
+    try {
+      const cfg = window.SUPABASE_CONFIG, t = window.CONTATECK_SUPABASE_TOKEN;
+      if (!cfg || !t) return;
+      const resp = await fetch(cfg.url + "/rest/v1/clientes?select=id,nombre,rfc&nombre=ilike.*" + encodeURIComponent(q) + "*&limit=8", {
+        headers: { Authorization: "Bearer " + t, apikey: cfg.anonKey },
+      });
+      const data = await resp.json();
+      const lista = Array.isArray(data) ? data : [];
+      box.innerHTML = lista.length
+        ? lista.map((c) => `<div class="fac-sat-opt" data-id="${esc(c.id)}" data-nombre="${esc(c.nombre)}"><b>${esc(c.nombre)}</b>${c.rfc ? " · " + esc(c.rfc) : ""}</div>`).join("")
+        : `<div class="fac-sat-hint">Sin clientes que coincidan con "${esc(q)}".</div>`;
+      box.classList.add("is-open");
+    } catch (e) { /* silencioso: es un campo opcional */ }
+  }
+
+  // ---------- Importar desde factura timbrada (solo "Me pagó un cliente") ----------
+  function abrirImportarCfdiRapido(tipoId) {
+    const cfdis = leerCfdis().filter((c) => c && c.estado !== "cancelada" && c.tipo !== "P");
+    const host = document.createElement("div");
+    host.className = "cont-modal is-open";
+    if (!cfdis.length) {
+      host.innerHTML = `<div class="cont-modal__card" style="max-width:420px"><div class="cont-modal__body" style="padding-top:1.4rem">
+        <p style="margin:0 0 1.2rem;color:var(--text)">No hay facturas timbradas disponibles para importar.</p>
+        <div class="cont-foot"><button class="btn btn--primary" data-ct-ok>Entendido</button></div></div></div>`;
+      document.body.appendChild(host);
+      host.addEventListener("click", (e) => { if (e.target === host || e.target.closest("[data-ct-ok]")) document.body.removeChild(host); });
+      return;
+    }
+    const filaCfdi = (c) => {
+      const m = montosCfdi(c);
+      // OT-0019: una PPD (pago diferido/parcialidades) no se puede importar
+      // igual que una PUE — el cobro real todavía no ocurrió ante el SAT,
+      // haría falta un REP que este sistema todavía no genera. Se muestra
+      // en la lista (para que quede claro que existe) pero no se deja
+      // elegir hasta que la contadora confirme cómo debe registrarse.
+      const esPPD = c.metodoPago === "PPD";
+      const etiqueta = c.metodoPago ? `<span class="cont-badge-metodo ${esPPD ? "is-ppd" : "is-pue"}">${esc(c.metodoPago)}</span>` : "";
+      return `<div class="cont-plantilla${esPPD ? " is-bloqueada" : ""}" data-cfdi-pick="${esc(cfdiKey(c))}" data-ppd="${esPPD ? "1" : "0"}" style="text-align:left">
+        <b>${esc(c.folio || "—")} · ${esc(c.cliente || "Cliente")} ${etiqueta}</b><span>$${fmt(m.total)}</span>
+        ${esPPD ? `<small style="display:block;color:var(--warn,#e0a030);font-weight:400">Pago diferido — pendiente de confirmar con la contadora</small>` : ""}</div>`;
+    };
+    host.innerHTML = `<div class="cont-modal__card" style="max-width:520px"><div class="cont-modal__body" style="padding-top:1.4rem">
+      <p style="margin:0 0 .8rem;color:var(--muted);font-size:.85rem">Elige la factura ${tipoId === "venta" ? "que timbraste" : "que te pagaron"} — se rellenan el monto${tipoId === "venta" ? ", el IVA" : ""} y el concepto solos.</p>
+      <input class="input" data-cfdi-import-busca placeholder="Buscar por folio o cliente…" autocomplete="off" style="margin-bottom:.8rem">
+      <div style="display:grid;gap:.5rem;max-height:340px;overflow:auto" data-cfdi-import-lista>${cfdis.slice(0, 30).map(filaCfdi).join("")}</div>
+      <div class="cont-foot"><button class="btn btn--ghost" data-ct-no>Cerrar</button></div></div></div>`;
+    document.body.appendChild(host);
+    const busca = host.querySelector("[data-cfdi-import-busca]");
+    const lista = host.querySelector("[data-cfdi-import-lista]");
+    busca.addEventListener("input", () => {
+      const q = busca.value.trim().toLowerCase();
+      const filtradas = q ? cfdis.filter((c) => (c.folio || "").toLowerCase().includes(q) || (c.cliente || "").toLowerCase().includes(q)) : cfdis;
+      lista.innerHTML = filtradas.length ? filtradas.slice(0, 30).map(filaCfdi).join("")
+        : `<p style="color:var(--faint);font-size:.82rem;padding:.6rem 0;text-align:center">Sin resultados para "${esc(busca.value)}".</p>`;
+    });
+    setTimeout(() => busca.focus(), 50);
+    host.addEventListener("click", (e) => {
+      if (e.target === host || e.target.closest("[data-ct-no]")) { document.body.removeChild(host); return; }
+      const pick = e.target.closest("[data-cfdi-pick]");
+      if (pick) {
+        // OT-0019: si es PPD, no se importa — se explica por qué y se
+        // deja el modal abierto para que elija otra factura si quiere.
+        if (pick.getAttribute("data-ppd") === "1") {
+          const aviso = pick.querySelector("small");
+          if (aviso) { aviso.style.color = "var(--danger,#e05252)"; aviso.textContent = "Esta factura es PPD — no se puede importar todavía, pídele a Jorge que confirme el flujo con la contadora."; }
+          return;
+        }
+        const key = pick.getAttribute("data-cfdi-pick");
+        const cfdi = cfdis.find((c) => cfdiKey(c) === key);
+        if (cfdi) {
+          const m = montosCfdi(cfdi);
+          const mi = cbody.querySelector("#rap-monto"), ci = cbody.querySelector("#rap-concepto");
+          if (mi) mi.value = m.total;
+          if (tipoId === "venta") {
+            if (ci) ci.value = `Venta CFDI ${cfdi.folio || ""} · ${cfdi.cliente || "Cliente"}`.trim();
+            const ivaChk = cbody.querySelector("#rap-iva");
+            if (ivaChk) { ivaChk.checked = true; ivaChk.disabled = true; } // ya no hay nada que adivinar: el IVA viene real de la factura
+          } else {
+            if (ci) ci.value = `Cobro CFDI ${cfdi.folio || ""} · ${cfdi.cliente || "Cliente"}`.trim();
+          }
+        }
+        document.body.removeChild(host);
+      }
+    });
+  }
   async function guardarRapido(tipoId) {
     const monto = num(cbody.querySelector("#rap-monto").value);
-    const concepto = cbody.querySelector("#rap-concepto").value.trim();
+    let concepto = cbody.querySelector("#rap-concepto").value.trim();
     const fecha = cbody.querySelector("#rap-fecha").value || hoyISO();
     const ivaChk = cbody.querySelector("#rap-iva"), conIva = ivaChk ? ivaChk.checked : false;
+    const cuentaCodigo = (cbody.querySelector("#rap-cuenta") || {}).value || "";
+    const clienteNombreEl = cbody.querySelector(".rap-cliente-busca");
     const msg = cbody.querySelector("[data-cont-msg]");
     if (monto <= 0) { msg.innerHTML = `<div class="cont-err">Pon un monto mayor a cero.</div>`; return; }
     if (!concepto) { msg.innerHTML = `<div class="cont-err">Escribe de qué fue el movimiento.</div>`; return; }
-    const pol = plantillaAPoliza(tipoId, monto, concepto, conIva, fecha);
+    if (!cuentaCodigo) { msg.innerHTML = `<div class="cont-err">Elige a qué cuenta (Banco/Caja) entró o salió el dinero.</div>`; return; }
+    const cuentaBanco = getCuentaPorCodigo(cuentaCodigo);
+    if (!cuentaBanco) { msg.innerHTML = `<div class="cont-err">Esa cuenta ya no existe o fue desactivada — elige otra.</div>`; return; }
+    if (clienteNombreEl && clienteNombreEl.value.trim() && concepto.indexOf(clienteNombreEl.value.trim()) < 0) {
+      concepto = concepto + " · " + clienteNombreEl.value.trim();
+    }
+    const pol = plantillaAPoliza(tipoId, monto, concepto, conIva, fecha, cuentaBanco);
     if (!pol) { msg.innerHTML = `<div class="cont-err">No se pudo crear el movimiento.</div>`; return; }
+    // OT-0020: si falta configuración contable, se explica y se ofrece
+    // el botón para abrirla ahí mismo — sin que el usuario tenga que
+    // saber dónde está esa pantalla.
+    if (pol.error) { msg.innerHTML = errorConfigHTML(pol.error); return; }
     const btn = cbody.querySelector("[data-rapido-guardar]"); if (btn) btn.disabled = true;
     const { pgError } = await savePoliza(pol);
     if (pgError) {
+      // OT-mejoras-SAT: mismo mensaje amigable que ya usa el formulario
+      // avanzado (guardarPolizaForm) — antes este asistente rápido
+      // mostraba el error crudo de Postgres ("PERIODO_CERRADO: el
+      // periodo 6 / 2026...") en vez de una explicación clara.
+      if (/PERIODO_CERRADO/i.test(pgError)) {
+        msg.innerHTML = `<div class="cont-err">Este periodo ya está cerrado y no admite movimientos nuevos. Revisa la pestaña "Periodos" para más detalle.</div>`;
+        if (btn) btn.disabled = false;
+        return;
+      }
       msg.innerHTML = `<div class="cont-err">${pgError}</div>`;
       if (btn) btn.disabled = false;
       return;
@@ -998,8 +2200,21 @@ ${ctas}
     const btn = cbody.querySelector("[data-cont-guardar-pol]"); if (btn) btn.disabled = true;
     const payload = { tipo, fecha, concepto, asientos };
     if (editandoId) payload.id = editandoId;
-    const { pgError } = await savePoliza(payload);
+    const { pgError, cambioContable, pgId } = await savePoliza(payload);
     if (pgError) {
+      // OT-0026: periodo cerrado — mensaje claro, no error crudo.
+      if (/PERIODO_CERRADO/i.test(pgError)) {
+        msg.innerHTML = `<div class="cont-err">Este periodo ya está cerrado y no admite movimientos nuevos. Revisa la pestaña "Periodos" para más detalle.</div>`;
+        if (btn) btn.disabled = false;
+        return;
+      }
+      // OT-0025: si el rechazo es porque se cambiaron cuentas/importes de
+      // una póliza real, no es un error del usuario — se le ofrece generar
+      // la corrección (reversa + corregida), conservando la original.
+      if (cambioContable && editandoId && pgId) {
+        abrirConfirmacionCorreccion({ localId: editandoId, pgId, asientos });
+        return;
+      }
       msg.innerHTML = `<div class="cont-err">${pgError}</div>`;
       if (btn) btn.disabled = false;
       return;
@@ -1008,9 +2223,130 @@ ${ctas}
     closeModal(); renderTodo();
   }
 
+  // ============================================================
+  // OT-0025 · Flujo de corrección con asientos de ajuste
+  // El usuario editó cuentas/importes de una póliza real. En vez de
+  // sobreescribir, se le explica y se pide motivo; al confirmar, el
+  // backend genera reversa + corregida ligadas a la original.
+  // 'asientos' aquí = cómo definió el usuario que debe quedar el asiento.
+  // ============================================================
+  let correccionState = null;
+  let anulacionState = null;
+  let cierrePeriodoState = null;
+  function abrirConfirmacionCorreccion({ localId, pgId, asientos }) {
+    const pol = getPolizas().find((x) => x.id === localId) || {};
+    openModal("Corrección de póliza " + (pol.folio || ""));
+    cbody.innerHTML = `
+      <div style="background:rgba(110,139,255,.08);border:1px solid rgba(110,139,255,.25);border-radius:12px;padding:1rem 1.2rem;margin-bottom:1.1rem">
+        <div style="font-weight:700;margin-bottom:.4rem;color:var(--brand,#6E8BFF)">Estás modificando cuentas o importes que afectan la contabilidad</div>
+        <p style="font-size:.9rem;line-height:1.6;margin:0;color:var(--muted)">
+          Para conservar la trazabilidad, la póliza original <b>${esc(pol.folio || "")}</b> no será modificada.
+          Contateck va a generar automáticamente los movimientos necesarios para corregirla:
+          una <b>reversa</b> que cancela la original y una <b>corrección</b> con el asiento que acabas de definir.
+          Ambas quedarán ligadas a la original.</p>
+      </div>
+      <div class="cont-asientos-head"><span>Así quedará el asiento corregido</span><span>Debe</span><span>Haber</span><span></span></div>
+      <div style="font-size:.86rem;border-top:1px solid var(--line,#1a2540);border-bottom:1px solid var(--line,#1a2540);padding:.5rem 0;margin-bottom:1rem">
+        ${asientos.map((a) => `<div style="display:grid;grid-template-columns:1fr auto auto;gap:1rem;padding:.25rem 0">
+          <span>${esc(a.codigo)} · ${esc(a.nombre || "")}</span>
+          <span style="text-align:right;min-width:90px">${num(a.debe) ? "$" + fmt(a.debe) : "—"}</span>
+          <span style="text-align:right;min-width:90px">${num(a.haber) ? "$" + fmt(a.haber) : "—"}</span></div>`).join("")}
+      </div>
+      <div class="field"><label>Motivo de la corrección <span style="color:#FB7185">*</span></label>
+        <input class="input" id="correccion-motivo" placeholder="Ej. La cuenta correcta era 502 Compras, no 501 Gastos" autocomplete="off"></div>
+      <div data-cont-msg></div>
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-correccion-cancelar>Cancelar</button>
+        <button class="btn btn--primary" data-correccion-confirmar>Continuar con corrección</button></div>`;
+    correccionState = { pgId, asientos };
+    setTimeout(() => { const m = cbody.querySelector("#correccion-motivo"); if (m) m.focus(); }, 50);
+  }
+
+  async function confirmarCorreccion() {
+    if (!correccionState) return;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const motivo = (cbody.querySelector("#correccion-motivo").value || "").trim();
+    if (!motivo) { msg.innerHTML = `<div class="cont-err">El motivo es obligatorio para generar la corrección.</div>`; return; }
+    const btn = cbody.querySelector("[data-correccion-confirmar]"); if (btn) btn.disabled = true;
+    const partidasCorrectas = correccionState.asientos.map((a, i) => ({
+      codigo: a.codigo, debe: num(a.debe), haber: num(a.haber), descripcion: a.descripcion || null, orden: i,
+    }));
+    const r = await window.CTPostgres.corregirPoliza(correccionState.pgId, { motivo, partidasCorrectas });
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo generar la corrección.")}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    const idsNuevos = [correccionState.pgId, r.reversa.id, r.correccion.id];
+    correccionState = null; editandoId = null;
+    closeModal();
+    toast("Corrección generada — reversa " + r.reversa.folio + " y corrección " + r.correccion.folio, "ok", 6000);
+    await recargarPolizasPg(idsNuevos);
+    renderTodo();
+  }
+
+  // OT-mejoras-SAT: modal simple para anular una póliza duplicada — solo
+  // pide motivo (no hay partidas que editar, a diferencia de la
+  // corrección: aquí lo que se corrige es "esta póliza entera sobra").
+  function abrirAnularDuplicada(id) {
+    const p = getPolizas().find((x) => x.id === id);
+    if (!p) return;
+    if (!p.pgId) { toast("Esta póliza aún no terminó de sincronizarse con Postgres — espera unos segundos e intenta de nuevo.", "error"); return; }
+    openModal(`Marcar como duplicada · ${p.folio}`);
+    cbody.innerHTML = `
+      <div style="background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.3);border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FB7185">Esto no borra nada</b> — se genera una póliza de <b>reversa</b> que cancela el efecto
+        contable de <b>${esc(p.folio)}</b> (${esc(p.concepto)}), y la original queda bloqueada como "anulada". Úsalo
+        solo cuando esta póliza completa sobra — por ejemplo, el mismo CFDI se importó y contabilizó dos veces.</div>
+      <div class="field"><label>Motivo <span style="color:#FB7185">*</span></label>
+        <input class="input" id="anulacion-motivo" placeholder="Ej. Factura duplicada, ver folio E-00016" autocomplete="off"></div>
+      <div data-cont-msg></div>
+      <div class="cont-foot">
+        <button class="btn btn--ghost" data-anulacion-cancelar>Cancelar</button>
+        <button class="btn btn--primary" style="background:#FB7185;border-color:#FB7185" data-anulacion-confirmar>Confirmar anulación</button></div>`;
+    anulacionState = { id: p.id, pgId: p.pgId, folio: p.folio };
+    setTimeout(() => { const m = cbody.querySelector("#anulacion-motivo"); if (m) m.focus(); }, 50);
+  }
+
+  async function confirmarAnulacion() {
+    if (!anulacionState) return;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const motivo = (cbody.querySelector("#anulacion-motivo").value || "").trim();
+    if (!motivo) { msg.innerHTML = `<div class="cont-err">El motivo es obligatorio para anular la póliza.</div>`; return; }
+    const btn = cbody.querySelector("[data-anulacion-confirmar]"); if (btn) btn.disabled = true;
+    const r = await window.CTPostgres.anularPolizaDuplicada(anulacionState.pgId, motivo);
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err">${esc(r.error || "No se pudo anular la póliza.")}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    const idsNuevos = [anulacionState.pgId, r.reversa.id];
+    anulacionState = null;
+    closeModal();
+    toast("Póliza anulada — se generó la reversa " + r.reversa.folio, "ok", 6000);
+    await recargarPolizasPg(idsNuevos);
+    renderTodo();
+  }
+
   function abrirEditarPoliza(id) {
     const p = getPolizas().find((x) => x.id === id);
     if (!p) return;
+    // OT-0020 FIX 3: si la póliza vive en Postgres y aún no tenemos sus
+    // partidas, se cargan ANTES de abrir el editor — abrirlo vacío y
+    // guardar habría borrado las partidas reales de la base.
+    if (p.pgId && (!p.asientos || !p.asientos.length)) {
+      openModal(`Editar póliza ${p.folio}`);
+      cbody.innerHTML = `<p class="cont-hint">Cargando partidas…</p>`;
+      asegurarAsientosPg(p).then((p2) => {
+        if (!p2.asientos || !p2.asientos.length) {
+          cbody.innerHTML = `<div class="cont-err">No se pudieron cargar las partidas de esta póliza — no se puede editar sin verlas (guardar en blanco borraría el contenido real). Revisa la conexión con el backend e intenta de nuevo.</div>
+            <div class="cont-foot"><button class="btn btn--ghost" data-cont-close>Cerrar</button></div>`;
+          return;
+        }
+        abrirEditarPoliza(id);
+      });
+      return;
+    }
     editandoId = id;
     openModal(`Editar póliza ${p.folio}`);
     cbody.innerHTML = `<div data-modo-body></div>`;
@@ -1018,10 +2354,31 @@ ${ctas}
   }
 
   /* ---------- Modal: ver póliza ---------- */
+  // OT-0020 FIX 3: pólizas que viven en Postgres pero llegaron a este
+  // navegador sin asientos (ej. las generadas por cobranza, o creadas en
+  // otro dispositivo) — se piden al backend una sola vez y se guardan.
+  async function asegurarAsientosPg(p) {
+    if (!p || !p.pgId || (p.asientos && p.asientos.length)) return p;
+    if (!window.CTPostgres || !window.CONTATECK_SUPABASE_TOKEN) return p;
+    const r = await window.CTPostgres.obtenerPartidasPoliza(p.pgId);
+    if (r.ok && r.partidas && r.partidas.length) {
+      const arr = leerPolizas();
+      const local = arr.find((x) => x.id === p.id);
+      if (local) { local.asientos = r.partidas; guardarPolizas(arr); }
+      p.asientos = r.partidas;
+    }
+    return p;
+  }
+
   function verPoliza(id) {
     const p = getPolizas().find((x) => x.id === id);
     if (!p) return;
     openModal(`Póliza ${p.folio}`);
+    if (p.pgId && (!p.asientos || !p.asientos.length)) {
+      cbody.innerHTML = `<p class="cont-hint">Cargando partidas…</p>`;
+      asegurarAsientosPg(p).then(() => verPoliza(id));
+      return;
+    }
     const filas = (p.asientos || []).map((a) => `<tr>
       <td class="num">${esc(a.codigo)}</td><td>${esc(a.nombre)}</td>
       <td class="num" style="text-align:right">${num(a.debe) ? "$" + fmt(a.debe) : "—"}</td>
@@ -1034,14 +2391,81 @@ ${ctas}
         <div><span>Fecha</span><b>${esc(fechaCorta(p.fecha))}</b></div>
         <div><span>Folio</span><b>${esc(p.folio)}</b></div></div>
       <p style="margin:.6rem 0 1rem;color:var(--muted)">${esc(p.concepto)}</p>
+      ${bannerAjuste(p)}
       <div style="overflow-x:auto">
       <table class="tbl"><thead><tr><th>Cuenta</th><th>Nombre</th><th style="text-align:right">Debe</th><th style="text-align:right">Haber</th></tr></thead>
       <tbody>${filas}</tbody>
       <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
         <td class="num" style="text-align:right">$${fmt(debe)}</td><td class="num" style="text-align:right">$${fmt(haber)}</td></tr></tfoot></table></div>
-      <div class="cont-foot">
+      <div class="cont-foot" style="display:flex;align-items:center;justify-content:space-between">
+        <div>${p.origen === "ventas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Ventas ' + esc(p.concepto || '').split(' — ')[0].replace('Venta ', '') + '</span>' : (p.origen === "nominas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Nómina</span>' : '')}</div>
+        <div style="display:flex;gap:.5rem">
         <button class="btn btn--ghost" data-cont-close>Cerrar</button>
-        <button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button></div>`;
+        ${botonAnularDuplicada(p)}
+        ${botonEditarPoliza(p)}</div></div>`;
+  }
+
+  // OT-0025: banner que explica el rol de la póliza dentro de un ajuste
+  // y su vínculo con las demás (original ↔ reversa ↔ corrección).
+  function bannerAjuste(p) {
+    const est = p.estado;
+    const buscarPorPg = (pgId) => getPolizas().find((x) => x.pgId === pgId);
+    if (est === "corregida") {
+      const hijas = getPolizas().filter((x) => x.ajusteDeId && p.pgId && x.ajusteDeId === p.pgId);
+      const rev = hijas.find((x) => x.tipoAjuste === "reversa");
+      const cor = hijas.find((x) => x.tipoAjuste === "correccion");
+      return `<div style="background:rgba(251,191,113,.08);border:1px solid rgba(251,191,113,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FBBF71">Póliza corregida</b> — esta póliza fue corregida y ya no se modifica.
+        Se cancela con la reversa <b>${rev ? esc(rev.folio) : "—"}</b> y se reemplaza por la corrección <b>${cor ? esc(cor.folio) : "—"}</b>.</div>`;
+    }
+    if (est === "anulada") {
+      const hijas = getPolizas().filter((x) => x.ajusteDeId && p.pgId && x.ajusteDeId === p.pgId);
+      const rev = hijas.find((x) => x.tipoAjuste === "anulacion");
+      return `<div style="background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#FB7185">Póliza anulada (duplicado)</b> — se detectó que esta póliza duplicaba otra ya contabilizada.
+        Su efecto se canceló con la reversa <b>${rev ? esc(rev.folio) : "—"}</b>.
+        ${p.motivoAjuste ? `<br><span style="color:var(--muted)">Motivo: ${esc(p.motivoAjuste)}</span>` : ""}</div>`;
+    }
+    if (est === "reversa") {
+      const orig = p.ajusteDeId ? buscarPorPg(p.ajusteDeId) : null;
+      return `<div style="background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b>Reversa</b> — cancela el efecto de la póliza original <b>${orig ? esc(orig.folio) : "—"}</b>. Sus importes son los de la original, invertidos.</div>`;
+    }
+    if (est === "correccion") {
+      const orig = p.ajusteDeId ? buscarPorPg(p.ajusteDeId) : null;
+      return `<div style="background:rgba(110,139,255,.08);border:1px solid rgba(110,139,255,.3);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem">
+        <b style="color:#6E8BFF">Corrección</b> — es el asiento corregido de la póliza original <b>${orig ? esc(orig.folio) : "—"}</b>.
+        ${p.motivoAjuste ? `<br><span style="color:var(--muted)">Motivo: ${esc(p.motivoAjuste)}</span>` : ""}</div>`;
+    }
+    return "";
+  }
+
+  // OT-0025: las pólizas de ajuste (reversa/corrección) y las ya corregidas
+  // no se editan directamente. Una corrección sí puede volver a corregirse
+  // (encadena), así que esa mantiene el botón.
+  // OT-mejoras-SAT: tampoco se edita una ya anulada, ni una reversa de
+  // anulación.
+  function botonEditarPoliza(p) {
+    if (p.estado === "reversa") return "";
+    if (p.estado === "corregida") return "";
+    if (p.estado === "anulada") return "";
+    // Conexión Ventas↔Contabilidad: las pólizas generadas automáticamente
+    // desde Ventas NO se editan — si algo está mal, se corrige desde la
+    // venta misma (rechazar y re-registrar), no editando la póliza por
+    // atrás, porque eso rompería la consistencia entre los dos módulos.
+    if (p.origen === "ventas" || p.origen === "nominas") return "";
+    return `<button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button>`;
+  }
+
+  // OT-mejoras-SAT: botón para anular una póliza como duplicada — solo
+  // aparece si nació de un CFDI (tiene cfdiUuid) y todavía no está
+  // reversada/corregida/anulada. No es para cualquier error de captura
+  // (para eso está "Editar" → corrección); es específico para "esta
+  // póliza entera sobra, ya existe otra con el mismo CFDI".
+  function botonAnularDuplicada(p) {
+    if (!p.cfdiUuid) return "";
+    if (["reversa", "corregida", "anulada", "correccion"].includes(p.estado)) return "";
+    return `<button class="btn btn--ghost" style="border-color:rgba(251,113,133,.4);color:#FB7185" data-cont-anular-pol="${esc(p.id)}">Marcar como duplicada</button>`;
   }
 
   /* ---------- Modal: Contabilizar CFDI emitidos (Bloque 1) ---------- */
@@ -1074,11 +2498,35 @@ ${ctas}
         <button class="btn btn--primary" data-cont-contab-go>Contabilizar seleccionadas</button></div>`;
     cbody._pendientes = pend;
   }
-  function ejecutarContabilizar() {
+  async function ejecutarContabilizar() {
     const pend = cbody._pendientes || []; let n = 0;
-    cbody.querySelectorAll(".cont-chk").forEach((chk) => {
-      if (chk.checked) { const c = pend[parseInt(chk.getAttribute("data-idx"), 10)]; if (c) { contabilizarCfdi(c); n++; } }
-    });
+    const msg = cbody.querySelector("[data-cont-msg]");
+    let errorConfig = null;
+    const btn = cbody.querySelector("[data-cont-contab-go]"); if (btn) btn.disabled = true;
+    const checks = Array.from(cbody.querySelectorAll(".cont-chk")).filter((chk) => chk.checked);
+    // Se procesan en secuencia (no en paralelo) para no saturar al
+    // backend con muchas escrituras simultáneas ni perder el orden de
+    // los folios generados.
+    for (const chk of checks) {
+      const c = pend[parseInt(chk.getAttribute("data-idx"), 10)];
+      if (!c) continue;
+      const err = await contabilizarCfdi(c);
+      if (err) { errorConfig = err; break; }
+      n++;
+    }
+    if (errorConfig) {
+      // OT-mejoras-SAT: mismo mensaje amigable que en los otros flujos de
+      // guardado — antes mostraba el error crudo de Postgres tal cual.
+      if (/PERIODO_CERRADO/i.test(errorConfig)) {
+        errorConfig = 'Este periodo ya está cerrado y no admite movimientos nuevos. Revisa la pestaña "Periodos" para más detalle.';
+      }
+      // Falta configuración contable: se explica en el modal con acceso
+      // directo, en vez de cerrar como si todo hubiera salido bien.
+      if (msg) msg.innerHTML = errorConfigHTML(errorConfig);
+      if (btn) btn.disabled = false;
+      if (n) renderTodo();
+      return;
+    }
     closeModal(); renderTodo();
   }
 
@@ -1121,6 +2569,13 @@ ${ctas}
       if (preview) preview.innerHTML = `<div class="cont-err">No se pudo leer ningún CFDI válido${errores ? ` (${errores} con error)` : ""}.</div>`;
       if (btn) btn.disabled = true; return;
     }
+    // OT-0020: si falta configuración contable, todas las pólizas vienen
+    // con { error } — se explica una sola vez y no se deja contabilizar.
+    const conError = polizas.find((x) => x.poliza && x.poliza.error);
+    if (conError) {
+      if (preview) preview.innerHTML = errorConfigHTML(conError.poliza.error);
+      if (btn) btn.disabled = true; return;
+    }
     const filas = polizas.map((x) => `<tr>
       <td>${esc(x.parsed.nombreEmisor || x.parsed.rfcEmisor || "—")}</td>
       <td class="num" style="text-align:right">$${fmt(x.parsed.subtotal)}</td>
@@ -1132,14 +2587,90 @@ ${ctas}
       ${errores ? `<p style="color:var(--gold);font-size:.8rem;margin-top:.5rem">${errores} archivo(s) no se pudieron leer.</p>` : ""}`;
     if (btn) btn.disabled = false;
   }
-  function ejecutarImportarXml() {
-    (cbody._xmlPolizas || []).forEach((x) => savePoliza(x.poliza));
+  async function ejecutarImportarXml() {
+    const btnGo = cbody.querySelector("[data-xml-go]");
+    // Evita que un doble clic (o el usuario esperando y volviendo a
+    // darle porque tardó) contabilice la misma factura dos veces.
+    if (btnGo && btnGo.dataset.procesando) return;
+    if (btnGo) { btnGo.disabled = true; btnGo.dataset.procesando = "1"; btnGo.textContent = "Contabilizando…"; }
+    const items = cbody._xmlPolizas || [];
+    for (const x of items) {
+      const r = await savePoliza(x.poliza);
+      // OT-mejoras-SAT: si Postgres rechazó por CFDI ya contabilizado
+      // (candado real en el servidor, ver migración origen_cfdi_uuid),
+      // se avisa claro y NO se intenta guardar la factura para
+      // seguimiento de pagos — la póliza nunca se creó, no hay nada
+      // que ligarle.
+      if (r.pgError) {
+        // OT-mejoras-SAT: mismo criterio que los otros 3 flujos de
+        // guardado — duplicado, periodo cerrado, o error crudo como
+        // último recurso.
+        let msg;
+        if (r.poliza && r.poliza.duplicado) {
+          msg = `${x.parsed.nombreEmisor || x.parsed.rfcEmisor || "Esta factura"} ya fue contabilizada antes — no se volvió a registrar.`;
+        } else if (/PERIODO_CERRADO/i.test(r.pgError)) {
+          msg = `No se pudo contabilizar ${x.parsed.nombreEmisor || x.parsed.rfcEmisor || "esta factura"}: el periodo de esa fecha ya está cerrado. Revisa la pestaña "Periodos".`;
+        } else {
+          msg = `No se pudo contabilizar ${x.parsed.nombreEmisor || x.parsed.rfcEmisor || "esta factura"}: ${r.pgError}`;
+        }
+        toast(msg, "error", 6000);
+        continue;
+      }
+      // OT-0023: la factura queda guardada como documento propio, ligada
+      // a la póliza de causación que se acaba de crear — de aquí en
+      // adelante se puede consultar y pagarle saldo, ya no se pierde
+      // después del import.
+      if (window.CTPostgres && window.CTPostgres.guardarCfdiProveedor) {
+        try {
+          const rp = await window.CTPostgres.guardarCfdiProveedor(x.parsed, (r && r.poliza && r.poliza.pgId) || null);
+          // La póliza de causación ya quedó bien aunque esto falle — pero
+          // si falla, "Le pagué a un proveedor" no la va a poder encontrar
+          // después, así que se avisa en vez de fallar en silencio.
+          if (!rp.ok) toast("Póliza generada, pero la factura no quedó guardada para seguimiento de pagos: " + (rp.error || "motivo desconocido"), "error", 6000);
+        } catch (e) {
+          toast("Póliza generada, pero la factura no quedó guardada para seguimiento de pagos: " + e.message, "error", 6000);
+        }
+      }
+    }
+    // OT-0023: refresca la lista de facturas con saldo EN MEMORIA —
+    // antes solo se cargaba una vez al abrir la página, así que una
+    // factura recién importada no aparecía en "Le pagué a un proveedor"
+    // hasta recargar todo el sitio.
+    try {
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/cfdis-proveedor-saldo", {
+        headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
+      });
+      const data = await resp.json();
+      if (data.ok) window.CONTATECK_CFDIS_PROVEEDOR_SALDO_PG = data.facturas || [];
+    } catch (e) { /* silencioso: no crítico, se refresca solo al recargar */ }
     closeModal(); renderTodo();
   }
 
   /* ---------- Eventos ---------- */
   modal.addEventListener("click", (e) => {
     if (e.target === modal || e.target.closest("[data-cont-close]")) { closeModal(); return; }
+    // OT-0024: historial de pagos a proveedor (dentro del modal, 2 niveles)
+    const provDet = e.target.closest("[data-provhist-det]");
+    if (provDet) { e.preventDefault(); renderProvHistDetalle(parseInt(provDet.getAttribute("data-provhist-det"), 10)); return; }
+    if (e.target.closest("[data-provhist-volver]")) { e.preventDefault(); renderProvHistLista(); return; }
+    const provComp = e.target.closest("[data-provhist-comprobante]");
+    if (provComp) {
+      e.preventDefault();
+      (async () => {
+        provComp.style.opacity = ".5";
+        const url = await firmarComprobanteHist(provComp.getAttribute("data-provhist-comprobante"));
+        provComp.style.opacity = "";
+        if (!url) { toast("No se pudo abrir el comprobante.", "error"); return; }
+        if (provComp.getAttribute("data-comp-modo") === "descargar") {
+          const a = document.createElement("a"); a.href = url + "&download=" + encodeURIComponent(provComp.getAttribute("data-comp-nombre") || "comprobante");
+          a.download = provComp.getAttribute("data-comp-nombre") || "comprobante";
+          document.body.appendChild(a); a.click(); a.remove();
+        } else window.open(url, "_blank");
+      })();
+      return;
+    }
+    const provCi = e.target.closest("[data-provcomp-interno]");
+    if (provCi) { e.preventDefault(); abrirComprobanteInternoProv(provCi.getAttribute("data-provcomp-interno"), provCi.getAttribute("data-ci-modo"), provCi); return; }
     if (e.target.closest("[data-cont-as-add]")) {
       const cont = cbody.querySelector("[data-cont-asientos]");
       if (cont) { cont.insertAdjacentHTML("beforeend", asientoRow()); recalcCuadre(); }
@@ -1155,6 +2686,16 @@ ${ctas}
       return;
     }
     if (e.target.closest("[data-cont-guardar-pol]")) { guardarPolizaForm(); return; }
+    // OT-0025: flujo de corrección con asientos de ajuste.
+    if (e.target.closest("[data-correccion-cancelar]")) { correccionState = null; editandoId = null; closeModal(); return; }
+    if (e.target.closest("[data-correccion-confirmar]")) { confirmarCorreccion(); return; }
+    // OT-mejoras-SAT: flujo de anulación de duplicados (solo reversa).
+    if (e.target.closest("[data-anulacion-cancelar]")) { anulacionState = null; closeModal(); return; }
+    if (e.target.closest("[data-anulacion-confirmar]")) { confirmarAnulacion(); return; }
+    // OT-mejoras-SAT: confirmación de cierre de periodo, en modal propio
+    // en vez del confirm() nativo del navegador.
+    if (e.target.closest("[data-cierre-cancelar]")) { cierrePeriodoState = null; closeModal(); return; }
+    if (e.target.closest("[data-cierre-confirmar]")) { confirmarCerrarPeriodo(); return; }
     const modoBtn = e.target.closest("[data-modo]");
     if (modoBtn) {
       cbody.querySelectorAll(".cont-modo").forEach((b) => b.classList.toggle("is-active", b === modoBtn));
@@ -1166,9 +2707,34 @@ ${ctas}
     if (e.target.closest("[data-rapido-volver]")) { renderModoRapido(); return; }
     const rapGuardar = e.target.closest("[data-rapido-guardar]");
     if (rapGuardar) { guardarRapido(rapGuardar.getAttribute("data-rapido-guardar")); return; }
+    // OT-0020: flujo de cobranza — elegir factura, continuar, volver, confirmar.
+    const cobroFactura = e.target.closest("[data-cobro-factura]");
+    if (cobroFactura) {
+      const cfdiId = cobroFactura.getAttribute("data-cobro-factura");
+      const f = getCfdisSaldoLista().find((x) => x.cfdiId === cfdiId);
+      if (f) renderCobroCaptura(f);
+      return;
+    }
+    if (e.target.closest("[data-cobro-volver-lista]")) { renderCobroForm(); return; }
+    if (e.target.closest("[data-cobro-continuar]")) { continuarCobro(); return; }
+    if (e.target.closest("[data-cobro-cancelar]")) { renderCobroForm(); return; }
+    if (e.target.closest("[data-cobro-confirmar]")) { confirmarCobro(); return; }
+    // OT-0023: flujo de pago a proveedor — mismo patrón que cobranza.
+    const provFactura = e.target.closest("[data-prov-factura]");
+    if (provFactura) {
+      const cfdiProveedorId = provFactura.getAttribute("data-prov-factura");
+      const f = getCfdisProveedorSaldoLista().find((x) => x.cfdiProveedorId === cfdiProveedorId);
+      if (f) renderProveedorCaptura(f);
+      return;
+    }
+    if (e.target.closest("[data-prov-volver-lista]")) { renderProveedorForm(); return; }
+    if (e.target.closest("[data-prov-continuar]")) { continuarProveedor(); return; }
+    if (e.target.closest("[data-prov-cancelar]")) { renderProveedorForm(); return; }
+    if (e.target.closest("[data-prov-confirmar]")) { confirmarProveedor(); return; }
     if (e.target.closest("[data-cont-cuadrar]")) { cuadrarAuto(); return; }
     const gCta = e.target.closest("[data-cont-guardar-cta]");
     if (gCta) { guardarCuentaForm(gCta.getAttribute("data-cont-guardar-cta")); return; }
+    if (e.target.closest("[data-config-contable-guardar]")) { guardarConfigContableForm(); return; }
     if (e.target.closest("[data-cont-contab-go]")) { ejecutarContabilizar(); return; }
     if (e.target.closest("[data-xml-pick]")) { const inp = cbody.querySelector("[data-xml-file]"); if (inp) inp.click(); return; }
     if (e.target.closest("[data-xml-go]")) { ejecutarImportarXml(); return; }
@@ -1196,8 +2762,9 @@ ${ctas}
     const anio = parseInt(pane.querySelector("[data-sat-anio]").value, 10) || new Date().getFullYear();
     setRfcEmisor(rfc);
     const suf = `${rfc}_${anio}${String(mes).padStart(2, "0")}.xml`;
-    if (tipo === "catalogo") descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml");
-    else descargarTexto("Balanza_" + suf, xmlBalanzaSAT(rfc, mes, anio), "application/xml");
+    if (tipo === "catalogo") { descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml"); return; }
+    if (!balanza().cuadra) { toast("La Balanza no cuadra — el SAT rechaza el XML así. Corrige el descuadre primero.", "error"); return; }
+    descargarTexto("Balanza_" + suf, xmlBalanzaSAT(rfc, mes, anio), "application/xml");
   }
   cbody.addEventListener("input", (e) => {
     if (e.target.classList.contains("cont-as-debe") || e.target.classList.contains("cont-as-haber")) {
@@ -1209,10 +2776,199 @@ ${ctas}
       recalcCuadre();
     }
   });
-  // El selector del Libro Mayor y el de periodo viven en el dashboard (fuera del modal).
+
+  // Navegación con flechas/Enter/Escape — genérica para cualquier buscador
+  // de esta pantalla (Libro Mayor, cuenta de captura rápida, cliente).
+  // Mismo criterio que ya usa Facturación: nunca dejar un buscador nuevo
+  // sin esto, para no tener que corregirlo cada vez que se agrega uno.
+  document.addEventListener("keydown", (e) => {
+    const field = e.target.closest && e.target.closest(".fac-sat-field");
+    if (!field) return;
+    const box = field.querySelector(".fac-sat-results");
+    if (!box || !box.classList.contains("is-open")) return;
+    const opts = Array.from(box.querySelectorAll(".fac-sat-opt"));
+    if (!opts.length) return;
+    let idx = parseInt(box.dataset.activeIndex || "-1", 10);
+
+    if (e.key === "ArrowDown") { e.preventDefault(); idx = Math.min(idx + 1, opts.length - 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); idx = Math.max(idx - 1, 0); }
+    else if (e.key === "Enter") {
+      if (idx >= 0 && opts[idx]) { e.preventDefault(); opts[idx].click(); }
+      return;
+    } else if (e.key === "Escape") { box.classList.remove("is-open"); return; }
+    else return;
+
+    opts.forEach((o) => o.classList.remove("is-active"));
+    opts[idx].classList.add("is-active");
+    opts[idx].scrollIntoView({ block: "nearest" });
+    box.dataset.activeIndex = String(idx);
+  });
+
+  // ---------- Buscador inteligente: Libro Mayor ----------
+  // OT-0018: buscador de cuenta ÚNICO y compartido — antes había una copia
+  // casi idéntica de esta función por cada pantalla (Libro Mayor, Captura
+  // Rápida, y ahora también Modo Avanzado). Cualquier campo con clase
+  // "cuenta-busca" dentro de un ".fac-sat-field" usa esta misma lógica.
+  // OT-0020 fix: al abrir un buscador se cierran los demás (antes se
+  // apilaban varios "Sin resultados" abiertos en la pantalla de
+  // Configuración contable). mostrarTodo=true ignora el texto ya
+  // seleccionado ("102 · Bancos") y enseña la lista completa — el texto
+  // queda seleccionado para que al escribir se reemplace solo.
+  function cerrarBuscadores(excepto) {
+    document.querySelectorAll(".fac-sat-results.is-open").forEach((b) => { if (b !== excepto) b.classList.remove("is-open"); });
+  }
+  // Mejora de UX: si el buscador de cuentas no encuentra nada, permite
+  // dar de alta la cuenta SIN salir del formulario que se esté llenando
+  // (póliza, factura, lo que sea) — evita perder lo ya capturado.
+  // Funciona en CUALQUIER buscador de cuenta porque todos comparten el
+  // mismo .fac-sat-field / .fac-sat-results (ver OT-0018).
+  function abrirCrearCuentaInline(box, textoBuscado) {
+    const codigoSugerido = /^\d+$/.test(textoBuscado.trim()) ? textoBuscado.trim() : "";
+    const nombreSugerido = codigoSugerido ? "" : textoBuscado.trim();
+    box.innerHTML = `
+      <div style="padding:.7rem .75rem">
+        <div style="font-size:.78rem;font-weight:700;margin-bottom:.5rem;color:var(--brand,#6E8BFF)">Nueva cuenta</div>
+        <input class="input" id="inline-cta-codigo" placeholder="Código (ej. 301)" value="${esc(codigoSugerido)}" style="margin-bottom:.4rem">
+        <input class="input" id="inline-cta-nombre" placeholder="Nombre" value="${esc(nombreSugerido)}" style="margin-bottom:.4rem">
+        <select class="input" id="inline-cta-nat" style="margin-bottom:.4rem">
+          <option>Deudora</option><option>Acreedora</option></select>
+        <select class="input" id="inline-cta-padre" style="margin-bottom:.5rem">${mayorOptions("")}</select>
+        <div data-inline-cta-msg></div>
+        <div style="display:flex;gap:.5rem">
+          <button type="button" class="btn btn--ghost btn--sm" data-cancelar-cuenta-inline style="flex:1">Cancelar</button>
+          <button type="button" class="btn btn--primary btn--sm" data-guardar-cuenta-inline style="flex:1">Crear y usar</button>
+        </div>
+      </div>`;
+  }
+
+  async function guardarCuentaInline(field) {
+    const box = field.querySelector(".fac-sat-results");
+    const codigo = box.querySelector("#inline-cta-codigo").value.trim();
+    const nombre = box.querySelector("#inline-cta-nombre").value.trim();
+    const nat = box.querySelector("#inline-cta-nat").value;
+    const padre = box.querySelector("#inline-cta-padre").value || null;
+    const msg = box.querySelector("[data-inline-cta-msg]");
+    if (!codigo || !nombre) { msg.innerHTML = `<div class="cont-err" style="margin-bottom:.4rem">Captura código y nombre.</div>`; return; }
+    if (getCuentas().find((x) => x.codigo === codigo)) {
+      msg.innerHTML = `<div class="cont-err" style="margin-bottom:.4rem">Ya existe una cuenta con el código ${esc(codigo)}.</div>`;
+      return;
+    }
+    const btn = box.querySelector("[data-guardar-cuenta-inline]"); if (btn) btn.disabled = true;
+    const r = await saveCuenta({ codigo, nombre, nat, nivel: padre ? 2 : 1, padre });
+    if (!r.ok) {
+      msg.innerHTML = `<div class="cont-err" style="margin-bottom:.4rem">${esc(r.error)}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    // Mismo efecto que elegir una opción del dropdown normal (OT-0018).
+    const inputCuenta = field.querySelector(".cuenta-busca");
+    const hidden = field.querySelector('input[type="hidden"]');
+    if (inputCuenta) inputCuenta.value = codigo + " · " + nombre;
+    if (hidden) hidden.value = codigo;
+    box.classList.remove("is-open");
+    toast("Cuenta " + codigo + " creada y seleccionada.", "ok");
+    if (typeof actualizarCuadre === "function") { try { actualizarCuadre(); } catch (e) {} }
+  }
+
+  function buscarCuenta(input, mostrarTodo) {
+    const field = input.closest(".fac-sat-field");
+    if (!field) return;
+    const box = field.querySelector(".fac-sat-results");
+    const q = mostrarTodo ? "" : input.value.trim().toLowerCase();
+    const ctas = getCuentasAfectables();
+    const filtradas = q ? ctas.filter((c) => c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)) : ctas;
+    box.innerHTML = filtradas.length
+      ? filtradas.map((c) => `<div class="fac-sat-opt" data-codigo="${esc(c.codigo)}" data-txt="${esc(c.codigo + " · " + c.nombre)}"><b>${esc(c.codigo)}</b> · ${esc(c.nombre)}</div>`).join("")
+      : `<div class="fac-sat-hint">Sin resultados para "${esc(input.value)}".
+          <button type="button" class="btn btn--ghost btn--sm" style="margin-top:.5rem;width:100%" data-crear-cuenta-inline="${esc(input.value)}">+ Crear cuenta "${esc(input.value)}"</button>
+        </div>`;
+    cerrarBuscadores(box);
+    box.classList.add("is-open");
+  }
+  let clienteBuscaTimer = null;
+  document.addEventListener("input", (e) => {
+    if (!e.target.classList) return;
+    if (e.target.classList.contains("cuenta-busca")) buscarCuenta(e.target);
+    if (e.target.classList.contains("rap-cliente-busca")) {
+      clearTimeout(clienteBuscaTimer);
+      const input = e.target;
+      clienteBuscaTimer = setTimeout(() => buscarRapCliente(input), 300);
+    }
+    // Fix (ago-2026): el buscador de "Buscar póliza por folio o concepto…"
+    // existía en el HTML pero nunca estaba conectado a nada.
+    if (e.target.getAttribute && e.target.getAttribute("data-search") === "polizas") {
+      filtroPolizas = e.target.value;
+      renderPolizasTabla();
+    }
+  });
+  document.addEventListener("focusin", (e) => {
+    if (!e.target.classList) return;
+    if (e.target.classList.contains("cuenta-busca")) { buscarCuenta(e.target, true); e.target.select(); }
+  });
+  document.addEventListener("click", (e) => {
+    // OT-0024: botón de historial en la tabla de Cuentas por Pagar.
+    const provAbrir = e.target.closest("[data-provhist-abrir]");
+    if (provAbrir) { e.preventDefault(); abrirHistorialProveedor(provAbrir.getAttribute("data-provhist-abrir")); return; }
+    // OT-0020 fix: clic fuera de cualquier buscador cierra los dropdowns
+    // abiertos (antes se quedaban pegados al pasar de un campo a otro).
+    if (!e.target.closest(".fac-sat-field")) cerrarBuscadores();
+    const crearInline = e.target.closest("[data-crear-cuenta-inline]");
+    if (crearInline) {
+      const field = crearInline.closest(".fac-sat-field");
+      const box = field ? field.querySelector(".fac-sat-results") : null;
+      if (box) abrirCrearCuentaInline(box, crearInline.getAttribute("data-crear-cuenta-inline") || "");
+      return;
+    }
+    if (e.target.closest("[data-cancelar-cuenta-inline]")) {
+      const field = e.target.closest(".fac-sat-field");
+      const input = field ? field.querySelector(".cuenta-busca") : null;
+      if (input) buscarCuenta(input, true);
+      return;
+    }
+    if (e.target.closest("[data-guardar-cuenta-inline]")) {
+      const field = e.target.closest(".fac-sat-field");
+      if (field) guardarCuentaInline(field);
+      return;
+    }
+    const opt = e.target.closest(".fac-sat-field .fac-sat-opt");
+    if (opt) {
+      const field = opt.closest(".fac-sat-field");
+      const box = field.querySelector(".fac-sat-results");
+
+      // OT-0018: un solo camino para CUALQUIER buscador de cuenta (Libro
+      // Mayor, Captura Rápida, Modo Avanzado) — el hidden siempre vive
+      // como hermano dentro del mismo .fac-sat-field, sin importar la
+      // pantalla, así que no hace falta un caso por cada una.
+      const inputCuenta = field.querySelector(".cuenta-busca");
+      if (inputCuenta) {
+        const hidden = field.querySelector('input[type="hidden"]');
+        inputCuenta.value = opt.getAttribute("data-txt");
+        if (hidden) hidden.value = opt.getAttribute("data-codigo");
+        box.classList.remove("is-open");
+        // Único efecto extra: el Libro Mayor recarga el detalle de la
+        // cuenta elegida. Las demás pantallas no necesitan nada más.
+        if (inputCuenta.classList.contains("mayor-cuenta-busca")) renderMayor(opt.getAttribute("data-codigo"));
+        return;
+      }
+      if (field.querySelector(".rap-cliente-busca")) {
+        const input = field.querySelector(".rap-cliente-busca");
+        const hidden = document.getElementById("rap-cliente-id");
+        if (input) input.value = opt.getAttribute("data-nombre");
+        if (hidden) hidden.value = opt.getAttribute("data-id");
+        box.classList.remove("is-open");
+        return;
+      }
+    }
+    if (!e.target.closest(".fac-sat-field")) {
+      document.querySelectorAll(".fac-sat-results.is-open").forEach((b) => b.classList.remove("is-open"));
+    }
+    const btnImportar = e.target.closest("[data-rapido-importar-cfdi]");
+    if (btnImportar) { abrirImportarCfdiRapido(btnImportar.getAttribute("data-rapido-importar-cfdi")); return; }
+  });
+
+
   document.addEventListener("change", (e) => {
     if (!e.target || !e.target.matches) return;
-    if (e.target.matches("[data-mayor-cuenta]")) { renderMayor(e.target.value); return; }
     if (e.target.matches("[data-periodo-sel]")) {
       const v = e.target.value;
       if (!v) setPeriodo(null);
@@ -1225,26 +2981,55 @@ ${ctas}
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-cont-nueva-pol]")) { e.preventDefault(); openPolizaForm(); return; }
     if (e.target.closest("[data-cont-nueva-cta]")) { e.preventDefault(); openCuentaForm(); return; }
+    if (e.target.closest("[data-cont-config-contable]")) { e.preventDefault(); openConfigContable(); return; }
     const ver = e.target.closest("[data-cont-ver]");
     if (ver) { verPoliza(ver.getAttribute("data-cont-ver")); return; }
     const editPol = e.target.closest("[data-cont-editar-pol]");
     if (editPol) { abrirEditarPoliza(editPol.getAttribute("data-cont-editar-pol")); return; }
+    const anularPol = e.target.closest("[data-cont-anular-pol]");
+    if (anularPol) { abrirAnularDuplicada(anularPol.getAttribute("data-cont-anular-pol")); return; }
+    // OT-mejoras-SAT fix: "Cerrar periodo" vive en la página principal
+    // (data-pane="periodos"), no dentro de un modal — este handler
+    // estaba atrapado en el listener de "modal", que solo escucha clics
+    // DENTRO del modal, así que nunca se disparaba. Se mueve aquí, al
+    // listener de document que sí cubre toda la página.
+    const cerrarPer = e.target.closest("[data-cerrar-periodo]");
+    if (cerrarPer) {
+      const [anio, mes] = cerrarPer.getAttribute("data-cerrar-periodo").split("-").map(Number);
+      abrirConfirmarCierrePeriodo(anio, mes);
+      return;
+    }
     const delPol = e.target.closest("[data-cont-del-pol]");
     if (delPol) {
-      if (confirm("¿Eliminar esta póliza? Sus movimientos dejarán de afectar los saldos.")) {
+      ctConfirm("¿Eliminar esta póliza de prueba? Solo existe en este navegador (no está en la base de datos). Sus movimientos dejarán de afectar los saldos.", "Eliminar").then((si) => {
+        if (!si) return;
         const id = delPol.getAttribute("data-cont-del-pol");
         deletePoliza(id).then((r) => {
-          if (!r.ok) { alert("No se pudo eliminar: " + (r.error || "motivo desconocido")); return; }
+          if (!r.ok) { ctAlert("No se pudo eliminar: " + (r.error || "motivo desconocido")); return; }
           renderTodo();
         });
-      }
+      });
       return;
     }
     const editCta = e.target.closest("[data-cont-edit-cta]");
     if (editCta) { openCuentaForm(editCta.getAttribute("data-cont-edit-cta")); return; }
+    const reactivarCta = e.target.closest("[data-cont-reactivar-cta]");
+    if (reactivarCta) {
+      reactivarCuenta(reactivarCta.getAttribute("data-cont-reactivar-cta")).then((r) => {
+        if (!r.ok) { ctAlert("No se pudo reactivar: " + (r.error || "motivo desconocido")); return; }
+        renderTodo();
+      });
+      return;
+    }
     const delCta = e.target.closest("[data-cont-del-cta]");
     if (delCta) {
-      if (confirm("¿Eliminar esta cuenta del catálogo?")) { deleteCuenta(delCta.getAttribute("data-cont-del-cta")); renderTodo(); }
+      ctConfirm("¿Desactivar esta cuenta? Su historial y saldos se conservan, solo deja de estar disponible para movimientos nuevos.", "Desactivar").then((si) => {
+        if (!si) return;
+        deleteCuenta(delCta.getAttribute("data-cont-del-cta")).then((r) => {
+          if (!r.ok) { ctAlert("No se pudo desactivar: " + (r.error || "motivo desconocido")); return; }
+          renderTodo();
+        });
+      });
       return;
     }
     const verMayor = e.target.closest("[data-cont-mayor]");
@@ -1296,15 +3081,22 @@ ${ctas}
       let local = arr.find((x) => x.pgId === p.id);
       if (!local) local = arr.find((x) => x.folio === p.folio && !x.pgId);
       if (local) {
-        if (local.tipo !== p.tipo || local.fecha !== p.fecha || local.concepto !== p.concepto || local.estado !== p.estado || local.pgId !== p.id) {
-          local.tipo = p.tipo; local.fecha = p.fecha; local.concepto = p.concepto; local.estado = p.estado; local.pgId = p.id;
+        // OT-mejoras-SAT: también se compara/actualiza origen y cfdiUuid —
+        // sin esto, una póliza creada en OTRO navegador/usuario nunca
+        // traía su origen real y DIOT la ignoraba en silencio.
+        if (local.tipo !== p.tipo || local.fecha !== p.fecha || local.concepto !== p.concepto || local.estado !== p.estado || local.pgId !== p.id || local.monto !== p.monto || local.origen !== (p.origen || local.origen) || local.cfdiUuid !== (p.cfdiUuid || local.cfdiUuid)) {
+          local.tipo = p.tipo; local.fecha = p.fecha; local.concepto = p.concepto; local.estado = p.estado; local.pgId = p.id; local.monto = p.monto;
+          if (p.origen) local.origen = p.origen;
+          if (p.cfdiUuid) local.cfdiUuid = p.cfdiUuid;
           cambiado = true;
         }
       } else {
         // Póliza que existe en Postgres pero no en este navegador (ej. se
         // creó desde otra sesión/dispositivo). Se agrega sin asientos —
         // esos siguen siendo solo locales hasta aprobar poliza_partidas.
-        arr.push({ id: "pg-" + p.id, pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto, asientos: [], creada: Date.now(), origen: "postgres" });
+        // OT-mejoras-SAT: origen real (cfdi-recibido/cfdi/etc.) en vez de
+        // "postgres" a fuerzas — así DIOT sí la toma en cuenta.
+        arr.push({ id: "pg-" + p.id, pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto, monto: p.monto, asientos: [], creada: Date.now(), origen: p.origen || "postgres", cfdiUuid: p.cfdiUuid || "" });
         cambiado = true;
       }
     });
@@ -1312,9 +3104,66 @@ ${ctas}
     return cambiado;
   }
 
+  // Refresco en vivo (Ventas/Nómina → Contabilidad): cuando otro módulo
+  // genera una póliza automática, la foto CONTATECK_POLIZAS_PG con la
+  // que arrancó esta página ya quedó vieja — se vuelve a pedir al
+  // backend y se sincroniza, sin que el usuario tenga que recargar.
+  async function refrescarPolizasDesdeBackend() {
+    try {
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const token = window.CONTATECK_SUPABASE_TOKEN;
+      if (!token) return;
+      const r = await fetch(BACKEND + "/api/operacion", { headers: { Authorization: "Bearer " + token } });
+      const data = await r.json();
+      if (data && data.ok && data.fuente === "postgres") {
+        window.CONTATECK_POLIZAS_PG = data.polizas || [];
+        const cambiado = await sincronizarPolizasDesdePostgres();
+        if (cambiado) renderTodo();
+      }
+    } catch (e) { /* sin conexión: la póliza se verá al recargar */ }
+  }
+  document.addEventListener("contateck:ventas-cambio", refrescarPolizasDesdeBackend);
+  document.addEventListener("contateck:nominas-cambio", refrescarPolizasDesdeBackend);
+
+  // OT-0025: tras una corrección, trae del backend la original (ya
+  // marcada 'corregida'), la reversa y la corregida CON sus partidas, y
+  // las mete al localStorage — así el Libro Mayor ve el efecto neto y el
+  // detalle muestra los vínculos entre las tres.
+  async function recargarPolizasPg(idsExtra) {
+    if (!window.CTPostgres || !window.CTPostgres.polizasConPartidas) return;
+    const arr = leerPolizas();
+    const ids = arr.map((p) => p.pgId).filter(Boolean);
+    (idsExtra || []).forEach((id) => { if (id && ids.indexOf(id) < 0) ids.push(id); });
+    if (!ids.length) return;
+    let r;
+    try { r = await window.CTPostgres.polizasConPartidas(ids); } catch (e) { return; }
+    if (!r || !r.ok) return;
+    (r.polizas || []).forEach((p) => {
+      let local = arr.find((x) => x.pgId === p.id);
+      // OT-mejoras-SAT fix: antes esto pisaba origen con "postgres" a
+      // fuerzas para CUALQUIER póliza recargada (ej. al anular un
+      // duplicado, la original perdía su "cfdi-recibido" y desaparecía
+      // de DIOT). Ahora solo usa el origen real que regresa el backend,
+      // y si no viene, respeta el que ya tenía localmente.
+      const datos = {
+        pgId: p.id, folio: p.folio, tipo: p.tipo, fecha: p.fecha, concepto: p.concepto,
+        estado: p.estado,
+        origen: p.origen || (local && local.origen) || "postgres",
+        cfdiUuid: p.cfdiUuid || (local && local.cfdiUuid) || "",
+        ajusteDeId: p.ajusteDeId || null, tipoAjuste: p.tipoAjuste || null, motivoAjuste: p.motivoAjuste || null,
+      };
+      if (p.asientos && p.asientos.length) datos.asientos = p.asientos;
+      if (local) Object.assign(local, datos);
+      else arr.push(Object.assign({ id: "pg-" + p.id, creada: Date.now(), asientos: p.asientos || [] }, datos));
+    });
+    guardarPolizas(arr);
+  }
+
   function init() {
     renderTodo();
+    cargarCatalogoReal().then((cambio) => { if (cambio) renderTodo(); });
     sincronizarPolizasDesdePostgres().then((cambiado) => { if (cambiado) renderTodo(); });
+    cargarConfigContable().then((cambio) => { if (cambio) renderTodo(); });
   }
   init();
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

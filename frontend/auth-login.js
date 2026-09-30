@@ -73,9 +73,10 @@ if (!configured) {
     return match ? match[1] : "No se pudo iniciar sesión. Inténtalo de nuevo.";
   };
 
-  // Si ya hay sesión activa, directo al panel.
+  // Si ya hay sesión activa, deja que onboarding.html decida el destino
+  // final (panel real / crear empresa / invitación pendiente).
   supabase.auth.getSession().then(({ data }) => {
-    if (data?.session) window.location.replace("dashboard.html");
+    if (data?.session) window.location.replace("onboarding.html");
   });
 
   async function emailLogin() {
@@ -88,7 +89,7 @@ if (!configured) {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: e, password: p });
       if (error) throw error;
-      window.location.replace("dashboard.html");
+      window.location.replace("onboarding.html");
     } catch (err) {
       note(msgFor(err.message), true);
       loading(false, btn);
@@ -102,7 +103,7 @@ if (!configured) {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: window.location.origin + window.location.pathname.replace("login.html", "dashboard.html") },
+        options: { redirectTo: window.location.origin + window.location.pathname.replace("login.html", "onboarding.html") },
       });
       if (error) throw error;
       // No hay redirect manual aquí: Supabase navega la página completa a Google
@@ -112,6 +113,51 @@ if (!configured) {
       loading(false, btnG);
     }
   }
+
+  // ---------- Registro (Fase 1 — reemplaza "Solicita acceso") ----------
+  async function emailSignUp() {
+    clearNote();
+    const e = (email.value || "").trim();
+    const p = pwd.value || "";
+    if (!e || !p) { note("Escribe tu correo y contraseña.", true); return; }
+    if (p.length < 6) { note("La contraseña debe tener al menos 6 caracteres.", true); return; }
+    const btnReg = $("btnRegistro");
+    loading(true, btnReg, "Creando cuenta…");
+    try {
+      const { error } = await supabase.auth.signUp({ email: e, password: p });
+      if (error) throw error;
+      window.location.replace("onboarding.html");
+    } catch (err) {
+      note(msgFor(err.message), true);
+      loading(false, btnReg);
+    }
+  }
+  const btnRegistro = $("btnRegistro");
+  if (btnRegistro) btnRegistro.addEventListener("click", emailSignUp);
+
+  // ---------- Toggle login / registro ----------
+  const toggleLink = $("authToggleLink");
+  const toggleTxt = $("authToggleTxt");
+  const authTitle = $("authTitle");
+  const authSub = $("authSub");
+  let modoRegistro = false;
+  function aplicarModo() {
+    clearNote();
+    if (btn) btn.style.display = modoRegistro ? "none" : "";
+    if (btnRegistro) btnRegistro.style.display = modoRegistro ? "" : "none";
+    if (authTitle) authTitle.textContent = modoRegistro ? "Crear cuenta" : "Iniciar sesión";
+    if (authSub) authSub.textContent = modoRegistro ? "Regístrate para empezar a usar Contateck." : "Accede al panel contable de tu empresa.";
+    if (toggleTxt && toggleLink) {
+      toggleTxt.innerHTML = modoRegistro ? '¿Ya tienes cuenta? <a href="#" class="link" id="authToggleLink">Inicia sesión</a>' : '¿Aún no tienes cuenta? <a href="#" class="link" id="authToggleLink">Crea una aquí</a>';
+      $("authToggleLink").addEventListener("click", onToggleClick);
+    }
+  }
+  function onToggleClick(e) {
+    e.preventDefault();
+    modoRegistro = !modoRegistro;
+    aplicarModo();
+  }
+  if (toggleLink) toggleLink.addEventListener("click", onToggleClick);
 
   if (btn)  btn.addEventListener("click", emailLogin);
   if (btnG) btnG.addEventListener("click", googleLogin);

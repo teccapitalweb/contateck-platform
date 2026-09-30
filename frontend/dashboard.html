@@ -17,7 +17,7 @@
   <!-- SIDEBAR -->
   <aside class="side">
     <div class="side__brand">
-      <a href="index.html" class="brand">
+      <a href="dashboard.html" class="brand">
         <span class="brand__mark"><img src="img/logo-contateck.png" alt="CONTATECK"></span>
         <span class="brand__word">Conta<b class="t">teck</b></span>
       </a>
@@ -56,6 +56,14 @@
       <div class="nav-item" data-view="sat" data-title="SAT y fiscal México">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg>
         SAT y Fiscal
+      </div>
+    </div>
+
+    <div class="side__group" data-nav-group-equipo>
+      <div class="side__label">Equipo</div>
+      <div class="nav-item" data-view="invitaciones" data-title="Equipo" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Equipo
       </div>
     </div>
 
@@ -143,7 +151,7 @@
         <div class="grid-2">
           <div class="card">
             <div class="card__head">
-              <div><h3>Ventas vs gastos</h3><span class="sub">Últimos 12 meses · miles MXN</span></div>
+              <div><h3>Ventas vs gastos</h3><span class="sub">Últimos 6 meses · MXN</span></div>
               <div class="seg">
                 <button>Mes</button><button class="is-active">Año</button>
               </div>
@@ -158,6 +166,10 @@
           <div class="card">
             <div class="card__head"><h3>Alertas</h3><span class="sub">3 activas</span></div>
             <div class="alerts" data-alerts></div>
+            <div style="margin-top:.9rem;padding-top:.9rem;border-top:1px solid var(--line)">
+              <span class="sub" style="display:block;margin-bottom:.5rem">Información general</span>
+              <div class="alerts" data-info-general></div>
+            </div>
           </div>
         </div>
 
@@ -200,6 +212,7 @@
           <div><h1>Contabilidad general</h1><p>Catálogo de cuentas y pólizas · <b data-empresa-label>tu empresa</b></p></div>
           <div class="page-head__actions">
             <div data-cont-periodo></div>
+            <button class="btn btn--ghost" data-cont-config-contable><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;margin-right:.35rem"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Configuración contable</button>
             <button class="btn btn--primary" data-cont-nueva-pol><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nueva póliza</button>
           </div>
         </div>
@@ -208,9 +221,11 @@
           <button class="tab is-active" data-tab="catalogo">Catálogo de cuentas</button>
           <button class="tab" data-tab="polizas">Pólizas</button>
           <button class="tab" data-tab="mayor">Libro Mayor</button>
+          <button class="tab" data-tab="proveedores">Cuentas por Pagar</button>
           <button class="tab" data-tab="balanza">Balanza</button>
           <button class="tab" data-tab="estados">Estados financieros</button>
           <button class="tab" data-tab="sat">SAT / Declaraciones</button>
+          <button class="tab" data-tab="periodos">Periodos</button>
         </div>
         <div class="tabpane is-active" data-pane="catalogo">
           <div class="card">
@@ -241,9 +256,11 @@
           </div>
         </div>
         <div class="tabpane" data-pane="mayor"></div>
+        <div class="tabpane" data-pane="proveedores"></div>
         <div class="tabpane" data-pane="balanza"></div>
         <div class="tabpane" data-pane="estados"></div>
         <div class="tabpane" data-pane="sat"></div>
+        <div class="tabpane" data-pane="periodos"></div>
       </section>
 
       <section class="view" data-view="ventas"><div data-ventas-root></div></section>
@@ -275,7 +292,8 @@
         <div class="page-head">
           <div><h1>Nómina</h1><p>Cálculo y timbrado · <b data-empresa-label>tu empresa</b></p></div>
           <div class="page-head__actions">
-            <button class="btn btn--ghost" data-soon="El cálculo de nómina (ISR/IMSS) con tablas SAT llega en la siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>Calcular</button>
+            <button class="btn btn--ghost" data-simfiscal><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h2M14 10h2M8 14h2M14 14h2M8 18h2M14 18h2"/></svg>Simulador fiscal</button>
+            <button class="btn btn--ghost" data-nom-calcular><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>Calcular</button>
             <button class="btn btn--primary" data-soon="El timbrado de CFDI Nómina ante el PAC requiere backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Timbrar nómina</button>
           </div>
         </div>
@@ -288,14 +306,16 @@
           </div>
           <div class="comp" data-nom-desglose></div>
         </div>
-        <div class="card">
+        <div data-historial-nominas-root></div>
+        <div data-prenomina-root></div>
+        <div class="card" data-empleados-card>
           <div class="card__head"><h3>Empleados</h3><div style="display:flex;align-items:center;gap:.8rem"><span class="sub" data-emp-count></span><button class="btn btn--ghost" style="padding:.45rem .8rem;font-size:.84rem" data-new="empleado"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Empleado</button></div></div>
           <div class="toolbar">
             <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-search="empleados" placeholder="Buscar empleado por nombre o puesto…"></div>
           </div>
           <div style="overflow-x:auto">
             <table class="tbl">
-              <thead><tr><th>Empleado</th><th>Puesto</th><th style="text-align:right">Sueldo mensual</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Empleado</th><th>Puesto</th><th style="text-align:right">Salario diario</th><th>Estado</th><th></th></tr></thead>
               <tbody data-empleados></tbody>
             </table>
           </div>
@@ -303,29 +323,11 @@
       </section>
 
       <section class="view" data-view="sat">
-        <div class="page-head">
-          <div><h1>SAT y Fiscal México</h1><p>Descarga de XML, validación y declaraciones · <b data-empresa-label>tu empresa</b></p></div>
-          <div class="page-head__actions">
-            <button class="btn btn--ghost" data-soon="La descarga masiva de XML del SAT requiere e.firma + backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 21h14"/></svg>Descargar XML</button>
-            <button class="btn btn--primary" data-soon="La presentación de declaraciones ante el SAT requiere backend — siguiente fase."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg>Presentar declaración</button>
-          </div>
-        </div>
-        <div class="kpis" data-sat-stats></div>
-        <div class="grid-2">
-          <div class="card">
-            <div class="card__head"><h3>Declaraciones</h3><span class="sub">Últimos periodos</span></div>
-            <div style="overflow-x:auto">
-              <table class="tbl">
-                <thead><tr><th>Tipo</th><th>Periodo</th><th>Presentada</th><th>Acuse</th><th>Estado</th></tr></thead>
-                <tbody data-declaraciones></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card__head"><h3>Buzón fiscal</h3><span class="sub">IA</span></div>
-            <div class="alerts" data-buzon></div>
-          </div>
-        </div>
+        <div data-fiscal-root></div>
+      </section>
+
+      <section class="view" data-view="invitaciones">
+        <div data-inv-root></div>
       </section>
 
       <section class="view" data-view="ia">
@@ -382,5 +384,9 @@
 <script src="facturacion.js?v=21"></script>
 <script src="contabilidad.js?v=10"></script>
 <script src="ventas.js?v=1"></script>
+<script src="nomina.js?v=1"></script>
+<script type="module" src="simulador-fiscal.js?v=1"></script>
+<script src="fiscal.js?v=1"></script>
+<script src="invitaciones.js?v=1"></script>
 </body>
 </html>

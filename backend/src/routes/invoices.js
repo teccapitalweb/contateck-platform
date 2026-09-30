@@ -50,6 +50,11 @@ async function requireRolFacturacion(req, res, next) {
 
 // Extrae los campos clave de una factura timbrada (defensivo: la API
 // puede nombrar el UUID de varias formas según el modo).
+// OT-0019: el folio real de Fiscalapi NO es data.folio/data.invoiceNumber
+// (esos siempre vienen null) — es series + consecutive, confirmado
+// contra datos reales en Postgres (ver database/addendum_folio_metodopago.sql).
+// De paso se captura paymentMethodCode (PUE/PPD) y paymentFormCode, que
+// antes ni se guardaban.
 function resumenCfdi(data, user) {
   if (!data) return {};
   const uuid =
@@ -58,11 +63,13 @@ function resumenCfdi(data, user) {
     data.taxStamp?.uuid ||
     data.responses?.[0]?.uuid ||
     null;
+  const serie = data.series ?? null;
+  const consecutivo = data.consecutive ?? null;
   return {
     id: data.id || null,
     uuid,
-    serie: data.series ?? null,
-    folio: data.folio ?? data.invoiceNumber ?? null,
+    serie,
+    folio: (serie && consecutivo != null) ? `${serie}-${consecutivo}` : null,
     total: data.total ?? null,
     subtotal: data.subtotal ?? null,
     moneda: data.currencyCode ?? null,
@@ -72,6 +79,13 @@ function resumenCfdi(data, user) {
     receptorNombre: data.recipient?.legalName ?? null,
     emisorRfc: data.issuer?.tin ?? null,
     estatus: 'vigente',
+    // OT-0019: PUE = pago de contado, PPD = pago diferido/parcialidades.
+    // Una PPD necesita un REP (Recibo Electrónico de Pago) aparte cuando
+    // de verdad llega el dinero — "Importar desde factura timbrada" en
+    // Contabilidad bloquea las PPD hasta que la contadora confirme cómo
+    // debe registrarse ese segundo momento (ver OT-0019.md).
+    metodoPago: data.paymentMethodCode ?? null,
+    formaPago: data.paymentFormCode ?? null,
     uid: user?.uid ?? null,
     emailUsuario: user?.email ?? null,
   };

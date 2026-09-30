@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 //  CONTATECK · Backend · CRUD en Postgres
 //  OT-0008-C — Escritura (crear/editar/borrar) para clientes,
 //  productos, empleados y pólizas. A partir de esta OT, estos 4
@@ -31,10 +31,15 @@ const TABLAS = {
   // cuenta_bancaria son sensibles — el rol auditor nunca los ve
   // (columnas ocultas en supabaseEmpleados.js, no aquí).
   empleados: {
-    campos: ['nombre', 'puesto', 'departamento', 'fecha_ingreso', 'sueldo', 'rfc', 'curp', 'nss', 'cuenta_bancaria', 'estado'],
+    campos: ['nombre', 'puesto', 'departamento', 'fecha_ingreso', 'sueldo', 'sueldo_tipo', 'sueldo_monto_original', 'rfc', 'curp', 'nss', 'cuenta_bancaria', 'estado'],
     permiteEliminar: false,
   }, // soft-delete
   polizas: { campos: ['folio', 'tipo', 'fecha', 'concepto', 'monto', 'estado'], permiteEliminar: false }, // nunca se borra
+  // Migración del catálogo de cuentas (antes vivía solo en localStorage,
+  // cada quien con su propia copia). "activo" en vez de borrado real:
+  // una cuenta ya usada en pólizas no se puede eliminar sin romper el
+  // historial contable — se desactiva, igual que empleados con 'baja'.
+  cuentas_contables: { campos: ['codigo', 'nombre', 'naturaleza', 'nivel'], permiteEliminar: false },
 };
 
 export function tablaValida(tabla) {
@@ -97,11 +102,19 @@ export async function eliminar(tabla, accessToken, id, log = console) {
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
   if (!TABLAS[tabla].permiteEliminar) {
-    // empleados: soft-delete (baja). polizas: rechazado del todo.
+    // empleados: soft-delete (baja). cuentas_contables: soft-delete (activo=false).
     if (tabla === 'empleados') {
       const { data, error } = await supabase.from(tabla).update({ estado: 'baja' }).eq('id', id).select().single();
       if (error) {
         log.warn(`[postgres] baja empleado:`, error.message);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true, registro: data, softDelete: true };
+    }
+    if (tabla === 'cuentas_contables') {
+      const { data, error } = await supabase.from(tabla).update({ activo: false }).eq('id', id).select().single();
+      if (error) {
+        log.warn(`[postgres] desactivar cuenta:`, error.message);
         return { ok: false, error: error.message };
       }
       return { ok: true, registro: data, softDelete: true };
@@ -115,4 +128,18 @@ export async function eliminar(tabla, accessToken, id, log = console) {
     return { ok: false, error: error.message };
   }
   return { ok: true };
+}
+
+// Simétrica de eliminar() para las tablas con baja suave — regresa una
+// cuenta desactivada a servicio. Mismos roles que pueden desactivar.
+export async function reactivar(tabla, accessToken, id, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  if (tabla === 'cuentas_contables') {
+    const { data, error } = await supabase.from(tabla).update({ activo: true }).eq('id', id).select().single();
+    if (error) { log.warn(`[postgres] reactivar cuenta:`, error.message); return { ok: false, error: error.message }; }
+    return { ok: true, registro: data };
+  }
+  return { ok: false, error: `Reactivar no está soportado para "${tabla}".` };
 }
