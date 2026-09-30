@@ -45,6 +45,21 @@
     });
   });
 
+  /* ---------- Parallax sutil de la foto en el panel de marca (login/registro) ---------- */
+  (function () {
+    const brand = document.querySelector(".auth__brand");
+    const bgImg = document.querySelector(".auth__brand-bg img");
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!brand || !bgImg || reduceMotion) return;
+    brand.addEventListener("mousemove", function (e) {
+      const r = brand.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      bgImg.style.transform = "scale(1.08) translate(" + (-x * 14).toFixed(1) + "px," + (-y * 14).toFixed(1) + "px)";
+    });
+    brand.addEventListener("mouseleave", function () { bgImg.style.transform = "scale(1.08) translate(0,0)"; });
+  })();
+
   /* ---------- Login ----------
      Lo maneja auth-login.js (módulo): Firebase Auth real con
      degradación a modo demo. app.js ya no toca el login. */

@@ -132,12 +132,10 @@ ul{list-style:none}
    ============================================================ */
 .brand{display:inline-flex;align-items:center;gap:.6rem;font-family:var(--display)}
 .brand__mark{
-  width:34px;height:34px;border-radius:9px;flex:none;
-  display:grid;place-items:center;color:#0A0F1C;
-  background:linear-gradient(150deg,var(--gold),#E59B22);
-  box-shadow:0 6px 18px -6px rgba(242,184,75,.6);
+  width:40px;height:40px;border-radius:11px;flex:none;position:relative;
+  display:grid;place-items:center;background:transparent;
 }
-.brand__mark svg{width:19px;height:19px}
+.brand__mark img{width:100%;height:100%;object-fit:contain;display:block}
 .brand__word{font-weight:600;font-size:1.12rem;letter-spacing:-.01em}
 .brand__word b{font-weight:700}
 .brand__word .t{color:var(--gold)}
@@ -307,19 +305,82 @@ html[data-theme="light"] .theme-toggle .i-moon{display:block}
 .auth__brand{
   position:relative;overflow:hidden;padding:clamp(2rem,4vw,3.5rem);
   display:flex;flex-direction:column;justify-content:space-between;
-  background:linear-gradient(160deg,var(--ink-850),var(--ink-700));
+  background:linear-gradient(160deg,#0f1830,#0a101e);
   border-right:1px solid var(--line);
+  color:#fff; /* panel "vitrina": siempre oscuro con foto de fondo, sin importar el tema del sitio */
 }
 @media(max-width:880px){.auth__brand{display:none}}
 .auth__brand::before{content:"";position:absolute;width:520px;height:520px;border-radius:50%;
   background:var(--glow);filter:blur(120px);bottom:-200px;left:-120px;opacity:.5}
 .auth__brand::after{content:"";position:absolute;width:380px;height:380px;border-radius:50%;
   background:var(--gold-soft);filter:blur(90px);top:-120px;right:-100px;opacity:.7}
-.auth__pitch{position:relative;max-width:30ch}
+.auth__brand>a.brand,.auth__brand .auth__pitch,.auth__brand .auth__benefits{position:relative;z-index:1}
+.auth__brand .brand__word{color:#fff}
+.auth__brand .eyebrow{color:rgba(255,255,255,.65)}
+
+/* Foto de fondo del panel de marca, con parallax sutil al mover el mouse */
+.auth__brand-bg{position:absolute;inset:0;z-index:0}
+.auth__brand-bg img{
+  width:100%;height:100%;object-fit:cover;display:block;
+  transform:scale(1.08);transition:transform .6s var(--ease);opacity:.55;
+}
+.auth__brand-bg::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(165deg,rgba(7,11,20,.88),rgba(9,14,26,.82) 45%,rgba(7,11,20,.95));
+}
+
+.auth__pitch{max-width:30ch}
 .auth__pitch h2{font-family:var(--display);font-weight:700;letter-spacing:-.02em;
   font-size:clamp(1.8rem,3vw,2.6rem);line-height:1.06;margin:1.3rem 0 1rem}
-.auth__pitch p{color:var(--muted)}
-.auth__ledger{position:relative;margin-top:auto}
+.auth__pitch p{color:rgba(255,255,255,.72)}
+.grad-gold{
+  background:linear-gradient(120deg,var(--brand),var(--gold));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+
+/* Lista de beneficios del panel de marca */
+.auth__benefits{display:flex;flex-direction:column;gap:1rem;margin-top:auto}
+.auth__benefits li{
+  display:flex;gap:.75rem;align-items:flex-start;font-size:.92rem;color:rgba(255,255,255,.75);
+  opacity:0;transform:translateX(-10px);animation:benefitIn .5s var(--ease) forwards;
+}
+.auth__benefits li:nth-child(1){animation-delay:.15s}
+.auth__benefits li:nth-child(2){animation-delay:.26s}
+.auth__benefits li:nth-child(3){animation-delay:.37s}
+.auth__benefits li:nth-child(4){animation-delay:.48s}
+@keyframes benefitIn{to{opacity:1;transform:translateX(0)}}
+.auth__benefits b{color:#fff}
+.auth__benefits .chk{
+  width:22px;height:22px;border-radius:50%;flex:none;margin-top:1px;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+  display:grid;place-items:center;color:#fff;
+}
+.auth__benefits .chk svg{width:12px;height:12px}
+@media(prefers-reduced-motion:reduce){
+  .auth__benefits li{animation:none;opacity:1;transform:none}
+}
+
+/* Tabs Iniciar sesión / Crear cuenta (navegan entre login.html y registro.html) */
+.auth__tabs{
+  display:flex;background:var(--ink-700);border:1px solid var(--line-strong);
+  border-radius:100px;padding:5px;margin-bottom:1.8rem;position:relative;
+}
+.auth__tabs a{
+  flex:1;text-align:center;padding:.62rem 1rem;border-radius:100px;
+  font-weight:600;font-size:.88rem;color:var(--muted);position:relative;z-index:1;
+  transition:color .3s var(--ease);
+}
+.auth__tabs a.is-active{color:#fff}
+.auth__tabs .knob{
+  position:absolute;top:5px;left:5px;width:calc(50% - 5px);height:calc(100% - 10px);
+  background:linear-gradient(135deg,var(--brand),var(--brand-2));border-radius:100px;
+  box-shadow:0 10px 20px -8px rgba(110,139,255,.5);
+  animation:tabIn .4s var(--ease) both;
+}
+.auth__tabs.is-register .knob{transform:translateX(100%)}
+@keyframes tabIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+.auth__tabs.is-register .knob{animation-name:tabInRight}
+@keyframes tabInRight{from{opacity:0;transform:translateX(100%) scale(.85)}to{opacity:1;transform:translateX(100%) scale(1)}}
 
 .auth__form{display:flex;align-items:center;justify-content:center;padding:clamp(1.5rem,4vw,3rem)}
 .auth__card{width:100%;max-width:392px}
@@ -368,7 +429,62 @@ html[data-theme="light"] .theme-toggle .i-moon{display:block}
 .btn--oauth:hover{border-color:var(--line-strong);background:var(--ink-650);transform:translateY(-1px)}
 .btn--oauth svg{width:18px;height:18px}
 
-.auth__foot{text-align:center;margin-top:1.7rem;color:var(--muted);font-size:.9rem}
+.auth__foot{text-align:center;margin-top:1.7rem;padding-top:1.4rem;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
+
+/* Insignias de confianza en el panel de marca (login/registro) */
+.auth__trust{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1.6rem;position:relative}
+.auth__trust span{
+  font-size:.76rem;color:var(--muted);padding:.4rem .75rem;border-radius:99px;
+  background:var(--glass);border:1px solid var(--glass-brd);backdrop-filter:blur(10px);
+  display:inline-flex;align-items:center;gap:.4rem;
+}
+.auth__trust span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--up);flex:none}
+
+/* Panel de marca — checklist de pasos (registro) */
+.auth__steps{position:relative;display:grid;gap:.85rem;margin-top:auto;
+  background:var(--glass);border:1px solid var(--glass-brd);border-radius:var(--radius);
+  padding:1.1rem 1.2rem;backdrop-filter:blur(16px);box-shadow:var(--shadow-soft);
+}
+.step{display:flex;align-items:center;gap:.8rem;font-size:.88rem;color:var(--muted)}
+.step__n{
+  width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;
+  font-family:var(--mono);font-size:.76rem;font-weight:600;
+  background:var(--ink-700);border:1px solid var(--line-strong);color:var(--faint);
+}
+.step.is-now .step__n{background:var(--gold);border-color:var(--gold);color:#0A0F1C}
+.step.is-now span{color:var(--text);font-weight:600}
+
+/* Checkbox de términos con etiqueta larga (registro) */
+.check--terms{align-items:flex-start;line-height:1.42;font-size:.86rem}
+.check--terms .check__box{margin-top:.1rem;flex:none}
+.check__text{flex:1}
+
+/* Medidor de fuerza de contraseña (registro) */
+.pwd-meter{display:flex;gap:.3rem;margin:-.4rem 0 1.05rem}
+.pwd-meter i{height:4px;flex:1;border-radius:99px;background:var(--line-strong);transition:background .25s}
+.pwd-meter.s1 i:nth-child(1){background:var(--down)}
+.pwd-meter.s2 i:nth-child(1),.pwd-meter.s2 i:nth-child(2){background:var(--gold)}
+.pwd-meter.s3 i{background:var(--up)}
+
+/* Foco: el ícono del campo se tiñe con la marca */
+.input-wrap>svg{transition:color .15s}
+.input-wrap:focus-within>svg{color:var(--brand)}
+
+/* Botón primario: barrido de luz al pasar el cursor */
+.btn--primary{position:relative;overflow:hidden}
+.btn--primary::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.24) 46%,transparent 62%);
+  transform:translateX(-130%);
+}
+.btn--primary:hover::after{transform:translateX(130%);transition:transform .65s var(--ease)}
+
+/* Entrada de la tarjeta de auth: un solo movimiento orquestado */
+.auth__card{animation:authCardIn .4s var(--ease) both}
+@keyframes authCardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){
+  .auth__card{animation:none;opacity:1}
+}
 
 /* Ledger balance bar (firma) */
 .ledger{
@@ -671,8 +787,15 @@ html[data-theme="light"] .tab.is-active{color:#fff}
 /* Mensajes de formulario (login) */
 .form-error{display:none;margin:-.2rem 0 1.1rem;padding:.7rem .85rem;border-radius:10px;font-size:.84rem;line-height:1.4;
   background:var(--down-soft);border:1px solid color-mix(in srgb,var(--down) 32%,transparent);color:var(--down)}
-.form-error.is-shown{display:block;animation:fade .25s var(--ease)}
-.form-error.is-note{background:var(--gold-soft);border-color:color-mix(in srgb,var(--gold) 32%,transparent);color:var(--gold)}
+.form-error.is-shown{display:block;animation:fade .25s var(--ease),errShake .4s var(--ease)}
+.form-error.is-note{background:var(--gold-soft);border-color:color-mix(in srgb,var(--gold) 32%,transparent);color:var(--gold);animation:fade .25s var(--ease)}
+@keyframes errShake{
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-4px)}
+  40%{transform:translateX(4px)}
+  60%{transform:translateX(-3px)}
+  80%{transform:translateX(3px)}
+}
 .btn[disabled],.btn--oauth[disabled]{cursor:default}
 
 /* ============================================================
