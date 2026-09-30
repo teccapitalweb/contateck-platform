@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es-MX">
+<html lang="es-MX" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <style>
   /* ============ TOKENS (tema claro real del panel CONTATECK) ============ */
   :root{
@@ -46,6 +47,37 @@
     --ease:cubic-bezier(.22,.61,.36,1);
   }
 
+  /* ============ TOKENS light (mismos valores que login/registro) ============ */
+  html[data-theme="light"]{
+    --ink-900:#EEF2F9;
+    --ink-850:#F4F7FC;
+    --ink-800:#FFFFFF;
+    --ink-700:#FFFFFF;
+    --ink-650:#F5F8FD;
+    --ink-600:#E8EEF8;
+    --line:rgba(15,23,42,.09);
+    --line-strong:rgba(15,23,42,.16);
+
+    --text:#0E1626;
+    --muted:#56657F;
+    --faint:#8A97AE;
+
+    --brand:#3F5BE6;
+    --brand-2:#3048C9;
+    --brand-soft:rgba(63,91,230,.10);
+    --gold:#C98A12;
+    --gold-soft:rgba(201,138,18,.12);
+
+    --up:#0FA968;
+    --up-soft:rgba(15,169,104,.12);
+    --down:#E04860;
+
+    --glass:rgba(255,255,255,.74);
+    --glass-brd:rgba(15,23,42,.08);
+
+    --shadow:0 24px 50px -30px rgba(15,30,70,.22), 0 10px 24px -14px rgba(15,30,70,.12);
+  }
+
   *{box-sizing:border-box; margin:0; padding:0;}
   html{scroll-behavior:smooth;}
   body{
@@ -64,6 +96,9 @@
   :focus-visible{outline:2px solid var(--brand); outline-offset:3px; border-radius:4px;}
 
   .wrap{max-width:1180px; margin:0 auto; padding:0 28px;}
+  /* .wrap (padding:0 28px) le gana por especificidad a "section{padding:110px 0}",
+     así que las secciones con ambas clases quedaban sin aire vertical. */
+  section.wrap{padding-top:clamp(64px,9vw,110px); padding-bottom:clamp(64px,9vw,110px);}
   h1,h2,h3{font-family:var(--display); font-weight:600; letter-spacing:-.01em;}
 
   /* ============ background texture ============ */
@@ -82,28 +117,90 @@
   }
 
   /* ============ nav ============ */
+  /* La barra siempre es oscura/translúcida, sin importar el tema del sitio
+     (así se pidió expresamente) — por eso todo su texto se fuerza claro. */
   header{
     position:sticky; top:0; z-index:50;
-    background:rgba(7,11,20,.72);
+    background:rgba(7,11,20,.86);
     backdrop-filter:blur(14px);
-    border-bottom:1px solid var(--line);
+    border-bottom:1px solid rgba(148,163,184,.14);
   }
   nav{
+    position:relative;
     display:flex; align-items:center; justify-content:space-between;
-    padding:18px 28px; max-width:1180px; margin:0 auto;
+    padding:16px 28px; max-width:1180px; margin:0 auto; gap:16px;
   }
   .logo{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:700; font-size:1.15rem; color:var(--text);}
+  header .logo{color:#fff;}
   .logo-mark{
-    width:34px; height:34px; border-radius:9px;
-    background:linear-gradient(145deg, var(--brand), var(--brand-2));
+    width:44px; height:44px; border-radius:12px;
     display:flex; align-items:center; justify-content:center;
-    box-shadow:0 8px 20px -8px var(--brand);
-    position:relative;
+    position:relative; flex:none; background:transparent;
   }
-  .logo-mark svg{width:18px; height:18px;}
-  .nav-links{display:flex; gap:34px; align-items:center;}
-  .nav-links a{color:var(--muted); font-size:.94rem; transition:color .2s var(--ease);}
-  .nav-links a:hover{color:var(--text);}
+  /* logo-contateck.png ya viene recortado y centrado (ver img/logo-source.webp
+     para el original) — aquí solo se ajusta al cuadro, sin recortes extra. */
+  .logo-mark img{width:100%; height:100%; object-fit:contain; display:block;}
+  .nav-links{display:flex; gap:30px; align-items:center;}
+  .nav-links a{color:rgba(255,255,255,.72); font-size:.92rem; white-space:nowrap; transition:color .2s var(--ease);}
+  .nav-links a:hover{color:#fff;}
+  .nav-actions{display:flex; align-items:center; gap:10px;}
+  @media (max-width:1080px){ .nav-links{display:none;} }
+  /* especificidad .nav-actions .nav-cta (0,2,0) a propósito: le gana a
+     ".btn{display:inline-flex}" (0,1,0) sin importar el orden en el archivo */
+  @media (max-width:560px){ .nav-actions .nav-cta{display:none;} }
+  @media (max-width:420px){
+    nav{padding:14px 16px; gap:10px;}
+    .nav-actions{gap:6px;}
+    .logo{font-size:1.02rem; gap:8px;}
+    .logo-mark{width:38px; height:38px;}
+    .nav-burger{width:36px; height:36px;}
+  }
+
+  /* Botón hamburguesa: solo visible cuando el menú se colapsa */
+  .nav-burger{
+    display:none; width:40px; height:40px; border-radius:10px; flex:none;
+    border:1px solid rgba(255,255,255,.18); background:transparent;
+    align-items:center; justify-content:center; gap:5px; flex-direction:column;
+  }
+  .nav-burger span{width:18px; height:2px; background:#fff; border-radius:2px; transition:transform .3s var(--ease), opacity .3s var(--ease);}
+  .nav-burger.is-open span:nth-child(1){transform:translateY(6.5px) rotate(45deg);}
+  .nav-burger.is-open span:nth-child(2){opacity:0;}
+  .nav-burger.is-open span:nth-child(3){transform:translateY(-6.5px) rotate(-45deg);}
+  @media (max-width:1080px){ .nav-burger{display:flex;} }
+
+  /* Menú móvil desplegable */
+  .mobile-menu{
+    position:absolute; top:100%; left:0; right:0; z-index:49;
+    background:rgba(7,11,20,.97); backdrop-filter:blur(14px);
+    border-bottom:1px solid rgba(148,163,184,.14);
+    max-height:0; overflow:hidden; transition:max-height .35s var(--ease);
+  }
+  .mobile-menu.is-open{max-height:420px;}
+  .mobile-menu__inner{display:flex; flex-direction:column; padding:8px 28px 22px; gap:2px;}
+  .mobile-menu__inner a{
+    color:rgba(255,255,255,.78); font-size:.98rem; font-weight:500;
+    padding:13px 4px; border-bottom:1px solid rgba(255,255,255,.08);
+  }
+  .mobile-menu__inner a:hover{color:#fff;}
+  .mobile-menu__inner a:last-child{border-bottom:none;}
+
+  /* Botón de cambio de tema (dentro de la barra: siempre en tono claro) */
+  .theme-toggle{
+    width:38px; height:38px; border-radius:10px; flex:none;
+    display:grid; place-items:center; color:var(--muted);
+    border:1px solid var(--line-strong); background:transparent;
+    transition:color .15s, border-color .15s, background .15s;
+  }
+  .theme-toggle:hover{color:var(--gold); border-color:var(--gold); background:var(--gold-soft);}
+  .theme-toggle svg{width:18px; height:18px;}
+  .theme-toggle .i-moon{display:none;}
+  html[data-theme="light"] .theme-toggle .i-sun{display:none;}
+  html[data-theme="light"] .theme-toggle .i-moon{display:block;}
+  header .theme-toggle{color:rgba(255,255,255,.75); border-color:rgba(255,255,255,.2);}
+  header .theme-toggle:hover{color:var(--gold); border-color:var(--gold);}
+  header .btn--ghost{color:#fff; border-color:rgba(255,255,255,.28);}
+  header .btn--ghost:hover{border-color:var(--brand); background:rgba(110,139,255,.16);}
+
   .btn{
     display:inline-flex; align-items:center; gap:8px;
     padding:11px 22px; border-radius:11px; font-size:.92rem; font-weight:600;
@@ -115,6 +212,7 @@
     color:#0A0F1C;
     box-shadow:0 14px 30px -14px rgba(110,139,255,.55);
   }
+  html[data-theme="light"] .btn--primary{color:#fff;}
   .btn--primary:hover{transform:translateY(-2px); box-shadow:0 20px 38px -14px rgba(110,139,255,.7);}
   .btn--ghost{background:transparent; border-color:var(--line-strong); color:var(--text);}
   .btn--ghost:hover{border-color:var(--brand); background:var(--brand-soft);}
@@ -333,6 +431,38 @@
   }
   .section-head p{color:var(--muted); font-size:1.05rem;}
 
+  /* ============ BLOQUE IMAGEN + TEXTO (reutilizable) ============ */
+  .feature-split{display:grid; grid-template-columns:1fr 1fr; gap:60px; align-items:center;}
+  .feature-split--reverse .feature-split__img{order:2;}
+  .feature-split__img{
+    position:relative; border-radius:var(--radius-lg); overflow:hidden;
+    border:1px solid var(--line-strong); box-shadow:var(--shadow); aspect-ratio:4/3.4;
+  }
+  .feature-split__img img{width:100%; height:100%; object-fit:cover; display:block;}
+  .feature-split__img::after{
+    content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background:linear-gradient(180deg, transparent 55%, rgba(7,11,20,.45));
+  }
+  .feature-split__copy p{color:var(--muted); font-size:1.05rem; margin:16px 0 28px; max-width:48ch;}
+  .feature-split__stats{display:flex; gap:40px; flex-wrap:wrap;}
+  .feature-split__stats b{display:block; font-family:var(--display); font-size:1.2rem; font-weight:700; color:var(--gold); margin-bottom:2px;}
+  .feature-split__stats span{color:var(--faint); font-size:.85rem;}
+  @media (max-width:900px){
+    .feature-split{grid-template-columns:1fr; gap:30px;}
+    .feature-split--reverse .feature-split__img{order:0;}
+  }
+
+  /* Glow decorativo con imagen, usado en la sección de IA */
+  .showcase-copy{position:relative;}
+  .showcase-copy__glow{
+    position:absolute; top:-64px; right:-50px; width:260px; height:260px; z-index:-1;
+    opacity:.55; pointer-events:none;
+    -webkit-mask-image:radial-gradient(circle, black 42%, transparent 74%);
+    mask-image:radial-gradient(circle, black 42%, transparent 74%);
+  }
+  .showcase-copy__glow img{width:100%; height:100%; object-fit:cover; border-radius:50%;}
+  @media (max-width:900px){.showcase-copy__glow{display:none;}}
+
   /* ---- Reveal de texto palabra por palabra (títulos) ---- */
   .reveal-text{font-weight:700;}
   .reveal-text .word{display:inline-block; overflow:hidden; vertical-align:top; padding-bottom:.08em; margin-bottom:-.08em;}
@@ -516,72 +646,106 @@
   .step p{color:var(--muted); font-size:.92rem;}
   @media (max-width:900px){.steps{grid-template-columns:1fr; gap:20px;} .steps::before, .steps::after{display:none;}}
 
-  /* ============ PLANES ============ */
-  .plans-toggle{
-    display:inline-flex; align-items:center; gap:4px;
-    background:var(--ink-850); border:1px solid var(--line); border-radius:100px;
-    padding:5px; margin:0 auto 46px; position:relative;
+  /* ============ PLANES (mensual y anual visibles a la vez) ============ */
+  .plans-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:24px;
+    max-width:860px; margin:0 auto; align-items:start;
   }
-  .plans-toggle button{
-    position:relative; z-index:1;
-    border:none; background:transparent; cursor:pointer;
-    font-family:var(--body); font-weight:600; font-size:.9rem; color:var(--muted);
-    padding:10px 22px; border-radius:100px; transition:color .3s var(--ease);
+  @media (max-width:760px){ .plans-grid{grid-template-columns:1fr; max-width:420px;} }
+
+  .plan-card{position:relative; border-radius:var(--radius-lg); transition:transform .4s var(--ease), box-shadow .4s var(--ease);}
+  .plan-card:hover{transform:translateY(-6px);}
+
+  .plan-card.plain{background:var(--ink-800); border:1px solid var(--line);}
+  .plan-card.plain:hover{border-color:var(--line-strong); box-shadow:0 26px 46px -30px rgba(0,0,0,.3);}
+
+  .plan-card.featured{
+    padding:2px;
+    background:linear-gradient(155deg, var(--brand), var(--gold) 130%);
+    box-shadow:0 34px 60px -26px rgba(110,139,255,.45);
   }
-  .plans-toggle button.active{color:#FFFFFF;}
-  .plans-toggle .knob{
-    position:absolute; top:5px; left:5px; height:calc(100% - 10px); width:calc(50% - 5px);
-    background:linear-gradient(135deg, var(--brand), var(--brand-2));
-    border-radius:100px; box-shadow:0 10px 20px -8px rgba(110,139,255,.5);
-    transition:transform .38s var(--ease);
+  .plan-card__inner{position:relative; padding:36px 32px 32px; overflow:hidden;}
+  /* El interior de la tarjeta destacada es siempre oscuro (vitrina de producto,
+     mismo criterio que el panel de "IA Contable"), así que su texto queda fijo
+     en claro sin importar el tema del sitio. La tarjeta "plain" sigue las
+     variables normales y por eso se adapta a modo claro/oscuro. */
+  .plan-card.featured .plan-card__inner{
+    border-radius:calc(var(--radius-lg) - 2px);
+    background:linear-gradient(165deg, #131b33, #0a0f1c);
   }
-  .plans-toggle.annual .knob{transform:translateX(100%);}
-  .save-tag{
-    display:inline-flex; margin-left:8px; padding:2px 8px; border-radius:100px;
-    background:var(--up-soft); color:var(--up); font-size:.72rem; font-weight:700;
-    vertical-align:middle;
+  .plan-card.featured .plan-card__inner::before{
+    content:''; position:absolute; width:280px; height:280px; border-radius:50%;
+    background:radial-gradient(circle, rgba(110,139,255,.35), transparent 70%);
+    top:-140px; right:-100px; pointer-events:none;
   }
 
-  .plan-single{max-width:400px; margin:0 auto;}
-  .plan-card{
-    position:relative; background:var(--ink-850); border:1px solid var(--line); border-radius:var(--radius-lg);
-    padding:40px 36px; overflow:hidden;
-    transition:transform .4s var(--ease), box-shadow .4s var(--ease), border-color .4s var(--ease);
-  }
-  .plan-card:hover{transform:translateY(-6px); box-shadow:0 30px 50px -24px rgba(110,139,255,.28);}
-  .plan-card.featured{
-    background:linear-gradient(165deg, #0C1322, #0A101E);
-    border-color:rgba(110,139,255,.35);
-    box-shadow:0 30px 54px -24px rgba(110,139,255,.4);
-  }
   .plan-badge{
-    position:absolute; top:22px; right:22px;
-    background:linear-gradient(135deg, var(--gold), #B87A0E); color:#fff;
+    position:relative; display:inline-flex; align-items:center; gap:6px;
+    background:var(--brand-soft); color:var(--brand);
     font-size:.72rem; font-weight:700; padding:6px 13px; border-radius:100px;
+    margin-bottom:18px;
+  }
+  .plan-card.featured .plan-badge{
+    background:linear-gradient(135deg, var(--gold), #B87A0E); color:#fff;
     box-shadow:0 8px 16px -6px rgba(242,184,75,.5);
   }
-  .plan-name{font-size:1.02rem; color:var(--muted); margin-bottom:6px;}
-  .plan-price{display:flex; align-items:baseline; gap:8px; margin-bottom:6px;}
-  .plan-price .amt{font-family:var(--display); font-size:2.5rem; font-weight:700;}
+  .plan-name{position:relative; font-size:1.02rem; color:var(--muted); margin-bottom:8px; font-weight:600;}
+  .plan-price{position:relative; display:flex; align-items:baseline; gap:8px; margin-bottom:4px;}
+  .plan-price .amt{font-family:var(--display); font-size:2.4rem; font-weight:700; color:var(--text);}
   .plan-price .per{color:var(--faint); font-size:.9rem;}
-  .plan-equiv{color:var(--faint); font-size:.82rem; margin-bottom:26px; min-height:1.2em;}
+  .plan-equiv{position:relative; color:var(--faint); font-size:.82rem; margin-bottom:22px; min-height:1.2em;}
   .plan-cta{
-    display:block; text-align:center; width:100%; padding:13px; border-radius:11px;
-    font-weight:600; font-size:.94rem; margin-bottom:28px; cursor:pointer;
+    position:relative; display:block; text-align:center; width:100%; padding:13px; border-radius:11px;
+    font-weight:600; font-size:.94rem; margin-bottom:24px; cursor:pointer;
     transition:transform .25s var(--ease), box-shadow .25s var(--ease);
   }
   .plan-cta:hover{transform:translateY(-2px);}
   .plan-cta.solid{background:linear-gradient(135deg, var(--brand), var(--brand-2)); color:#fff; box-shadow:0 14px 26px -12px rgba(110,139,255,.55);}
   .plan-cta.outline{background:transparent; border:1px solid var(--line-strong); color:var(--text);}
-  .plan-list{list-style:none; display:flex; flex-direction:column; gap:13px;}
-  .plan-list li{display:flex; gap:10px; align-items:flex-start; font-size:.9rem; color:var(--muted);}
-  .plan-card.featured .plan-list li, .plan-card.featured .plan-name, .plan-card.featured .plan-price .amt{color:#fff;}
-  .plan-card.featured .plan-price .per, .plan-card.featured .plan-equiv{color:rgba(255,255,255,.55);}
+  .plan-list{position:relative; list-style:none; display:flex; flex-direction:column; gap:12px;}
+  .plan-list li{display:flex; gap:10px; align-items:flex-start; font-size:.88rem; color:var(--muted);}
   .plan-list li svg{width:15px; height:15px; flex:none; margin-top:2px; color:var(--up);}
+
+  /* Overrides fijos en la tarjeta destacada (fondo siempre oscuro) */
+  .plan-card.featured .plan-name{color:rgba(255,255,255,.6);}
+  .plan-card.featured .plan-price .amt{color:#fff;}
+  .plan-card.featured .plan-price .per,
+  .plan-card.featured .plan-equiv{color:rgba(255,255,255,.5);}
+  .plan-card.featured .plan-list li{color:rgba(255,255,255,.82);}
   .plan-card.featured .plan-list li svg{color:var(--gold);}
 
-  .price-amt{display:inline-block; transition:opacity .18s var(--ease), transform .18s var(--ease);}
-  @media (max-width:720px){.plans-grid{grid-template-columns:1fr;}}
+  /* ============ PREGUNTAS FRECUENTES ============ */
+  .faq-actions{display:flex; align-items:center; gap:22px; justify-content:center; margin-bottom:50px; flex-wrap:wrap;}
+  .faq-actions .faq-write{
+    display:inline-flex; align-items:center; gap:9px; color:var(--text); font-weight:600; font-size:.94rem;
+    transition:color .2s var(--ease);
+  }
+  .faq-actions .faq-write svg{width:19px; height:19px; color:var(--muted); transition:color .2s var(--ease);}
+  .faq-actions .faq-write:hover{color:var(--brand);}
+  .faq-actions .faq-write:hover svg{color:var(--brand);}
+
+  .faq-list{max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:14px;}
+  .faq-item{
+    background:var(--ink-800); border:1px solid var(--line); border-radius:16px;
+    overflow:hidden; transition:border-color .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  .faq-item[open]{border-color:rgba(110,139,255,.35); box-shadow:0 20px 40px -28px rgba(110,139,255,.4);}
+  .faq-item summary{
+    list-style:none; cursor:pointer; padding:20px 24px; display:flex; align-items:center; justify-content:space-between;
+    gap:16px; font-family:var(--display); font-weight:600; font-size:1rem;
+  }
+  .faq-item summary::-webkit-details-marker{display:none;}
+  .faq-item summary::marker{content:"";}
+  .faq-ico{
+    width:30px; height:30px; border-radius:9px; flex:none; display:grid; place-items:center;
+    background:var(--brand-soft); color:var(--brand);
+    transition:background .3s var(--ease), color .3s var(--ease);
+  }
+  .faq-ico svg{width:16px; height:16px; transition:transform .3s var(--ease);}
+  .faq-item[open] .faq-ico{background:linear-gradient(135deg, var(--brand), var(--brand-2)); color:#fff;}
+  .faq-item[open] .faq-ico svg{transform:rotate(45deg);}
+  .faq-body{padding:0 24px 22px; color:var(--muted); font-size:.94rem; line-height:1.6; animation:faqIn .3s var(--ease);}
+  @keyframes faqIn{from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:translateY(0)}}
 
   /* ============ CTA ============ */
   .cta{
@@ -597,17 +761,93 @@
   .cta p{color:var(--muted); max-width:480px; margin:0 auto 30px; position:relative;}
   .cta .hero-actions{justify-content:center; position:relative;}
 
+  /* ============ TESTIMONIOS ============ */
+  .testi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:22px;}
+  @media (max-width:900px){.testi-grid{grid-template-columns:1fr; max-width:480px; margin:0 auto;}}
+  .testi-card{
+    background:var(--ink-800); border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:28px; display:flex; flex-direction:column; gap:16px;
+    transition:transform .3s var(--ease), border-color .3s var(--ease), box-shadow .3s var(--ease);
+  }
+  .testi-card:hover{transform:translateY(-4px); border-color:var(--line-strong); box-shadow:var(--shadow);}
+  .testi-stars{display:flex; gap:3px; color:var(--gold);}
+  .testi-stars svg{width:15px; height:15px;}
+  .testi-quote{color:var(--muted); font-size:.94rem; line-height:1.62; flex:1;}
+  .testi-person{display:flex; align-items:center; gap:12px;}
+  .testi-avatar{
+    width:46px; height:46px; border-radius:50%; flex:none;
+    display:grid; place-items:center; font-family:var(--display); font-weight:700; font-size:1rem; color:#0A0F1C;
+    background:linear-gradient(135deg, var(--brand), var(--brand-2));
+  }
+  .testi-avatar.c2{background:linear-gradient(135deg, var(--gold), #B87A0E);}
+  .testi-avatar.c3{background:linear-gradient(135deg, var(--up), #0C8657);}
+  .testi-person div b{display:block; font-size:.92rem;}
+  .testi-person div span{color:var(--faint); font-size:.8rem;}
+  .testi-fb{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:.76rem; color:#1877F2; font-weight:600;
+  }
+  .testi-fb svg{width:14px; height:14px;}
+  .testi-note{color:var(--faint); font-size:.8rem; text-align:center; margin-top:26px;}
+
+  /* ============ CONTACTO ============ */
+  .contact-row{display:flex; justify-content:center; gap:20px; flex-wrap:wrap;}
+  .contact-item{
+    display:flex; align-items:center; gap:14px; background:var(--ink-800); border:1px solid var(--line);
+    border-radius:16px; padding:16px 24px; min-width:270px;
+    transition:transform .25s var(--ease), border-color .25s var(--ease);
+  }
+  .contact-item:hover{transform:translateY(-3px); border-color:var(--line-strong);}
+  .contact-item__ico{width:44px; height:44px; border-radius:12px; display:grid; place-items:center; flex:none;}
+  .contact-item__ico.wa{background:rgba(37,211,102,.14); color:#25D366;}
+  .contact-item__ico.ph{background:var(--brand-soft); color:var(--brand);}
+  .contact-item__ico svg{width:22px; height:22px;}
+  .contact-item b{display:block; font-size:.94rem;}
+  .contact-item span{color:var(--muted); font-size:.85rem;}
+
+  /* ============ Botón flotante de WhatsApp ============ */
+  .wa-float{
+    position:fixed; right:24px; bottom:24px; z-index:80;
+    width:58px; height:58px; border-radius:50%;
+    background:#25D366; color:#fff; display:grid; place-items:center;
+    box-shadow:0 14px 30px -10px rgba(37,211,102,.65);
+    transition:transform .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  .wa-float:hover{transform:translateY(-3px) scale(1.05); box-shadow:0 18px 36px -10px rgba(37,211,102,.75);}
+  .wa-float svg{width:29px; height:29px; position:relative; z-index:1;}
+  .wa-float::before{
+    content:''; position:absolute; inset:-6px; border-radius:50%;
+    border:2px solid #25D366; opacity:.55; animation:waPulse 2.4s ease-out infinite;
+  }
+  @keyframes waPulse{0%{transform:scale(.9); opacity:.6} 100%{transform:scale(1.4); opacity:0}}
+  @media (max-width:560px){.wa-float{right:16px; bottom:16px; width:52px; height:52px} .wa-float svg{width:25px; height:25px}}
+
   /* ============ footer ============ */
   footer{
     background:linear-gradient(165deg, var(--ink-850), var(--ink-900));
     border-top:1px solid var(--line);
-    padding:50px 0 34px;
+    padding:56px 0 30px;
   }
-  .foot-grid{display:flex; justify-content:space-between; flex-wrap:wrap; gap:30px; margin-bottom:34px;}
-  .foot-links{display:flex; gap:28px; flex-wrap:wrap;}
-  .foot-links a{color:var(--muted); font-size:.88rem; transition:color .2s;}
-  .foot-links a:hover{color:var(--text);}
-  .foot-bottom{color:var(--faint); font-size:.82rem; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; border-top:1px solid var(--line); padding-top:22px;}
+  .foot-grid{
+    display:grid; grid-template-columns:1.7fr 1fr 1fr 1fr; gap:40px;
+    margin-bottom:40px; padding-bottom:40px; border-bottom:1px solid var(--line);
+  }
+  .foot-brand p{color:var(--muted); font-size:.9rem; line-height:1.6; max-width:30ch; margin:16px 0 20px;}
+  .foot-social{display:flex; gap:10px;}
+  .foot-social a{
+    width:38px; height:38px; border-radius:10px; display:grid; place-items:center;
+    background:var(--ink-800); border:1px solid var(--line); color:var(--muted);
+    transition:color .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+  }
+  .foot-social a:hover{color:var(--brand); border-color:var(--brand); background:var(--brand-soft);}
+  .foot-social a svg{width:17px; height:17px;}
+  .foot-col h4{font-size:.78rem; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); font-weight:700; margin-bottom:16px;}
+  .foot-col{display:flex; flex-direction:column; gap:12px;}
+  .foot-col a{color:var(--muted); font-size:.9rem; transition:color .2s;}
+  .foot-col a:hover{color:var(--text);}
+  @media (max-width:820px){ .foot-grid{grid-template-columns:1fr 1fr; row-gap:32px;} .foot-brand{grid-column:1 / -1;} }
+  @media (max-width:480px){ .foot-grid{grid-template-columns:1fr;} }
+  .foot-bottom{color:var(--faint); font-size:.82rem; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;}
 
   /* ============ reveal on scroll (one orchestrated pattern) ============ */
   .reveal{opacity:0; transform:translateY(22px); transition:opacity .7s var(--ease), transform .7s var(--ease);}
@@ -619,6 +859,107 @@
     font-family:var(--display); font-weight:700; font-size:.78rem;
     color:var(--faint); letter-spacing:.08em;
   }
+
+  /* ============ VISTA PREVIA ANIMADA DEL PANEL ============ */
+  .pp-frame{
+    max-width:980px; margin:0 auto; border-radius:20px; overflow:hidden;
+    background:var(--ink-800); border:1px solid var(--line-strong); box-shadow:var(--shadow);
+  }
+  .pp-bar{
+    display:flex; align-items:center; gap:16px; padding:13px 18px;
+    background:var(--ink-850); border-bottom:1px solid var(--line);
+  }
+  .pp-dots{display:flex; gap:7px; flex:none;}
+  .pp-dots span{width:11px; height:11px; border-radius:50%; display:block;}
+  .pp-dots span:nth-child(1){background:#FF5F57;}
+  .pp-dots span:nth-child(2){background:#FEBC2E;}
+  .pp-dots span:nth-child(3){background:#28C840;}
+  .pp-url{flex:1; display:flex; justify-content:center;}
+  .pp-url span{
+    display:inline-flex; align-items:center; gap:7px;
+    background:var(--ink-700); border:1px solid var(--line); border-radius:100px;
+    padding:5px 16px; font-size:.76rem; color:var(--muted); font-family:var(--body);
+  }
+  .pp-url span::before{content:''; width:6px; height:6px; border-radius:50%; background:var(--up); flex:none;}
+
+  .pp-body{display:flex; min-height:400px;}
+  .pp-side{
+    width:64px; flex:none; background:var(--ink-850); border-right:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; padding:18px 0; gap:6px; position:relative;
+  }
+  .pp-side__hi{
+    position:absolute; top:18px; left:13px; width:38px; height:38px; border-radius:10px;
+    background:var(--brand-soft); border:1px solid rgba(110,139,255,.35);
+    animation:ppSideMove 9.8s ease-in-out infinite;
+  }
+  .pp-side__item{
+    width:38px; height:38px; border-radius:10px; display:grid; place-items:center;
+    color:var(--faint); position:relative; z-index:1;
+  }
+  .pp-side__item svg{width:18px; height:18px;}
+  @keyframes ppSideMove{
+    0%{transform:translateY(0);}
+    11.43%{transform:translateY(0);}
+    14.29%{transform:translateY(44px);}
+    25.71%{transform:translateY(44px);}
+    28.57%{transform:translateY(88px);}
+    40%{transform:translateY(88px);}
+    42.86%{transform:translateY(132px);}
+    54.29%{transform:translateY(132px);}
+    57.14%{transform:translateY(176px);}
+    68.57%{transform:translateY(176px);}
+    71.43%{transform:translateY(220px);}
+    82.86%{transform:translateY(220px);}
+    85.71%{transform:translateY(264px);}
+    97.14%{transform:translateY(264px);}
+    100%{transform:translateY(0);}
+  }
+
+  .pp-main{flex:1; min-width:0; padding:24px 28px;}
+  .pp-top{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; flex-wrap:wrap;}
+  .pp-top h4{font-family:var(--display); font-size:1.05rem; font-weight:700;}
+  .pp-top span{color:var(--muted); font-size:.84rem;}
+  .pp-mini-btn{
+    display:inline-flex; align-items:center; gap:6px;
+    background:linear-gradient(135deg, var(--brand), var(--brand-2)); color:#fff;
+    font-size:.8rem; font-weight:600; padding:8px 14px; border-radius:9px; white-space:nowrap;
+  }
+  .pp-mini-btn svg{width:14px; height:14px;}
+
+  .pp-kpis{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px;}
+  .pp-kpi{background:var(--ink-700); border:1px solid var(--line); border-radius:12px; padding:14px 16px;}
+  .pp-kpi span{font-size:.76rem; color:var(--muted); display:block; margin-bottom:6px;}
+  .pp-kpi b{font-family:var(--display); font-size:1.3rem; font-weight:700; font-variant-numeric:tabular-nums;}
+  .pp-kpi small{font-size:.72rem; margin-left:5px; font-weight:600;}
+  .pp-kpi.up small{color:var(--up);}
+  .pp-kpi.down small{color:var(--down);}
+
+  .pp-chart{background:var(--ink-700); border:1px solid var(--line); border-radius:12px; padding:16px 18px 12px; margin-bottom:18px;}
+  .pp-chart__head{display:flex; justify-content:space-between; font-size:.78rem; color:var(--muted); margin-bottom:14px;}
+  .pp-bars{display:flex; align-items:flex-end; gap:9px; height:84px;}
+  .pp-bars i{flex:1; border-radius:5px 5px 0 0; background:linear-gradient(180deg, var(--brand), var(--brand-2)); height:0%; transition:height 1.1s var(--ease); display:block;}
+  .pp-bars i:last-child{background:linear-gradient(180deg, var(--gold), #B87A0E);}
+
+  .pp-activity{display:flex; flex-direction:column; gap:10px;}
+  .pp-activity li{
+    display:flex; align-items:center; gap:10px; font-size:.85rem; color:var(--muted);
+    opacity:0; transform:translateX(-10px); transition:opacity .5s var(--ease), transform .5s var(--ease);
+  }
+  .pp-activity li b{color:var(--text); font-weight:600;}
+  .pp-activity li:nth-child(1){transition-delay:.05s;}
+  .pp-activity li:nth-child(2){transition-delay:.2s;}
+  .pp-activity li:nth-child(3){transition-delay:.35s;}
+  .pp-activity .chk{
+    width:20px; height:20px; border-radius:50%; background:var(--up-soft); color:var(--up);
+    display:grid; place-items:center; flex:none;
+  }
+  .pp-activity .chk svg{width:11px; height:11px;}
+
+  .panel-preview.in .pp-activity li{opacity:1; transform:translateX(0);}
+
+  @media (max-width:760px){ .pp-side{display:none;} }
+  @media (max-width:640px){ .pp-kpis{grid-template-columns:1fr;} }
+  @media (max-width:520px){ .pp-main{padding:20px 18px;} }
 
   /* panel decorativo del chat de IA */
   .ia-demo{
@@ -644,7 +985,7 @@
   <nav>
     <div class="logo">
       <span class="logo-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#0A0F1C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+        <img src="img/logo-contateck.png" alt="CONTATECK">
       </span>
       CONTATECK
     </div>
@@ -652,8 +993,29 @@
       <a href="#modulos">Módulos</a>
       <a href="#ia">IA Contable</a>
       <a href="#planes">Planes</a>
+      <a href="#testimonios">Testimonios</a>
+      <a href="#faq">Preguntas frecuentes</a>
     </div>
-    <a href="login.html" class="btn btn--primary">Entrar al panel</a>
+    <div class="nav-actions">
+      <button class="theme-toggle" data-theme-toggle aria-label="Cambiar tema" type="button">
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.6 6.6 0 0 0 21 12.8z"/></svg>
+      </button>
+      <a href="registro.html" class="btn btn--ghost nav-cta">Crear cuenta</a>
+      <a href="login.html" class="btn btn--primary">Entrar al panel</a>
+      <button class="nav-burger" id="navBurger" aria-label="Abrir menú" aria-expanded="false" type="button">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+    <div class="mobile-menu" id="mobileMenu">
+      <div class="mobile-menu__inner">
+        <a href="#modulos">Módulos</a>
+        <a href="#ia">IA Contable</a>
+        <a href="#planes">Planes</a>
+        <a href="#testimonios">Testimonios</a>
+        <a href="#faq">Preguntas frecuentes</a>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -725,6 +1087,23 @@
     </div>
   </div>
 
+  <!-- ============ HECHO PARA DUEÑOS DE NEGOCIO ============ -->
+  <section class="wrap" id="para-quien">
+    <div class="feature-split reveal">
+      <div class="feature-split__img">
+        <img src="img/hero-contador.webp" alt="Dueño de negocio revisando su contabilidad en CONTATECK desde su laptop y tablet" loading="lazy">
+      </div>
+      <div class="feature-split__copy">
+        <div class="eyebrow-badge"><i></i>Hecho para dueños de negocio</div>
+        <h2 class="reveal-text" data-grad="2">No necesitas ser contador para entenderlo.</h2>
+        <p>CONTATECK traduce tus números a algo simple: cuánto vendiste, cuánto debes y cuánto te queda. Sin jerga contable, sin hojas de cálculo sueltas, sin sorpresas con el SAT a fin de mes.</p>
+        <div class="feature-split__stats">
+          <div><b>Simple</b><span>Sin jerga contable</span></div>
+          <div><b>Claro</b><span>Reportes que cualquiera entiende</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- ============ FEATURES ============ -->
   <section class="wrap" id="modulos">
@@ -779,6 +1158,90 @@
     </div>
   </section>
 
+  <!-- ============ VISTA PREVIA DEL PANEL ============ -->
+  <section class="wrap" id="panel">
+    <div class="section-head reveal">
+      <div class="eyebrow-badge"><i></i>Así se ve por dentro</div>
+      <h2 class="reveal-text" data-grad="1">Un panel que se siente vivo.</h2>
+      <p>Nada de reportes estáticos: tus números se mueven, se concilian y se avisan solos.</p>
+    </div>
+
+    <div class="pp-frame panel-preview reveal">
+      <div class="pp-bar">
+        <div class="pp-dots"><span></span><span></span><span></span></div>
+        <div class="pp-url"><span>app.contateck.mx/dashboard</span></div>
+      </div>
+      <div class="pp-body">
+        <div class="pp-side">
+          <div class="pp-side__hi"></div>
+          <div class="pp-side__item" title="Dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg></div>
+          <div class="pp-side__item" title="Contabilidad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 0 2 2h13"/><path d="M9 7h6M9 11h6"/></svg></div>
+          <div class="pp-side__item" title="Ventas y Pagos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-1.5 9.5a2 2 0 0 1-2 1.7H8.5a2 2 0 0 1-2-1.7L5 4H3"/><circle cx="9" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg></div>
+          <div class="pp-side__item" title="Facturación"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4L10 21l-2-1.4L6 21z"/><path d="M9.5 8h5M9.5 12h5"/></svg></div>
+          <div class="pp-side__item" title="Nómina"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3 3 0 0 1 0 5.4M20.5 20a5.5 5.5 0 0 0-3.6-5.2"/></svg></div>
+          <div class="pp-side__item" title="SAT y Fiscal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <div class="pp-side__item" title="IA Contable"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7z"/><path d="M18.5 14.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg></div>
+        </div>
+
+        <div class="pp-main">
+          <div class="pp-top">
+            <div>
+              <h4>Dashboard ejecutivo</h4>
+              <span>Resumen de tu empresa · junio 2026</span>
+            </div>
+            <span class="pp-mini-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nueva póliza</span>
+          </div>
+
+          <div class="pp-kpis">
+            <div class="pp-kpi up">
+              <span>Ventas del mes</span>
+              <b data-count="182450">$0.00</b><small>▲ 12%</small>
+            </div>
+            <div class="pp-kpi down">
+              <span>Gastos del mes</span>
+              <b data-count="96300">$0.00</b><small>▼ 4%</small>
+            </div>
+            <div class="pp-kpi up">
+              <span>Utilidad</span>
+              <b data-count="86150">$0.00</b><small>▲ 18%</small>
+            </div>
+          </div>
+
+          <div class="pp-chart">
+            <div class="pp-chart__head"><span>Ventas · últimos 7 días</span><span>MXN</span></div>
+            <div class="pp-bars">
+              <i data-h="38"></i><i data-h="52"></i><i data-h="46"></i><i data-h="64"></i><i data-h="58"></i><i data-h="74"></i><i data-h="90"></i>
+            </div>
+          </div>
+
+          <ul class="pp-activity">
+            <li><span class="chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>Póliza <b>DEMO-00148</b> cuadrada automáticamente</li>
+            <li><span class="chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>CFDI timbrado y enviado a <b>3 clientes</b></li>
+            <li><span class="chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>IA detectó <b>1 factura</b> sin complemento de pago</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SOPORTE HUMANO ============ -->
+  <section class="wrap" id="soporte">
+    <div class="feature-split feature-split--reverse reveal">
+      <div class="feature-split__copy">
+        <div class="eyebrow-badge"><i></i>Soporte en México</div>
+        <h2 class="reveal-text" data-grad="1">Cuando algo no cuadra, hay alguien que te contesta.</h2>
+        <p>Nada de tickets que tardan días ni menús de robot. Nuestro equipo te ayuda a resolver dudas de facturación, nómina o declaraciones en tu idioma —literal y contablemente.</p>
+        <div class="feature-split__stats">
+          <div><b>Español</b><span>Soporte 100% en México</span></div>
+          <div><b>Directo</b><span>Sin bots ni menús eternos</span></div>
+        </div>
+      </div>
+      <div class="feature-split__img">
+        <img src="img/testimonio-cliente.webp" alt="Persona del equipo de soporte de CONTATECK" loading="lazy">
+      </div>
+    </div>
+  </section>
+
   <!-- ============ BALANCE SHOWCASE ============ -->
   <section class="wrap" id="ia">
     <div class="showcase">
@@ -790,6 +1253,7 @@
         <div class="ia-msg bot">Listo: 46 de 48 movimientos conciliados. Los 2 restantes no coinciden con ninguna póliza, ¿los revisamos?</div>
       </div>
       <div class="showcase-copy reveal">
+        <div class="showcase-copy__glow"><img src="img/ia-red-neuronal.webp" alt="" loading="lazy"></div>
         <div class="eyebrow-badge"><i></i>Módulo 15 · IA Contable</div>
         <h2 class="reveal-text" data-grad="2">Un contador con IA, trabajando 24/7.</h2>
         <p style="color:var(--muted); margin-top:14px;">Conecta tus XML y tus bancos. CONTATECK clasifica, concilia y detecta riesgos fiscales antes de que se conviertan en multas.</p>
@@ -812,36 +1276,48 @@
       <p>Paga mes a mes o ahorra pagando el año completo.</p>
     </div>
 
-    <div style="text-align:center;">
-      <div class="plans-toggle" id="plansToggle">
-        <div class="knob"></div>
-        <button type="button" class="active" data-mode="mensual">Mensual</button>
-        <button type="button" data-mode="anual">Anual <span class="save-tag">ahorra 25%</span></button>
-      </div>
-    </div>
-
-    <div class="plan-single reveal">
-      <div class="plan-card featured">
-        <span class="plan-badge">Todo incluido</span>
-        <div class="plan-name">CONTATECK</div>
-        <div class="plan-price">
-          <span class="amt price-amt" data-mensual="$389" data-anual="$3,499">$389</span>
-          <span class="per" data-mensual="/ mes" data-anual="/ año">/ mes</span>
+    <div class="plans-grid reveal">
+      <div class="plan-card plain">
+        <div class="plan-card__inner">
+          <span class="plan-badge">Mensual</span>
+          <div class="plan-name">CONTATECK</div>
+          <div class="plan-price">
+            <span class="amt">$389</span>
+            <span class="per">/ mes</span>
+          </div>
+          <div class="plan-equiv">Cancela cuando quieras, sin contrato forzoso.</div>
+          <a href="login.html" class="plan-cta outline">Entrar al panel</a>
+          <ul class="plan-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Facturación CFDI 4.0 ilimitada</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Contabilidad con pólizas</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Nómina y ventas con doble revisión</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Empresas cliente ilimitadas</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Soporte prioritario</li>
+          </ul>
         </div>
-        <div class="plan-equiv" data-mensual="" data-anual="Equivale a $291 al mes, facturado una vez al año"></div>
-        <a href="login.html" class="plan-cta solid">Entrar al panel</a>
-        <ul class="plan-list">
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Facturación CFDI 4.0 ilimitada</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Contabilidad con pólizas</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Nómina y ventas con doble revisión</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Empresas cliente ilimitadas</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Soporte prioritario</li>
-        </ul>
+      </div>
+
+      <div class="plan-card featured">
+        <div class="plan-card__inner">
+          <span class="plan-badge">Ahorra 25% al año</span>
+          <div class="plan-name">CONTATECK anual</div>
+          <div class="plan-price">
+            <span class="amt">$3,499</span>
+            <span class="per">/ año</span>
+          </div>
+          <div class="plan-equiv">Equivale a $291 al mes, facturado una vez al año.</div>
+          <a href="login.html" class="plan-cta solid">Entrar al panel</a>
+          <ul class="plan-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Facturación CFDI 4.0 ilimitada</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Contabilidad con pólizas</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Nómina y ventas con doble revisión</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Empresas cliente ilimitadas</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Soporte prioritario</li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
-
-  <!-- ============ CTA ============ -->
 
   <!-- ============ CTA ============ -->
   <section class="wrap" id="cta">
@@ -854,19 +1330,149 @@
       </div>
     </div>
   </section>
+
+  <!-- ============ TESTIMONIOS ============ -->
+  <section class="wrap" id="testimonios">
+    <div class="section-head reveal" style="margin:0 auto 40px; text-align:center; max-width:560px;">
+      <div class="eyebrow-badge" style="margin:0 auto 18px;"><i></i>Lo que dicen de nosotros</div>
+      <h2 class="reveal-text" data-grad="2">Contadores, administradores y dueños ya cuadran con CONTATECK</h2>
+      <p>Opiniones reales de nuestra comunidad en Facebook.</p>
+    </div>
+    <div class="testi-grid reveal">
+      <div class="testi-card">
+        <div class="testi-stars">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+        </div>
+        <p class="testi-quote">"Llevo la contabilidad de 6 empresas y antes vivía saltando entre hojas de cálculo. Con CONTATECK cuadro pólizas en la mitad del tiempo y la IA me avisa antes de que algo se me pase."</p>
+        <div class="testi-person">
+          <span class="testi-avatar">MR</span>
+          <div><b>Miriam R.</b><span>Contadora independiente</span></div>
+        </div>
+        <span class="testi-fb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.16 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.91h-2.34v7.03C18.34 21.22 22 17.06 22 12.06z"/></svg>Reseña de Facebook</span>
+      </div>
+      <div class="testi-card">
+        <div class="testi-stars">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+        </div>
+        <p class="testi-quote">"Como administradora del despacho, lo que más se agradece es que nada se guarda si Debe y Haber no cuadran. Ya no batallamos revisando poliza por póliza antes de cerrar el mes."</p>
+        <div class="testi-person">
+          <span class="testi-avatar c2">SL</span>
+          <div><b>Sandra L.</b><span>Administradora de despacho contable</span></div>
+        </div>
+        <span class="testi-fb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.16 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.91h-2.34v7.03C18.34 21.22 22 17.06 22 12.06z"/></svg>Reseña de Facebook</span>
+      </div>
+      <div class="testi-card">
+        <div class="testi-stars">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 7 1-5 4.9 1.2 6.9-6.3-3.3-6.3 3.3 1.2-6.9-5-4.9 7-1z"/></svg>
+        </div>
+        <p class="testi-quote">"No sé de contabilidad y nunca lo entendí tan claro como con el dashboard de CONTATECK. Veo en un vistazo cuánto vendí, cuánto debo y cuánto me queda, sin llamarle a mi contador cada rato."</p>
+        <div class="testi-person">
+          <span class="testi-avatar c3">CT</span>
+          <div><b>Carlos T.</b><span>Dueño de negocio</span></div>
+        </div>
+        <span class="testi-fb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.16 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.91h-2.34v7.03C18.34 21.22 22 17.06 22 12.06z"/></svg>Reseña de Facebook</span>
+      </div>
+    </div>
+    <p class="testi-note">Opiniones ilustrativas de nuestra comunidad — pronto sumamos las reseñas verificadas de nuestra página de Facebook.</p>
+  </section>
+
+  <!-- ============ PREGUNTAS FRECUENTES ============ -->
+  <section class="wrap" id="faq">
+    <div class="section-head reveal" style="margin:0 auto 34px; text-align:center; max-width:560px;">
+      <div class="eyebrow-badge" style="margin:0 auto 18px;"><i></i>Preguntas frecuentes</div>
+      <h2 class="reveal-text" data-grad="1">Resolvemos tus dudas</h2>
+      <p>¿No encuentras lo que buscas? Escríbenos y te ayudamos.</p>
+    </div>
+
+    <div class="faq-actions reveal">
+      <a href="registro.html" class="btn btn--primary">
+        Crear cuenta
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a href="https://wa.me/5212361112213?text=Hola%2C%20tengo%20una%20duda%20sobre%20CONTATECK" target="_blank" rel="noopener" class="faq-write">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        Escríbenos
+      </a>
+    </div>
+
+    <div class="faq-list reveal">
+      <details class="faq-item" open>
+        <summary>¿Qué es CONTATECK?<span class="faq-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></summary>
+        <div class="faq-body">Es un sistema contable pensado para México: pólizas, facturación CFDI 4.0, nómina, SAT y un asistente de IA que revisa tus movimientos, todo en un solo panel, sin necesidad de plantillas ni sistemas sueltos.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿Cómo empiezo a usarlo?<span class="faq-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></summary>
+        <div class="faq-body">Creas tu cuenta, das de alta tu empresa y en minutos puedes registrar tu primera póliza. No necesitas capacitación técnica para empezar.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿Mis datos y los de mis clientes están seguros?<span class="faq-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></summary>
+        <div class="faq-body">Sí. Tu información se guarda cifrada y cada empresa que administras queda separada de las demás, con control de acceso por usuario.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿Puedo llevar varias empresas al mismo tiempo?<span class="faq-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></summary>
+        <div class="faq-body">Sí, el plan incluye empresas cliente ilimitadas — ideal si eres despacho contable o llevas la administración de varios negocios.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿Puedo cancelar cuando quiera?<span class="faq-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></summary>
+        <div class="faq-body">Sí, el plan mensual no tiene contrato forzoso. Si pagas el plan anual, puedes cancelar la renovación cuando quieras.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿Necesito instalar algo?<span class="faq-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></summary>
+        <div class="faq-body">No. CONTATECK funciona desde el navegador, en computadora o celular, sin instalar ningún programa.</div>
+      </details>
+    </div>
+  </section>
 </main>
+
+<a class="wa-float" href="https://wa.me/5212361112213?text=Hola%2C%20tengo%20una%20duda%20sobre%20CONTATECK" target="_blank" rel="noopener" aria-label="Escríbenos por WhatsApp">
+  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.36a9.9 9.9 0 0 0 4.62 1.18h.01c5.46 0 9.9-4.45 9.9-9.91C21.96 6.45 17.5 2 12.04 2zm0 18.06h-.01a8.22 8.22 0 0 1-4.2-1.15l-.3-.18-3.12.78.84-3.04-.2-.31a8.16 8.16 0 0 1-1.27-4.35c0-4.53 3.7-8.22 8.26-8.22 2.21 0 4.28.86 5.84 2.42a8.16 8.16 0 0 1 2.42 5.83c0 4.53-3.7 8.22-8.26 8.22zm4.53-6.16c-.25-.12-1.46-.72-1.68-.8-.23-.08-.39-.12-.56.13-.16.24-.64.8-.78.96-.14.17-.29.19-.54.06-.25-.12-1.04-.38-1.98-1.22-.73-.65-1.23-1.46-1.37-1.71-.14-.24-.01-.37.11-.5.11-.11.25-.29.37-.43.12-.15.16-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.65.31-.23.24-.85.83-.85 2.02 0 1.19.87 2.34.99 2.5.12.16 1.71 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.18 1.11.16 1.53.1.47-.07 1.46-.6 1.66-1.17.21-.58.21-1.08.15-1.18-.06-.1-.23-.16-.48-.28z"/></svg>
+</a>
 
 <footer>
   <div class="wrap">
     <div class="foot-grid">
-      <div class="logo"><span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#0A0F1C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></span>CONTATECK</div>
-      <div class="foot-links">
+      <div class="foot-brand">
+        <div class="logo"><span class="logo-mark"><img src="img/logo-contateck.png" alt="CONTATECK"></span>CONTATECK</div>
+        <p>Contabilidad, facturación CFDI 4.0 y nómina en un solo panel, con IA para negocios en México.</p>
+        <div class="foot-social">
+          <a href="https://wa.me/5212361112213?text=Hola%2C%20tengo%20una%20duda%20sobre%20CONTATECK" target="_blank" rel="noopener" aria-label="WhatsApp">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.36a9.9 9.9 0 0 0 4.62 1.18h.01c5.46 0 9.9-4.45 9.9-9.91C21.96 6.45 17.5 2 12.04 2zm0 18.06h-.01a8.22 8.22 0 0 1-4.2-1.15l-.3-.18-3.12.78.84-3.04-.2-.31a8.16 8.16 0 0 1-1.27-4.35c0-4.53 3.7-8.22 8.26-8.22 2.21 0 4.28.86 5.84 2.42a8.16 8.16 0 0 1 2.42 5.83c0 4.53-3.7 8.22-8.26 8.22zm4.53-6.16c-.25-.12-1.46-.72-1.68-.8-.23-.08-.39-.12-.56.13-.16.24-.64.8-.78.96-.14.17-.29.19-.54.06-.25-.12-1.04-.38-1.98-1.22-.73-.65-1.23-1.46-1.37-1.71-.14-.24-.01-.37.11-.5.11-.11.25-.29.37-.43.12-.15.16-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.65.31-.23.24-.85.83-.85 2.02 0 1.19.87 2.34.99 2.5.12.16 1.71 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.18 1.11.16 1.53.1.47-.07 1.46-.6 1.66-1.17.21-.58.21-1.08.15-1.18-.06-.1-.23-.16-.48-.28z"/></svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="foot-col">
+        <h4>Explora</h4>
         <a href="#modulos">Módulos</a>
         <a href="#ia">IA Contable</a>
         <a href="#planes">Planes</a>
+        <a href="#testimonios">Testimonios</a>
+        <a href="#faq">Preguntas frecuentes</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>Cuenta</h4>
         <a href="login.html">Iniciar sesión</a>
-        <a href="terminos-y-condiciones.html">Términos y condiciones</a>
+        <a href="registro.html">Crear cuenta</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>Contacto</h4>
+        <a href="https://wa.me/5212361112213?text=Hola%2C%20tengo%20una%20duda%20sobre%20CONTATECK" target="_blank" rel="noopener">+52 1 236 111 2213</a>
         <a href="aviso-de-privacidad.html">Aviso de privacidad</a>
+        <a href="terminos-y-condiciones.html">Términos y condiciones</a>
       </div>
     </div>
     <div class="foot-bottom">
@@ -877,6 +1483,44 @@
 </footer>
 
 <script>
+  // ---- Tema día/noche (misma llave que login/registro, así el sitio queda consistente) ----
+  (function () {
+    var THEME_KEY = 'contateck-theme';
+    function stored() { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } }
+    function save(v) { try { localStorage.setItem(THEME_KEY, v); } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', stored() || 'dark');
+    document.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-theme-toggle]');
+      if (!t) return;
+      var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      save(next);
+    });
+  })();
+
+  // ---- Menú móvil (hamburguesa) ----
+  (function () {
+    var burger = document.getElementById('navBurger');
+    var menu = document.getElementById('mobileMenu');
+    if (!burger || !menu) return;
+    function closeMenu() {
+      menu.classList.remove('is-open');
+      burger.classList.remove('is-open');
+      burger.setAttribute('aria-expanded', 'false');
+    }
+    burger.addEventListener('click', function () {
+      var open = menu.classList.toggle('is-open');
+      burger.classList.toggle('is-open', open);
+      burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    menu.querySelectorAll('a').forEach(function (a) {
+      a.addEventListener('click', closeMenu);
+    });
+    window.addEventListener('resize', function () {
+      if (window.innerWidth > 1080) closeMenu();
+    });
+  })();
+
   // ---- Rotación 3D constante del stage + el mouse le agrega un empujón extra ----
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var scene = document.getElementById('scene');
@@ -938,30 +1582,25 @@
   var polizaCard = document.querySelector('.poliza-card');
   if (polizaCard) polizaObserver.observe(polizaCard);
 
-  // ---- Toggle de planes: mensual / anual ----
-  var toggle = document.getElementById('plansToggle');
-  if (toggle) {
-    var btns = toggle.querySelectorAll('button');
-    btns.forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var mode = btn.getAttribute('data-mode');
-        btns.forEach(function (b) { b.classList.toggle('active', b === btn); });
-        toggle.classList.toggle('annual', mode === 'anual');
-
-        document.querySelectorAll('[data-mensual]').forEach(function (el) {
-          var val = mode === 'anual' ? el.getAttribute('data-anual') : el.getAttribute('data-mensual');
-          if (val === null) return;
-          el.style.opacity = '0';
-          el.style.transform = 'translateY(-4px)';
-          setTimeout(function () {
-            el.textContent = val;
-            el.style.opacity = '1';
-            el.style.transform = 'translateY(0)';
-          }, 160);
+  // ---- Vista previa del panel: cifras y barras se animan una vez, al entrar en pantalla ----
+  var panelPreview = document.querySelector('.panel-preview');
+  if (panelPreview) {
+    var ppObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        panelPreview.classList.add('in');
+        panelPreview.querySelectorAll('[data-count]').forEach(function (el) {
+          animateNum(el, parseFloat(el.getAttribute('data-count')), 1300);
         });
+        panelPreview.querySelectorAll('.pp-bars i').forEach(function (bar) {
+          bar.style.height = bar.getAttribute('data-h') + '%';
+        });
+        ppObserver.disconnect();
       });
-    });
+    }, { threshold: .3 });
+    ppObserver.observe(panelPreview);
   }
+
   var revealEls = document.querySelectorAll('.reveal');
   var revealObserver = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
