@@ -84,8 +84,11 @@ if (!configured) {
     return match ? match[1] : "No se pudo crear la cuenta. Inténtalo de nuevo.";
   };
 
+  // Igual que auth-login.js: si ya hay sesión activa, que onboarding.html
+  // decida el destino final (panel real / crear empresa / invitación
+  // pendiente) — nunca ir directo a dashboard.html desde aquí.
   supabase.auth.getSession().then(({ data }) => {
-    if (data?.session) window.location.replace("dashboard.html");
+    if (data?.session) window.location.replace("onboarding.html");
   });
 
   async function emailRegister() {
@@ -101,7 +104,7 @@ if (!configured) {
       });
       if (error) throw error;
       if (data?.session) {
-        window.location.replace("dashboard.html");
+        window.location.replace("onboarding.html");
       } else {
         note("Cuenta creada. Revisa tu correo para confirmarla antes de entrar.", false);
         loading(false, btn);
@@ -118,7 +121,7 @@ if (!configured) {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: window.location.origin + window.location.pathname.replace("registro.html", "dashboard.html") },
+        options: { redirectTo: window.location.origin + window.location.pathname.replace("registro.html", "onboarding.html") },
       });
       if (error) throw error;
     } catch (err) {
