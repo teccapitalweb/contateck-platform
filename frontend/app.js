@@ -159,6 +159,11 @@
       return '<div class="dash-proximamente" style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' +
         '<b style="display:block;color:var(--text);margin-bottom:.2rem">Próximamente</b>' + motivo + '</div>';
     }
+    // Mientras llegan los datos del backend: antes estos bloques decían
+    // "Próximamente" por un instante, como si no existieran.
+    function cargando(que) {
+      return '<div class="dash-cargando" style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">Cargando ' + que + '…</div>';
+    }
     function kpiCard(label, valor, ico, spark, deltaTxt, deltaUp) {
       return '<div class="kpi rise">' +
         '<div class="kpi__top"><span class="kpi__label">' + label + '</span>' +
@@ -269,14 +274,21 @@
       const balHost = document.querySelector("[data-balance]");
       const fiscalHost = document.querySelector("[data-fiscal]");
       const oblHost = document.querySelector("[data-obligaciones]");
+      const periodoEl = document.querySelector("[data-dash-periodo]");
+      const alertasCountEl = document.querySelector("[data-alertas-count]");
+
+      // Periodo del resumen: el mes en curso real (antes decía "junio 2026" fijo).
+      if (periodoEl) periodoEl.textContent = new Date().toLocaleDateString("es-MX", { month: "long", year: "numeric" });
 
       // Placeholders honestos mientras carga o si algo falla — nunca datos falsos.
-      if (ledgerBar) ledgerBar.innerHTML = proximamente("Cuadre del libro mayor.");
+      if (ledgerBar) ledgerBar.innerHTML = cargando("el cuadre contable");
       if (donutHost) donutHost.innerHTML = "";
-      if (donutLegend) donutLegend.innerHTML = proximamente("Composición de gastos (aún sin pólizas de gasto clasificadas).");
-      if (balHost) balHost.innerHTML = proximamente("Balance General.");
+      if (donutLegend) donutLegend.innerHTML = cargando("la composición de gastos");
+      if (balHost) balHost.innerHTML = cargando("el balance general");
+      // Este SÍ es un pendiente real (no es carga): ISR necesita las
+      // deducciones autorizadas que defina la contadora.
       if (fiscalHost) fiscalHost.innerHTML = proximamente("Estimados de IVA/ISR — pendiente de definición fiscal.");
-      if (oblHost) oblHost.innerHTML = '<tr><td colspan="5">' + proximamente("Calendario de obligaciones SAT.") + '</td></tr>';
+      if (oblHost) oblHost.innerHTML = '<tr><td colspan="5">' + cargando("las obligaciones SAT") + '</td></tr>';
 
       const datos = await window.dashboardService.obtenerDatos();
 
@@ -284,6 +296,7 @@
         if (kpiWrap) kpiWrap.innerHTML = proximamente("No se pudieron cargar los datos (" + (datos.error || "sin conexión") + ").");
         if (chartHost) chartHost.innerHTML = "";
         if (alertHost) alertHost.innerHTML = "";
+        if (alertasCountEl) alertasCountEl.textContent = "";
         return;
       }
 
@@ -313,6 +326,10 @@
       if (alertHost) alertHost.innerHTML = (datos.alertas || []).length
         ? (datos.alertas || []).map(alertHTML).join("")
         : '<p style="color:var(--faint);font-size:.85rem;padding:.5rem 0">Sin alertas activas — todo en orden.</p>';
+      if (alertasCountEl) {
+        const nAlertas = (datos.alertas || []).length;
+        alertasCountEl.textContent = nAlertas === 0 ? "Sin alertas" : nAlertas + (nAlertas === 1 ? " activa" : " activas");
+      }
 
       if (infoHost) {
         const n = datos.nomina || {};
@@ -325,7 +342,7 @@
         }) + alertHTML({
           tipo: "info",
           titulo: (cc.totalCuentas || 0) + " cuentas en el catálogo contable",
-          texto: "Validación técnica (conteo).",
+          texto: "Cuentas registradas en tu catálogo de cuentas.",
           accion: { vista: "contabilidad" },
         });
       }
@@ -366,7 +383,7 @@
           ? gastos.slice(0, 6).map(function (g, i) {
               return '<li><i style="background:hsl(' + (i * 47) + ',65%,55%)"></i>' + g.cuenta + ' <b>$' + money(g.monto) + '</b></li>';
             }).join("")
-          : proximamente("Sin gastos clasificados este mes todavía.");
+          : proximamente("Aún no hay gastos registrados en pólizas.");
       }
       if (donutHost) {
         if (gastos.length) {

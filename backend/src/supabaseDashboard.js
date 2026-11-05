@@ -98,8 +98,15 @@ export async function obtenerDashboard(accessToken, log = console) {
     const egresosMes = polOk.filter((p) => p.tipo === 'Egreso').reduce((a, p) => a + (Number(p.monto) || 0), 0);
 
     // ---- Nómina ----
-    const empActivos = (empleados.data || []).filter((e) => e.estado !== 'baja');
-    const nominaMensualEstimada = empActivos.reduce((a, e) => a + (Number(e.sueldo) || 0), 0);
+    // Mismo criterio que la prenómina: solo cuentan los Activos ("ok");
+    // baja, incapacidad, maternidad y permiso quedan fuera. OJO: `sueldo`
+    // guarda el salario DIARIO (así se migró), no el mensual — antes se
+    // sumaba tal cual y la "nómina mensual estimada" salía ~30 veces menor.
+    // Mensual = diario × 30, igual que el ingreso mensual del Motor Fiscal.
+    const empActivos = (empleados.data || []).filter((e) => e.estado === 'ok');
+    const nominaMensualEstimada = Math.round(
+      empActivos.reduce((a, e) => a + (Number(e.sueldo) || 0) * 30, 0) * 100
+    ) / 100;
 
     // ---- Serie mensual de facturación real (últimos 6 meses) ----
     const porMes = {};
