@@ -10,8 +10,12 @@
 //    - Cálculo automático de IVA/ISR/DIOT
 //    - Presentación electrónica de declaraciones ante el SAT
 //  El "calendario" de próximos vencimientos NO es una tabla nueva:
-//  se calcula aquí mismo cruzando obligaciones_fiscales (día
-//  límite) con declaraciones (qué ya se presentó).
+//  se calcula aquí mismo con las declaraciones aún no presentadas
+//  (fecha de vencimiento capturada) y el nombre de su obligación.
+//
+//  OT-0031: validaciones de entrada (validacionesFiscal.js), errores de
+//  Postgres traducidos a mensajes sin detalles internos, rutas de
+//  Storage restringidas a la empresa y fechas en hora de México.
 //
 //  EVENTOS FUTUROS DEL MÓDULO (documentados, NO implementados):
 //    - "declaracion.vencida"    -> podría generar alerta/notificación.
@@ -25,6 +29,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
 import { obtenerRolUsuario } from './supabaseCfdis.js';
+import {
+  esUuid, hoyMexico, diasEntre, validarObligacion, validarDeclaracionNueva,
+  validarActualizacionDeclaracion, validarDocumentoNuevo, rutaDocumentoValida,
+} from './validacionesFiscal.js';
 
 const ROLES_VEN = ['contador', 'admin', 'director', 'auditor'];
 const ROLES_ESCRIBEN_DECLARACIONES = ['contador', 'admin', 'director'];
@@ -45,6 +53,22 @@ function clienteComoUsuario(accessToken) {
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+// OT-0031: el mensaje crudo de Postgres/PostgREST (nombres de tablas,
+// políticas, restricciones) se queda en el log del servidor; al navegador
+// solo llega un texto entendible.
+function errorAmigable(error, accion, log = console) {
+  log.warn(`[postgres] ${accion}:`, error?.message);
+  switch (error?.code) {
+    case '42501': return { ok: false, error: 'No tienes permiso para esta acción sobre los datos de tu empresa.' };
+    case '23505': return { ok: false, error: 'Ya existe un registro igual.' };
+    case '23503': return { ok: false, error: 'El registro relacionado no existe.' };
+    case '23514': case '22P02': case '22007': case '22008':
+      return { ok: false, error: 'Algún dato tiene un formato o valor no válido.' };
+    case 'PGRST116': return { ok: false, error: 'No se encontró el registro (o no pertenece a tu empresa).' };
+    default: return { ok: false, error: `No se pudo ${accion}. Inténtalo de nuevo; si persiste, avisa al administrador.` };
+  }
 }
 
 async function obtenerEmpresaId(supabase, accessToken, log = console) {
@@ -76,7 +100,7 @@ export async function listarObligaciones(accessToken, log = console) {
     .from('obligaciones_fiscales')
     .select('*')
     .order('nombre', { ascending: true });
-  if (error) { log.warn('[postgres] listarObligaciones:', error.message); return { ok: false, error: error.message }; }
+  if (error) return errorAmigable(error, 'cargar las obligaciones', log);
   return { ok: true, obligaciones: data || [] };
 }
 
@@ -86,24 +110,16 @@ export async function crearObligacion(accessToken, userId, datos, log = console)
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  if (!datos.nombre || !datos.periodicidad || !datos.diaLimite) {
-    return { ok: false, error: 'Faltan datos obligatorios (nombre, periodicidad, día límite).' };
-  }
+  const v = validarObligacion(datos);
+  if (v.error) return { ok: false, error: v.error };
   const empresaId = await obtenerEmpresaId(supabase, accessToken, log);
   if (!empresaId) return { ok: false, error: 'No se encontró tu perfil/empresa en Postgres.' };
 
   const { data, error } = await supabase
     .from('obligaciones_fiscales')
-    .insert({
-      empresa_id: empresaId,
-      nombre: datos.nombre,
-      periodicidad: datos.periodicidad,
-      dia_limite: datos.diaLimite,
-      mes_limite: datos.mesLimite || null,
-      created_by: userId,
-    })
+    .insert({ empresa_id: empresaId, ...v.valores, created_by: userId })
     .select().single();
-  if (error) { log.warn('[postgres] crearObligacion:', error.message); return { ok: false, error: error.message }; }
+  if (error) return errorAmigable(error, 'guardar la obligación', log);
   return { ok: true, obligacion: data };
 }
 
@@ -113,16 +129,13 @@ export async function actualizarObligacion(accessToken, obligacionId, datos, log
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  const patch = {};
-  if (datos.nombre !== undefined) patch.nombre = datos.nombre;
-  if (datos.periodicidad !== undefined) patch.periodicidad = datos.periodicidad;
-  if (datos.diaLimite !== undefined) patch.dia_limite = datos.diaLimite;
-  if (datos.mesLimite !== undefined) patch.mes_limite = datos.mesLimite;
-  if (datos.activa !== undefined) patch.activa = datos.activa;
+  if (!esUuid(obligacionId)) return { ok: false, error: 'El identificador de la obligación no es válido.' };
+  const v = validarObligacion(datos, true);
+  if (v.error) return { ok: false, error: v.error };
 
   const { data, error } = await supabase
-    .from('obligaciones_fiscales').update(patch).eq('id', obligacionId).select().single();
-  if (error) { log.warn('[postgres] actualizarObligacion:', error.message); return { ok: false, error: error.message }; }
+    .from('obligaciones_fiscales').update(v.valores).eq('id', obligacionId).select().single();
+  if (error) return errorAmigable(error, 'actualizar la obligación', log);
   return { ok: true, obligacion: data };
 }
 
@@ -138,7 +151,7 @@ export async function listarDeclaraciones(accessToken, log = console) {
     .from('declaraciones')
     .select('*')
     .order('fecha_vencimiento', { ascending: true });
-  if (error) { log.warn('[postgres] listarDeclaraciones:', error.message); return { ok: false, error: error.message }; }
+  if (error) return errorAmigable(error, 'cargar las declaraciones', log);
   return { ok: true, declaraciones: data || [] };
 }
 
@@ -148,25 +161,25 @@ export async function crearDeclaracion(accessToken, userId, datos, log = console
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  if (!datos.obligacionId || !datos.periodo || !datos.fechaVencimiento) {
-    return { ok: false, error: 'Faltan datos obligatorios (obligación, periodo, fecha de vencimiento).' };
-  }
+  const v = validarDeclaracionNueva(datos);
+  if (v.error) return { ok: false, error: v.error };
   const empresaId = await obtenerEmpresaId(supabase, accessToken, log);
   if (!empresaId) return { ok: false, error: 'No se encontró tu perfil/empresa en Postgres.' };
 
+  // La obligación debe ser visible para este usuario (misma empresa, por
+  // RLS) y estar activa: no se registran declaraciones de otra empresa ni
+  // de una obligación dada de baja.
+  const { data: obl, error: errObl } = await supabase
+    .from('obligaciones_fiscales').select('id, activa').eq('id', v.valores.obligacion_id).maybeSingle();
+  if (errObl) return errorAmigable(errObl, 'verificar la obligación', log);
+  if (!obl) return { ok: false, error: 'La obligación no existe o no es de tu empresa.' };
+  if (obl.activa === false) return { ok: false, error: 'La obligación está inactiva; actívala antes de registrar declaraciones.' };
+
   const { data, error } = await supabase
     .from('declaraciones')
-    .insert({
-      empresa_id: empresaId,
-      obligacion_id: datos.obligacionId,
-      periodo: datos.periodo,
-      fecha_vencimiento: datos.fechaVencimiento,
-      estado: 'pendiente',
-      notas: datos.notas || null,
-      created_by: userId,
-    })
+    .insert({ empresa_id: empresaId, ...v.valores, estado: 'pendiente', created_by: userId })
     .select().single();
-  if (error) { log.warn('[postgres] crearDeclaracion:', error.message); return { ok: false, error: error.message }; }
+  if (error) return errorAmigable(error, 'guardar la declaración', log);
   return { ok: true, declaracion: data };
 }
 
@@ -177,19 +190,44 @@ export async function actualizarDeclaracion(accessToken, userId, declaracionId, 
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
+  if (!esUuid(declaracionId)) return { ok: false, error: 'El identificador de la declaración no es válido.' };
+  const v = validarActualizacionDeclaracion(datos);
+  if (v.error) return { ok: false, error: v.error };
+  const val = v.valores;
+
+  const { data: actual, error: errAct } = await supabase
+    .from('declaraciones').select('id, estado').eq('id', declaracionId).maybeSingle();
+  if (errAct) return errorAmigable(errAct, 'consultar la declaración', log);
+  if (!actual) return { ok: false, error: 'La declaración no existe o no es de tu empresa.' };
+
   const patch = {};
-  if (datos.estado !== undefined) patch.estado = datos.estado;
-  if (datos.folioAcuse !== undefined) patch.folio_acuse = datos.folioAcuse;
-  if (datos.documentoPath !== undefined) patch.documento_path = datos.documentoPath;
-  if (datos.notas !== undefined) patch.notas = datos.notas;
-  if (datos.estado === 'presentada') {
-    patch.fecha_presentacion = new Date().toISOString().slice(0, 10);
-    patch.presentado_por = userId;
+  if (val.estado !== undefined) patch.estado = val.estado;
+  if (val.folio_acuse !== undefined) patch.folio_acuse = val.folio_acuse;
+  if (val.notas !== undefined) patch.notas = val.notas;
+  if (val.documentoPath !== undefined) {
+    const empresaId = await obtenerEmpresaId(supabase, accessToken, log);
+    if (!rutaDocumentoValida(val.documentoPath, empresaId)) {
+      return { ok: false, error: 'El archivo adjunto no es válido para tu empresa.' };
+    }
+    patch.documento_path = val.documentoPath;
   }
+  if (val.estado === 'presentada') {
+    // Si ya estaba presentada no se pisa la fecha original (salvo que se
+    // mande una fecha explícita).
+    if (actual.estado !== 'presentada' || val.fechaPresentacion) {
+      patch.fecha_presentacion = val.fechaPresentacion || hoyMexico();
+      patch.presentado_por = userId;
+    }
+  } else if (val.estado !== undefined) {
+    // Regresa a pendiente/en proceso: ya no hay fecha ni responsable de presentación.
+    patch.fecha_presentacion = null;
+    patch.presentado_por = null;
+  }
+  if (!Object.keys(patch).length) return { ok: false, error: 'No hay cambios que guardar.' };
 
   const { data, error } = await supabase
     .from('declaraciones').update(patch).eq('id', declaracionId).select().single();
-  if (error) { log.warn('[postgres] actualizarDeclaracion:', error.message); return { ok: false, error: error.message }; }
+  if (error) return errorAmigable(error, 'actualizar la declaración', log);
   return { ok: true, declaracion: data };
 }
 
@@ -203,7 +241,7 @@ export async function listarDocumentosFiscales(accessToken, log = console) {
 
   const { data, error } = await supabase
     .from('documentos_fiscales').select('*').order('created_at', { ascending: false });
-  if (error) { log.warn('[postgres] listarDocumentosFiscales:', error.message); return { ok: false, error: error.message }; }
+  if (error) return errorAmigable(error, 'cargar los documentos', log);
   return { ok: true, documentos: data || [] };
 }
 
@@ -213,31 +251,24 @@ export async function crearDocumentoFiscal(accessToken, userId, datos, log = con
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  if (!datos.tipo || !datos.nombre || !datos.documentoPath) {
-    return { ok: false, error: 'Faltan datos obligatorios (tipo, nombre, documento).' };
-  }
+  const v = validarDocumentoNuevo(datos);
+  if (v.error) return { ok: false, error: v.error };
   const empresaId = await obtenerEmpresaId(supabase, accessToken, log);
   if (!empresaId) return { ok: false, error: 'No se encontró tu perfil/empresa en Postgres.' };
+  if (!rutaDocumentoValida(v.valores.documentoPath, empresaId)) {
+    return { ok: false, error: 'El archivo adjunto no es válido para tu empresa.' };
+  }
 
+  const { documentoPath, ...resto } = v.valores;
   const { data, error } = await supabase
     .from('documentos_fiscales')
-    .insert({
-      empresa_id: empresaId,
-      tipo: datos.tipo,
-      nombre: datos.nombre,
-      documento_path: datos.documentoPath,
-      fecha_documento: datos.fechaDocumento || null,
-      vigencia_hasta: datos.vigenciaHasta || null,
-      created_by: userId,
-    })
+    .insert({ empresa_id: empresaId, ...resto, documento_path: documentoPath, created_by: userId })
     .select().single();
-  if (error) { log.warn('[postgres] crearDocumentoFiscal:', error.message); return { ok: false, error: error.message }; }
+  if (error) return errorAmigable(error, 'guardar el documento', log);
   return { ok: true, documento: data };
 }
 
 // ---------------- Calendario (derivado, sin tabla propia) ----------------
-
-const MESES_NUM = { Ene: 1, Feb: 2, Mar: 3, Abr: 4, May: 5, Jun: 6, Jul: 7, Ago: 8, Sep: 9, Oct: 10, Nov: 11, Dic: 12 };
 
 export async function obtenerCalendario(accessToken, log = console, clienteExistente = null) {
   let supabase = clienteExistente;
@@ -248,30 +279,35 @@ export async function obtenerCalendario(accessToken, log = console, clienteExist
   }
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
+  // Se leen TODAS las obligaciones (no solo las activas) para poder poner
+  // nombre a cualquier declaración y omitir las de obligaciones dadas de baja.
   const [obl, decl] = await Promise.all([
-    supabase.from('obligaciones_fiscales').select('*').eq('activa', true),
-    supabase.from('declaraciones').select('*'),
+    supabase.from('obligaciones_fiscales').select('id, nombre, activa'),
+    supabase.from('declaraciones').select('id, obligacion_id, periodo, fecha_vencimiento, estado').neq('estado', 'presentada'),
   ]);
-  if (obl.error) return { ok: false, error: obl.error.message };
-  if (decl.error) return { ok: false, error: decl.error.message };
+  if (obl.error) return errorAmigable(obl.error, 'cargar el calendario', log);
+  if (decl.error) return errorAmigable(decl.error, 'cargar el calendario', log);
 
-  const hoy = new Date();
+  // Los días se cuentan con fechas de calendario en hora de México: antes se
+  // restaba la medianoche UTC al instante actual y el mismo día del
+  // vencimiento (a partir de las 18:00) ya salía como "vencida".
+  const hoy = hoyMexico();
+  const obligaciones = obl.data || [];
   const proximas = (decl.data || [])
-    .filter((d) => d.estado !== 'presentada')
-    .map((d) => {
-      const vence = new Date(d.fecha_vencimiento);
-      const diasRestantes = Math.ceil((vence - hoy) / 86400000);
-      const obligacion = (obl.data || []).find((o) => o.id === d.obligacion_id);
+    .map((d) => ({ d, obligacion: obligaciones.find((o) => o.id === d.obligacion_id) }))
+    .filter(({ obligacion }) => !obligacion || obligacion.activa !== false)
+    .map(({ d, obligacion }) => {
+      const diasRestantes = diasEntre(hoy, d.fecha_vencimiento);
       return {
         declaracionId: d.id,
         obligacion: obligacion ? obligacion.nombre : '—',
         periodo: d.periodo,
-        fechaVencimiento: d.fecha_vencimiento,
+        fechaVencimiento: String(d.fecha_vencimiento).slice(0, 10),
         diasRestantes,
         estado: diasRestantes < 0 ? 'vencida' : d.estado,
       };
     })
-    .sort((a, b) => new Date(a.fechaVencimiento) - new Date(b.fechaVencimiento));
+    .sort((a, b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento));
 
   return { ok: true, proximas };
 }
