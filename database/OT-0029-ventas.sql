@@ -8,10 +8,8 @@
 --    1. (Documentación) Deja en el repo la definición base de la tabla
 --       `ventas`, que hasta hoy solo existía en la base de DEV. Con
 --       `create table if not exists`, en DEV es un NO-OP.
---       ⚠ Las POLÍTICAS RLS y las de Storage NO se reconstruyen aquí:
---       hay que exportarlas de DEV con
---       database/OT-0029-ventas-introspeccion.sql y pegarlas en la
---       sección 4 de este archivo (ver OT-0029, pendiente B4).
+--       Las políticas RLS de `ventas` y las de Storage (sección 4) se
+--       exportaron de DEV el 2026-11-05 y se crean solo si no existen.
 --    2. Agrega a `ventas` la liga con su póliza contable (`poliza_id`)
 --       y el motivo de rechazo (`motivo_rechazo`).
 --    3. Liga las ventas YA confirmadas con la póliza que generaron
@@ -90,10 +88,98 @@ update ventas v
        ) = 1;
 
 -- ------------------------------------------------------------
--- 4. PENDIENTE (B4): pegar aquí, tal cual salen de DEV, las políticas
---    RLS de `ventas` y las de Storage del bucket `documentos`
---    (resultado de database/OT-0029-ventas-introspeccion.sql).
+-- 4. Seguridad (RLS) — B4. Exportado de DEV el 2026-11-05 con
+--    database/OT-0029-ventas-introspeccion.sql. Antes solo vivía en
+--    la base. Cada política se crea SOLO si no existe, así que correr
+--    esto en DEV (donde ya existen) no cambia nada, y en una base
+--    nueva las deja igual que en DEV.
+--    Usa auth_empresa_id() y auth_rol() de database/policies.sql.
 -- ------------------------------------------------------------
+alter table ventas enable row level security;
+
+do $$
+begin
+  -- ventas: lectura para toda la empresa.
+  if not exists (select 1 from pg_policies where schemaname = 'public'
+                  and tablename = 'ventas' and policyname = 'ventas_select_empresa') then
+    create policy ventas_select_empresa on ventas for select
+      using (empresa_id = auth_empresa_id());
+  end if;
+
+  -- ventas: registrar — vendedor, contador, admin, director.
+  if not exists (select 1 from pg_policies where schemaname = 'public'
+                  and tablename = 'ventas' and policyname = 'ventas_insert_roles_operativos') then
+    create policy ventas_insert_roles_operativos on ventas for insert
+      with check (empresa_id = auth_empresa_id()
+                  and auth_rol() = any (array['vendedor', 'contador', 'admin', 'director']));
+  end if;
+
+  -- ventas: actualizar (tomar, confirmar, rechazar) — contador, admin, director.
+  if not exists (select 1 from pg_policies where schemaname = 'public'
+                  and tablename = 'ventas' and policyname = 'ventas_update_roles_validadores') then
+    create policy ventas_update_roles_validadores on ventas for update
+      using (empresa_id = auth_empresa_id()
+             and auth_rol() = any (array['contador', 'admin', 'director']));
+  end if;
+  -- No hay política de DELETE: nadie puede borrar ventas.
+end $$;
+
+-- ⚠ Lo que estas políticas NO hacen (se aplica solo en backend):
+--   · La separación de funciones (quien registra no valida su venta, salvo
+--     admin/director) NO está en la base: un contador con su token podría
+--     actualizar `ventas` directo. La valida backend/src/supabaseVentas.js.
+--   · La política de UPDATE no limita columnas ni estados: una venta
+--     confirmada podría modificarse (importe, etc.) por esa vía. Pendiente
+--     de decisión: trigger que bloquee cambios tras confirmar.
+
+-- Storage (bucket `documentos`) — los comprobantes de ventas viven en
+-- {empresa_id}/ventas/{uuid}/comprobante.ext. La validación de ruta del
+-- backend (A3) coincide con esta política. Se crean solo si no existen.
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'storage'
+                  and tablename = 'objects' and policyname = 'documentos_select_propia_empresa') then
+    create policy documentos_select_propia_empresa on storage.objects for select
+      using (bucket_id = 'documentos'
+             and (storage.foldername(name))[1] = (auth_empresa_id())::text
+             and not ((storage.foldername(name))[2] = 'sat'
+                      and auth_rol() <> all (array['contador', 'admin', 'director', 'auditor'])));
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'storage'
+                  and tablename = 'objects' and policyname = 'documentos_insert_propia_empresa') then
+    create policy documentos_insert_propia_empresa on storage.objects for insert
+      with check (bucket_id = 'documentos'
+                  and (storage.foldername(name))[1] = (auth_empresa_id())::text
+                  and (
+                    ((storage.foldername(name))[2] = 'sat'
+                       and auth_rol() = any (array['contador', 'admin', 'director']))
+                    or
+                    ((storage.foldername(name))[2] <> 'sat'
+                       and auth_rol() = any (array['vendedor', 'contador', 'admin', 'director']))
+                  ));
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'storage'
+                  and tablename = 'objects' and policyname = 'documentos_update_propia_empresa') then
+    create policy documentos_update_propia_empresa on storage.objects for update
+      using (bucket_id = 'documentos'
+             and (storage.foldername(name))[1] = (auth_empresa_id())::text
+             and auth_rol() = any (array['contador', 'admin', 'director']));
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'storage'
+                  and tablename = 'objects' and policyname = 'documentos_delete_admin_director') then
+    create policy documentos_delete_admin_director on storage.objects for delete
+      using (bucket_id = 'documentos'
+             and (storage.foldername(name))[1] = (auth_empresa_id())::text
+             and auth_rol() = any (array['admin', 'director']));
+  end if;
+end $$;
+
+-- Pólizas y partidas (para referencia; ya vienen de database/policies.sql
+-- y addendum_poliza_partidas.sql, y en DEV coinciden): select por empresa;
+-- insert y update para contador, admin y director de la misma empresa.
 
 -- ============================================================
 --  Validación después de correr esto:

@@ -95,7 +95,13 @@ re-registrar") que no existe para ventas confirmadas.
 - `database/OT-0029-ventas.sql`: definición base de `ventas` (documentación),
   columnas `poliza_id` y `motivo_rechazo`, índices y backfill.
 - `database/OT-0029-ventas-introspeccion.sql`: consultas de solo lectura
-  para exportar de DEV lo que falta documentar (B4).
+  para exportar de DEV lo que faltaba documentar (B4).
+- B4 (hecho, exportado de DEV el 2026-11-05): sección 4 de
+  `OT-0029-ventas.sql` con las políticas RLS de `ventas` y las de Storage
+  (se crean solo si no existen), y `database/OT-0029-funciones-contables-dev.sql`
+  con la versión real de `crear_poliza_completa` (6 parámetros),
+  `actualizar_poliza_completa`, `anular_poliza_duplicada`, `cerrar_periodo`
+  y `corregir_poliza_con_ajuste`.
 
 ### Orden de despliegue
 1. Correr `OT-0029-ventas.sql` en DEV (SQL Editor).
@@ -126,10 +132,9 @@ re-registrar") que no existe para ventas confirmadas.
   confirmar de más si hay dos pagos registrados).
 - Validar que la cuenta destino/origen de un pago pertenezca a la empresa.
 - Editar/cancelar una venta `pendiente` por quien la registró.
-- B4 completo: pegar en `OT-0029-ventas.sql` (sección 4) las políticas RLS y
-  de Storage exportadas de DEV; incluir en `database/` las funciones de
-  periodos y ajustes (OT-0025/0026) y la versión real de
-  `crear_poliza_completa` (el repo trae la de 4 parámetros; el backend usa 6).
+- B4, lo que aún falta exportar de DEV: `periodo_esta_cerrado(uuid, date)`,
+  la tabla `periodos_contables` y sus políticas. `abrir_periodo` no existe
+  en DEV (hoy se cierra un periodo pero no hay función para reabrirlo).
 - Quitar el mismo respaldo de URL fija en `contabilidad.js` (3 sitios).
 
 ---
@@ -147,3 +152,48 @@ re-registrar") que no existe para ventas confirmadas.
 | Confirmar con IVA y sin cuenta de IVA | Venta confirmada, "Sin póliza", aviso dice qué falta; tras configurar, "Generar póliza" la crea una sola vez |
 | Doble clic en Confirmar | Una sola petición |
 | "Me pagó un cliente" con factura cancelada | No aparece en el selector |
+
+---
+
+## 5. Pruebas realizadas (DEV, 2026-11-05)
+
+Hechas por una persona con su propio login, con el backend de esta rama en el
+puerto 8081 y el panel en 5511 (todos los datos son de prueba).
+
+| Caso | Resultado |
+|---|---|
+| Importe 0 y −100 | Rechazado en pantalla: "Captura un importe mayor a cero"; no llegó nada al backend |
+| Fecha futura | El calendario deshabilita los días posteriores a hoy |
+| Efectivo | Se oculta el campo banco |
+| Cliente `<b>prueba</b>` | Se ve literal en la bandeja (no en negritas) |
+| Rechazar sin motivo / con motivo | Sin motivo no deja; con motivo queda guardado en `motivo_rechazo` (verificado en la base) |
+| Confirmar con cuentas configuradas (SA de CV, P-0005 de prueba) | Póliza I-00015: Bancos 116 / Ventas 100 / IVA trasladado 16, cuadrada; folio en el detalle |
+| "Generar póliza" en venta confirmada sin póliza (P-0002) | Creó I-00014 y ligó `poliza_id`; el botón desaparece (sin duplicar) |
+| Ligado automático (P-0003) | Quedó ligada a I-00013 con el SQL de la OT |
+| Confirmar con cuentas faltantes (Empresa Demo C, P-0003) | Quedó "Confirmado" + "Sin póliza", aviso con las cuentas que faltan, **no se creó póliza** (verificado en la base) |
+| Separación de funciones | P-0004 y P-0005 las registró un usuario y las validó otro (verificado en la base) |
+| Aislamiento entre empresas | Ventas: cada empresa ve solo las suyas. Pólizas: en ventana limpia no aparecen pólizas de otra empresa |
+
+No se probó: periodo cerrado, y rechazo de una venta por quien la registró
+(la regla vive en backend).
+
+## 6. Hallazgos nuevos (no corregidos aquí)
+
+1. **Datos de otra sesión en el navegador.** Al entrar con varias cuentas en el
+   mismo navegador, la lista de pólizas de Contabilidad mostró pólizas de dos
+   empresas a la vez. En una ventana limpia no pasó, y la base filtra bien: es
+   caché del panel que no se limpia al cambiar de usuario. No es de Ventas.
+2. **El UPDATE de `ventas` no limita columnas ni estados.** La política deja a
+   un contador/admin/director modificar cualquier campo de una venta, incluso
+   confirmada, si llama a la base directo con su token. Y la separación de
+   funciones solo se valida en el backend. Pendiente: decidir un trigger que
+   bloquee cambios tras confirmar.
+3. **Periodo cerrado y "Generar póliza".** `crear_poliza_completa` rechaza
+   fechas de un periodo cerrado, y Ventas usa la fecha de pago. Una venta
+   confirmada con fecha en un mes cerrado no podrá generar su póliza nunca
+   (`corregir_poliza_con_ajuste` sí usa la fecha de hoy en ese caso). Decisión
+   de la contadora: qué fecha lleva la póliza.
+4. **Tiempos.** El listado de ventas tarda ~2 s y confirmar/generar ~4 s por
+   peticiones en serie a la base. Mejora posible, no urgente.
+5. **`/api/firebase-token` responde 404** y por eso el panel muestra
+   "Firestore no disponible" (fuera de Ventas).
