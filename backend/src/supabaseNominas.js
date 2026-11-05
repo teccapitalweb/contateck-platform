@@ -6,7 +6,8 @@
 //  como el propio usuario (RLS real vía las verificaciones dentro
 //  de la función RPC).
 //
-//  Control interno — NO timbra CFDI de nómina ni calcula ISR/IMSS.
+//  Control interno — NO timbra CFDI de nómina. El ISR/IMSS lo calcula el
+//  frontend (Motor Fiscal) y llega ya sumado en `deducciones` del detalle.
 // ============================================================
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';

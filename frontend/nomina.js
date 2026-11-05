@@ -1,12 +1,16 @@
 /* ============================================================
    CONTATECK · nomina.js · Prenómina interna (Pieza 3)
-   Control interno — NO calcula ISR/IMSS ni timbra ante el SAT
-   (eso sigue en "Timbrar nómina", bloqueado hasta que el
-   responsable contable defina las reglas fiscales y el alta IMSS).
+   Control interno — calcula ISR (con subsidio) e IMSS obrero con el
+   Motor Fiscal 2026 (motorFiscal.js), validado por contabilidad. NO
+   timbra CFDI de nómina ante el SAT (eso sigue en "Timbrar nómina",
+   bloqueado hasta definir el flujo de timbrado y el alta IMSS).
 
    Flujo: [Calcular] → modal de periodo → Generar Prenómina →
-   tabla editable (percepciones/deducciones por empleado, neto en
-   vivo) → Aprobar y Pagar (Pieza 4: guarda historial en Postgres).
+   tabla editable (ISR e IMSS calculados; percepciones y otras
+   deducciones capturables, neto en vivo) → Aprobar y Pagar (Pieza 4:
+   guarda historial en Postgres). ISR + IMSS + otras deducciones se
+   guardan sumados en `deducciones` (sin cambiar el esquema).
+   La cuota patronal es solo informativa: no se guarda ni genera póliza.
 
    Regla de negocio: SOLO empleados con estado "ok" (Activo) entran
    al cálculo — baja, incapacidad, maternidad y permiso se ignoran.
@@ -39,6 +43,55 @@
     { v: "quincenal", t: "Quincenal", dias: 15 },
     { v: "mensual", t: "Mensual", dias: 30 },
   ];
+
+  /* ---------- Motor Fiscal (ISR / IMSS) ---------- */
+  const ANIO_FISCAL = 2026;
+  // Días que usa el decreto del subsidio por periodo (mensual = 30.4).
+  const DIAS_SUBSIDIO = { semanal: 7, catorcenal: 14, quincenal: 15, mensual: 30.4 };
+  // Prima de riesgo de trabajo por defecto: Clase I (oficinas). Cada
+  // empresa tiene la suya; solo afecta la cuota patronal informativa.
+  const CLASE_RIESGO_DEFAULT = "I";
+  let motor = null; // módulo motorFiscal.js (carga perezosa)
+  function cargarMotor() {
+    if (motor) return Promise.resolve(motor);
+    // import() dinámico: nomina.js es un script clásico y el motor es módulo ES.
+    return import("./motorFiscal.js").then(function (m) { motor = m; return m; });
+  }
+  // Años completos de servicio al fin del periodo (mínimo 1, como el motor).
+  function aniosAntiguedad(fechaIngreso, fechaFin) {
+    if (!fechaIngreso) return { anios: 1, sinFecha: true };
+    const a = new Date(String(fechaIngreso).slice(0, 10) + "T12:00:00");
+    const b = new Date(fechaFin + "T12:00:00");
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return { anios: 1, sinFecha: true };
+    let n = b.getFullYear() - a.getFullYear();
+    if (b.getMonth() < a.getMonth() || (b.getMonth() === a.getMonth() && b.getDate() < a.getDate())) n--;
+    return { anios: Math.max(1, n), sinFecha: false };
+  }
+  // Calcula ISR retenido, IMSS obrero y cuota patronal de UNA fila y los
+  // deja en la propia fila. Si el motor falla, la fila queda en cero y
+  // marcada (f.errFiscal) — nunca se inventa una cifra.
+  function calcularImpuestos(f) {
+    f.isr = 0; f.imss = 0; f.isrBruto = 0; f.subsidio = 0; f.patronal = 0; f.infonavit = 0; f.errFiscal = null;
+    if (!motor) { f.errFiscal = "Motor fiscal no disponible"; return; }
+    const percepciones = round2(f.base + f.extras);
+    if (!(f.salario_diario > 0) || !(percepciones > 0)) return;
+    try {
+      const sdi = motor.calcularSDI(f.salario_diario, f.anios).sdi;
+      const isr = motor.calcularISR({
+        baseGravable: percepciones, periodo: pre.periodicidad, dias: DIAS_SUBSIDIO[pre.periodicidad],
+        ingresoMensualOrdinario: round2(f.salario_diario * 30), anio: ANIO_FISCAL,
+      });
+      f.isrBruto = isr.isrBruto; f.subsidio = isr.subsidio; f.isr = isr.isrRetenido;
+      f.imss = motor.cuotaObreroIMSS({ sdi: sdi, dias: pre.dias, anio: ANIO_FISCAL }).total;
+      const pat = motor.cuotaPatronalIMSS({
+        sdi: sdi, dias: pre.dias, anio: ANIO_FISCAL, primaRiesgo: motor.PRIMAS_RIESGO_CLASE[CLASE_RIESGO_DEFAULT],
+      });
+      f.patronal = pat.total; f.infonavit = pat.infonavit;
+    } catch (e) {
+      f.isr = 0; f.imss = 0; f.patronal = 0; f.infonavit = 0;
+      f.errFiscal = e.message;
+    }
+  }
 
   /* ---------- Estilos propios (prefijo pn-) ---------- */
   const css = document.createElement("style");
@@ -142,15 +195,14 @@
   /* ---------- Estado de la prenómina activa ---------- */
   let pre = null; // { periodicidad, inicio, fin, dias, filas: [...] }
   let desgloseOriginal = null; // para restaurar el desglose al cancelar
-  // Texto de las tarjetas cuando NO hay prenómina activa — antes decía
-  // "Próximamente / Cálculo de nómina (ISR/IMSS)", impreciso ahora que
-  // el cálculo interno sí funciona. Solo lo fiscal queda pendiente.
+  // Texto de las tarjetas cuando NO hay prenómina activa. El cálculo de
+  // ISR/IMSS ya funciona (Motor Fiscal); solo el timbrado sigue pendiente.
   const DESGLOSE_OCIOSO =
     '<div style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' +
     '<b style="display:block;color:var(--text);margin-bottom:.2rem">Sin periodo activo</b>' +
     'Da clic en <b>Calcular</b> para configurar un periodo y generar la prenómina.</div>';
 
-  function generarPrenomina() {
+  async function generarPrenomina() {
     const ini = modal.querySelector("[data-pn-inicio]").value;
     const fin = modal.querySelector("[data-pn-fin]").value;
     if (!ini || !fin) { toast("Captura las dos fechas del periodo", "warn"); return; }
@@ -176,9 +228,16 @@
       return;
     }
 
+    // El motor fiscal se carga una sola vez. Si no carga, la prenómina
+    // sigue funcionando en modo manual (ISR/IMSS en cero, con aviso).
+    try { await cargarMotor(); } catch (err) {
+      toast("No se pudo cargar el motor fiscal — ISR e IMSS quedan en cero, captúralos a mano en 'Otras deducciones'.", "warn");
+    }
+
     pre = {
       periodicidad: periodicidadElegida(), inicio: ini, fin: fin, dias: dias,
       filas: activos.map(function (e) {
+        const ant = aniosAntiguedad(e.fecha_ingreso, fin);
         return {
           empleado_id: e.id, nombre: e.nombre, puesto: e.puesto || null,
           salario_diario: Number(e.sueldo) || 0,
@@ -186,18 +245,41 @@
           // `sueldo` ya contiene el salario diario desde la migración).
           base: round2((Number(e.sueldo) || 0) * dias),
           extras: 0, deducciones: 0, notas: "",
+          // `deducciones` = "otras deducciones" (captura manual). ISR e
+          // IMSS se calculan aparte y se suman al guardar.
+          anios: ant.anios, sinFechaIngreso: ant.sinFecha,
+          isr: 0, imss: 0, isrBruto: 0, subsidio: 0, patronal: 0, infonavit: 0, errFiscal: null,
         };
       }),
     };
+    pre.filas.forEach(calcularImpuestos);
     cerrarModal();
     renderPrenomina();
   }
 
-  function netoDe(f) { return round2(f.base + f.extras - f.deducciones); }
+  function deduccionesDe(f) { return round2(f.isr + f.imss + f.deducciones); }
+  function netoDe(f) { return round2(f.base + f.extras - deduccionesDe(f)); }
+  function notasConDesglose(f) {
+    const partes = [];
+    if (f.isr || f.imss) partes.push("ISR $" + money(f.isr) + " · IMSS $" + money(f.imss) + " (motor fiscal " + ANIO_FISCAL + ")");
+    if (f.deducciones) partes.push("Otras deducciones $" + money(f.deducciones));
+    if (f.notas) partes.push(f.notas);
+    return partes.length ? partes.join(" | ") : null;
+  }
+  // Tooltip del ISR: de dónde sale el retenido.
+  function tituloIsr(f) {
+    return "ISR " + money(f.isrBruto) + " − subsidio " + money(f.subsidio) + " = " + money(f.isr);
+  }
   function totales() {
-    let perc = 0, ded = 0, neto = 0;
-    pre.filas.forEach(function (f) { perc += f.base + f.extras; ded += f.deducciones; neto += netoDe(f); });
-    return { perc: round2(perc), ded: round2(ded), neto: round2(neto) };
+    let perc = 0, ded = 0, neto = 0, isr = 0, imss = 0, otras = 0, pat = 0, inf = 0;
+    pre.filas.forEach(function (f) {
+      perc += f.base + f.extras; ded += deduccionesDe(f); neto += netoDe(f);
+      isr += f.isr; imss += f.imss; otras += f.deducciones; pat += f.patronal; inf += f.infonavit;
+    });
+    return {
+      perc: round2(perc), ded: round2(ded), neto: round2(neto),
+      isr: round2(isr), imss: round2(imss), otras: round2(otras), patronal: round2(pat), infonavit: round2(inf),
+    };
   }
 
   function etiquetaPeriodo() {
@@ -212,12 +294,38 @@
     set("[data-nom-ded]", "$" + money(t.ded));
     set("[data-nom-neto]", "$" + money(t.neto));
     set("[data-nom-periodo]", etiquetaPeriodo());
+    renderDesglose(t);
+  }
+
+  // Desglose bajo los KPIs: retenciones al trabajador y cuota patronal
+  // (informativa — no se guarda ni genera póliza).
+  function renderDesglose(t) {
+    const desg = $("[data-nom-desglose]");
+    if (!desg || !pre) return;
+    const fila = function (txt, val, extra) {
+      return '<div class="comp__row" style="display:flex;justify-content:space-between;gap:1rem;font-size:.88rem">' +
+        "<span>" + txt + "</span><b>" + (extra || "") + "$" + money(val) + "</b></div>";
+    };
+    const conError = pre.filas.some(function (f) { return f.errFiscal; });
+    const sinFecha = pre.filas.filter(function (f) { return f.sinFechaIngreso; }).length;
+    desg.innerHTML =
+      fila("ISR retenido (con subsidio al empleo)", t.isr) +
+      fila("IMSS obrero", t.imss) +
+      fila("Otras deducciones (captura manual)", t.otras) +
+      '<div style="border-top:1px solid var(--line);padding-top:.7rem">' +
+      fila("Cuota patronal IMSS (informativa, Clase I)", t.patronal) +
+      fila("Infonavit patronal 5% (aparte)", t.infonavit) +
+      '<p style="color:var(--faint);font-size:.76rem;margin:.5rem 0 0;line-height:1.5">Reglas ' + ANIO_FISCAL +
+      ": ISR y subsidio por decreto vigente; Cesantía y Vejez patronal con protección de salario mínimo. " +
+      "La cuota patronal no se guarda ni genera póliza.</p></div>" +
+      (sinFecha ? '<p style="color:#ffcf82;font-size:.8rem;margin:0">⚠ ' + sinFecha + " empleado(s) sin fecha de ingreso: se calculó el IMSS con antigüedad de 1 año.</p>" : "") +
+      (conError ? '<p style="color:#ff8f9d;font-size:.8rem;margin:0">⚠ El motor fiscal no pudo calcular a algún empleado; sus ISR/IMSS quedaron en cero. Revisa y captura a mano si aplica.</p>' : "");
   }
 
   function restaurarKpis() {
     const set = function (sel, v) { const el = $(sel); if (el) el.textContent = v; };
     set("[data-nom-perc]", "—"); set("[data-nom-ded]", "—"); set("[data-nom-neto]", "—");
-    set("[data-nom-periodo]", "Pendiente de definir");
+    set("[data-nom-periodo]", "Sin periodo activo");
     const desg = $("[data-nom-desglose]");
     if (desg) desg.innerHTML = DESGLOSE_OCIOSO;
   }
@@ -242,12 +350,17 @@
       '<span class="sub">' + pre.filas.length + " empleado" + (pre.filas.length === 1 ? "" : "s") + " activos</span></div>" +
       '<div style="overflow-x:auto"><table class="tbl">' +
       "<thead><tr><th>Empleado</th><th style=\"text-align:right\">Sueldo base</th>" +
-      "<th style=\"text-align:right\">Otras percepciones</th><th style=\"text-align:right\">Deducciones</th>" +
+      "<th style=\"text-align:right\">Otras percepciones</th><th style=\"text-align:right\">ISR</th>" +
+      "<th style=\"text-align:right\">IMSS</th><th style=\"text-align:right\">Otras deducciones</th>" +
       "<th style=\"text-align:right\">Neto a pagar</th><th>Motivo / Notas</th></tr></thead><tbody>" +
       pre.filas.map(function (f, i) {
-        return "<tr><td>" + f.nombre + (f.puesto ? ' <span style="color:var(--faint);font-size:.8rem">· ' + f.puesto + "</span>" : "") + "</td>" +
+        const aviso = f.sinFechaIngreso
+          ? ' <span title="Sin fecha de ingreso: IMSS calculado con antigüedad de 1 año" style="color:#ffcf82;cursor:help">⚠</span>' : "";
+        return "<tr><td>" + f.nombre + aviso + (f.puesto ? ' <span style="color:var(--faint);font-size:.8rem">· ' + f.puesto + "</span>" : "") + "</td>" +
           '<td class="num" style="text-align:right">$' + money(f.base) + "</td>" +
           '<td style="text-align:right"><input class="pn-inp" type="number" min="0" step="0.01" value="0" data-pn-extra="' + i + '"></td>' +
+          '<td class="num" style="text-align:right" data-pn-isr="' + i + '" title="' + tituloIsr(f) + '">$' + money(f.isr) + "</td>" +
+          '<td class="num" style="text-align:right" data-pn-imss="' + i + '">$' + money(f.imss) + "</td>" +
           '<td style="text-align:right"><input class="pn-inp" type="number" min="0" step="0.01" value="0" data-pn-ded="' + i + '"></td>' +
           '<td class="num pn-neto" style="text-align:right" data-pn-neto="' + i + '">$' + money(netoDe(f)) + "</td>" +
           '<td><input class="pn-nota" type="text" value="" placeholder="Opcional" data-pn-nota="' + i + '"></td></tr>';
@@ -311,7 +424,15 @@
     const i = parseInt(ex != null ? ex : dd, 10);
     const f = pre.filas[i]; if (!f) return;
     const val = round2(parseFloat(e.target.value) || 0);
-    if (ex != null) f.extras = val; else f.deducciones = val;
+    if (ex != null) {
+      f.extras = val;
+      // Más percepciones cambian la base gravable: se recalculan ISR/IMSS/patronal.
+      calcularImpuestos(f);
+      const cIsr = $('[data-pn-isr="' + i + '"]');
+      if (cIsr) { cIsr.textContent = "$" + money(f.isr); cIsr.title = tituloIsr(f); }
+      const cImss = $('[data-pn-imss="' + i + '"]');
+      if (cImss) cImss.textContent = "$" + money(f.imss);
+    } else f.deducciones = val;
     const celda = $('[data-pn-neto="' + i + '"]');
     if (celda) celda.textContent = "$" + money(netoDe(f));
     renderKpis();
@@ -349,8 +470,10 @@
         salario_diario: f.salario_diario,
         sueldo_base: f.base,
         otras_percepciones: f.extras,
-        deducciones: f.deducciones,
-        notas: f.notas || null,
+        // ISR + IMSS + otras deducciones, sumados (el esquema no cambia).
+        deducciones: deduccionesDe(f),
+        // El desglose queda en las notas para poder auditarlo después.
+        notas: notasConDesglose(f),
       };
     });
 

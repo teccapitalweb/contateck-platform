@@ -498,20 +498,20 @@
     window.CTRender.cfdis = renderCfdis;
 
     /* ---------- Módulo 08 · Nómina (Parte A — OT-0017) ---------- */
-    // El cálculo real (percepciones/deducciones/ISR/IMSS) requiere reglas
-    // que debe definir el responsable contable — mientras tanto, honesto:
-    // "Próximamente", nunca una cifra inventada.
+    // Estado inicial (sin periodo activo). El cálculo (ISR, IMSS) ya lo hace
+    // nomina.js con el Motor Fiscal 2026 al generar una prenómina; aquí solo
+    // se deja la pantalla vacía, nunca una cifra inventada.
     (function () {
       const cont = document.querySelector("[data-nom-desglose]");
       const setT = function (sel, v) { const e = document.querySelector(sel); if (e) e.textContent = v; };
-      setT("[data-nom-periodo]", "Pendiente de definir");
+      setT("[data-nom-periodo]", "Sin periodo activo");
       setT("[data-nom-perc]", "—");
       setT("[data-nom-ded]", "—");
       setT("[data-nom-neto]", "—");
       if (cont) {
         cont.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' +
-          '<b style="display:block;color:var(--text);margin-bottom:.2rem">Próximamente</b>' +
-          "Cálculo de nómina (percepciones, deducciones, ISR, IMSS) — pendiente de definir con el responsable contable.</div>";
+          '<b style="display:block;color:var(--text);margin-bottom:.2rem">Sin periodo activo</b>' +
+          "Da clic en <b>Calcular</b> para generar la prenómina con ISR e IMSS.</div>";
       }
     })();
 
