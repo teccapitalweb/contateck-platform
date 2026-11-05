@@ -34,7 +34,22 @@ export async function listarCfdisSaldo(accessToken, log = console) {
     log.warn('[postgres] listarCfdisSaldo:', error.message);
     return { ok: false, error: error.message };
   }
-  return { ok: true, facturas: data || [] };
+  // OT-0030: la vista cfdis_saldo no distingue el tipo de comprobante, así que
+  // una nota de crédito (E) o un complemento de pago (P) aparecían como si
+  // fueran facturas por cobrar (probado en sandbox: una NC de $58 sumó $58 a
+  // "Por cobrar" y se podía elegir para registrar un cobro). Solo las facturas
+  // de ingreso se cobran; se excluyen aquí sin tocar la base. Cómo debe afectar
+  // una NC al saldo de la factura original es decisión de la contadora.
+  const filas = data || [];
+  if (!filas.length) return { ok: true, facturas: filas };
+  const { data: noCobrables, error: errTipo } = await supabase
+    .from('cfdis').select('id').in('tipo', ['E', 'P']).in('id', filas.map((f) => f.cfdi_id));
+  if (errTipo) {
+    log.warn('[postgres] listarCfdisSaldo (tipos):', errTipo.message);
+    return { ok: false, error: errTipo.message };
+  }
+  const excluir = new Set((noCobrables || []).map((c) => c.id));
+  return { ok: true, facturas: filas.filter((f) => !excluir.has(f.cfdi_id)) };
 }
 
 export async function registrarPagoCliente(accessToken, datos, log = console) {

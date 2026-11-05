@@ -37,7 +37,41 @@ Versiones de caché subidas en `dashboard.html`: `app.js` v7, `facturacion.js` v
 - 16 llamadas al backend local con sesión real que se rechazan ANTES del PAC: validaciones (400), CFDI de otra empresa o inexistente (404), sin sesión (401), motivo de cancelación inválido, correo inválido, health sin la ruta demo.
 - En pantalla: KPIs en 0 con la base vacía; una fila con HTML malicioso en el nombre del cliente se muestra como texto y no se ejecuta.
 
-**NO verificado:** el camino feliz (timbrar de verdad en el sandbox de Fiscalapi, que escribe un CFDI en la base DEV), ni que `raw.recipient` traiga `zipCode`/`taxRegimeCode` en las facturas reales (la nota de crédito y el REP dependen de eso; si faltan, el backend responde 400 con un mensaje claro).
+### Prueba real en el sandbox de Fiscalapi (5-nov-2026)
+
+Primer intento: 403 de Fiscalapi ("tu suscripción debe incluir: Emisión CFDI"); se resolvió activando la
+suscripción de pruebas Emisión CFDI en `test.fiscalapi.com` (no era un error del código). Segundo intento,
+un solo CFDI de prueba ($100 + IVA = $116, PUE, receptor de pruebas) desde el formulario del panel:
+
+- Timbrado correcto, sin aviso de registro: quedó guardado en `cfdis` (folio `CT-37`, tipo I, vigente).
+- La lista y los KPIs se actualizaron solos (1 timbrada, $116, 0 canceladas) sin recargar la página.
+- PDF de Fiscalapi, PDF propio y XML responden 200 para un CFDI de la empresa; el estatus ante el SAT responde "Vigente".
+- `raw.recipient` guarda `tin`, `legalName`, `zipCode`, `taxRegimeCode`, `cfdiUseCode` y `email`, así que la nota de
+  crédito y el REP pueden tomar el receptor de la factura original. `raw.issuer` NO guarda el CSD ni contraseñas.
+- Observación: la factura PUE aparece en "Por cobrar" ($116) hasta que se registra su cobro en Contabilidad
+  (comportamiento de `cfdis_saldo`, OT-0020), no es un error de Facturación.
+
+### Nota de crédito y cancelación en el sandbox (mismo día, autorizado por el usuario)
+
+- **Nota de crédito** `NC-38` ($50 + IVA = $58) sobre `CT-37`, desde el botón de la fila: timbrada y guardada
+  (tipo E, vigente), sin aviso de registro. El receptor se resolvió desde la factura original.
+  Limitación de la prueba: el receptor de pruebas coincide con los antiguos valores por defecto (CP 42501, régimen
+  601), así que esta prueba no distingue "leído de la original" de "valor por defecto"; sí confirma que la ruta
+  (buscar original, validar receptor, timbrar) funciona de punta a punta.
+- **Cancelación** de `NC-38` (motivo 02): cancelada ante el SAT, `estatus = cancelado`, con `cancelled_at`, y `raw`
+  CONSERVA el CFDI original más `acuseCancelacion` (antes el acuse lo sobrescribía). Los KPIs pasaron a
+  "Canceladas (mes): 1".
+- **Fallo encontrado en la prueba (ya existía en Cobranza) y corregido aquí:** `listarCfdisSaldo`
+  (`backend/src/supabasePagosCliente.js`) devolvía también notas de crédito (E) y complementos de pago (P) como
+  si fueran facturas por cobrar: la NC de $58 sumó $58 a "Por cobrar" ($174) y se podía elegir para registrar un
+  cobro. Ahora solo salen facturas de ingreso; "Por cobrar" volvió a $116. No requiere SQL.
+
+**NO verificado:** el REP (necesita una factura PPD y timbrar un complemento más).
+
+**Pendiente de decisión (contadora):** cómo debe afectar una nota de crédito vigente al saldo de la factura que
+descuenta (hoy no lo afecta). Además, `registrar_pago_cliente()` (SQL) sigue aceptando el id de una NC si se le
+manda directo; la protección completa pide una validación de `tipo` dentro de la función o de la vista
+`cfdis_saldo` (cambio de SQL, no incluido).
 
 ## 4. Pendiente (bloque B, no incluido)
 
