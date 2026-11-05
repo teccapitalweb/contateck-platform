@@ -28,6 +28,8 @@ export async function listarCfdisSaldo(accessToken, log = console) {
     .from('cfdis_saldo')
     .select('cfdi_id, folio, receptor_nombre, fecha, metodo_pago, estatus, total, pagado, saldo_pendiente')
     .gt('saldo_pendiente', 0)
+    // OT-0029: una factura cancelada ya no se cobra (estatus: 'vigente' | 'cancelado').
+    .neq('estatus', 'cancelado')
     .order('fecha', { ascending: false })
     .limit(200);
   if (error) {

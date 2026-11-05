@@ -3,13 +3,15 @@
 //  OT-0014 — Épica 2: Evolución UX/UI
 //    POST /api/ventas                -> registrar venta (pendiente)
 //    GET  /api/ventas                -> listar (filtrado por RLS)
+//    GET  /api/ventas/config-contable -> OT-0029: ¿hay cuentas para generar la póliza?
 //    POST /api/ventas/:id/tomar      -> pendiente -> revision (manual)
 //    POST /api/ventas/:id/confirmar  -> revision -> confirmado
-//    POST /api/ventas/:id/rechazar   -> revision -> rechazado
+//    POST /api/ventas/:id/rechazar   -> revision -> rechazado (body: { motivo })
+//    POST /api/ventas/:id/generar-poliza -> OT-0029: reintento de póliza de una venta confirmada
 // ============================================================
 import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
-import { crearVenta, listarVentas, tomarParaRevision, confirmarVenta, rechazarVenta } from '../supabaseVentas.js';
+import { crearVenta, listarVentas, tomarParaRevision, confirmarVenta, rechazarVenta, estadoConfigContable, generarPolizaDeVenta } from '../supabaseVentas.js';
 
 export const ventasRouter = Router();
 ventasRouter.use(verifyAuth);
@@ -36,6 +38,13 @@ ventasRouter.get('/ventas', async (req, res) => {
   return res.json(r);
 });
 
+ventasRouter.get('/ventas/config-contable', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await estadoConfigContable(req.token);
+  if (!r.ok) return res.status(400).json(r);
+  return res.json(r);
+});
+
 ventasRouter.post('/ventas/:id/tomar', async (req, res) => {
   if (!requireAuth(req, res)) return;
   const r = await tomarParaRevision(req.token, req.user.uid, req.params.id);
@@ -52,7 +61,14 @@ ventasRouter.post('/ventas/:id/confirmar', async (req, res) => {
 
 ventasRouter.post('/ventas/:id/rechazar', async (req, res) => {
   if (!requireAuth(req, res)) return;
-  const r = await rechazarVenta(req.token, req.user.uid, req.params.id);
+  const r = await rechazarVenta(req.token, req.user.uid, req.params.id, (req.body || {}).motivo);
+  if (!r.ok) return res.status(400).json(r);
+  return res.json(r);
+});
+
+ventasRouter.post('/ventas/:id/generar-poliza', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await generarPolizaDeVenta(req.token, req.params.id);
   if (!r.ok) return res.status(400).json(r);
   return res.json(r);
 });
