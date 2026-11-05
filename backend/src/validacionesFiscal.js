@@ -163,3 +163,29 @@ export function rutaDocumentoValida(path, empresaId) {
   return partes.length === 4 && partes[0] === String(empresaId) && partes[1] === 'sat'
     && esUuid(partes[2]) && /^documento\.(pdf|jpg|png|webp)$/.test(partes[3]);
 }
+
+// ---------------- Alertas de vigencia de documentos ----------------
+// De cada tipo de documento (los "otro" se separan por nombre) cuenta solo el
+// de vigencia más lejana: si ya subiste la opinión nueva, la vencida de hace
+// meses no vuelve a avisar. Alerta si vence en 5 días o menos, o ya venció.
+export function alertasVigencia(documentos, hoy = hoyMexico()) {
+  const mejores = new Map();
+  for (const d of documentos || []) {
+    if (!d || !d.vigencia_hasta) continue;
+    const vig = String(d.vigencia_hasta).slice(0, 10);
+    if (!fechaIsoValida(vig)) continue;
+    const clave = d.tipo === 'otro' ? `otro:${String(d.nombre).trim().toLowerCase()}` : String(d.tipo);
+    const previo = mejores.get(clave);
+    if (!previo || vig > previo.vig) mejores.set(clave, { vig, nombre: d.nombre });
+  }
+  const alertas = [];
+  for (const { vig, nombre } of mejores.values()) {
+    const dias = diasEntre(hoy, vig);
+    if (dias < 0) {
+      alertas.push({ tipo: 'danger', titulo: `${nombre} vencido`, texto: `Su vigencia terminó el ${vig}. Sube el documento actualizado en SAT y Fiscal.`, accion: { vista: 'sat' } });
+    } else if (dias <= 5) {
+      alertas.push({ tipo: 'warn', titulo: dias === 0 ? `${nombre} vence hoy` : `${nombre} vence en ${dias} día${dias === 1 ? '' : 's'}`, texto: `Vigencia hasta el ${vig}.`, accion: { vista: 'sat' } });
+    }
+  }
+  return alertas;
+}

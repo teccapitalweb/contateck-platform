@@ -610,6 +610,20 @@
     return null;
   }
 
+  // Hoja para la contadora: tus cuentas + una columna vacía donde anota el código
+  // agrupador del SAT. Abre bien en Excel (BOM UTF-8) y neutraliza celdas que
+  // empiezan con = + - @ para que no se interpreten como fórmula.
+  function csvCuentasContadora() {
+    const celda = (v) => {
+      let s = String(v == null ? "" : v).replace(/\r?\n/g, " ");
+      if (/^[=+\-@\t]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+    const filas = [["Código", "Nombre", "Nivel", "Naturaleza", "Cuenta de mayor", "Código agrupador SAT (llenar)"]]
+      .concat(getCuentas().map((c) => [c.codigo, c.nombre, c.nivel, c.nat, c.padre || "", ""]));
+    return "﻿" + filas.map((f) => f.map(celda).join(",")).join("\r\n");
+  }
+
   // XML Catálogo de cuentas (esquema SAT catalogocuentas 1.3)
   // OJO: CodAgrup se llena con el mismo código de la cuenta; solo es correcto
   // si ese código existe en el Código Agrupador del SAT (ver OT-0031, pendiente contadora).
@@ -1333,7 +1347,12 @@ ${ctas}
     // OT-0031: el RFC sale primero de la empresa (base de datos), no de lo que
     // quedó guardado en este navegador; si no hay, se usa el último capturado.
     const rfcEmpresa = (window.CONTATECK_EMPRESA_PG && window.CONTATECK_EMPRESA_PG.rfc) || "";
-    const iva = determinacionIVA(), dt = diot(), rfc = (rfcEmpresa || getRfcEmisor()).toUpperCase(), per = getPeriodo(), b = balanza();
+    const iva = determinacionIVA(), dtTodo = diot(), rfc = (rfcEmpresa || getRfcEmisor()).toUpperCase(), per = getPeriodo(), b = balanza();
+    // Proveedores sin RFC válido (la DIOT se presenta por RFC): se avisan y se excluyen de la tabla y los totales.
+    const dt = dtTodo.filter((d) => RFC_SAT.test(String(d.rfc || "").toUpperCase().trim()));
+    const dtSinRfc = dtTodo.filter((d) => dt.indexOf(d) === -1);
+    const diotAviso = dtSinRfc.length
+      ? `<div class="cont-err" style="margin-bottom:.6rem">${dtSinRfc.reduce((s, d) => s + (d.ops || 0), 0)} operación(es) con proveedores sin RFC válido (base $${fmt(dtSinRfc.reduce((s, d) => s + num(d.base), 0))}, IVA $${fmt(dtSinRfc.reduce((s, d) => s + num(d.iva), 0))}) no se incluyen aquí. Corrige el RFC del proveedor en esas pólizas.</div>` : "";
     const anioActual = new Date().getFullYear();
     const mes = per ? per.mes : (new Date().getMonth() + 1), anio = per ? per.anio : anioActual;
     const balanzaBloqueada = !b.cuadra || !per;
@@ -1359,6 +1378,7 @@ ${ctas}
         <p style="color:var(--faint);font-size:.78rem;margin:.6rem 0 0">El Catálogo usa el mes y año que captures aquí. La Balanza se genera del periodo elegido en el selector de arriba, y el mes y año de aquí deben coincidir con él.</p>
         <div class="cont-foot" style="justify-content:flex-start;margin-top:.8rem">
           <button class="btn btn--primary" data-sat-xml-cat>Descargar XML Catálogo</button>
+          <button class="btn btn--ghost" data-sat-csv-cat title="Hoja con tus cuentas y una columna vacía para que la contadora anote el código agrupador del SAT">Hoja de cuentas para la contadora (CSV)</button>
           <button class="btn btn--primary" data-sat-xml-bal ${balanzaBloqueada ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Descargar XML Balanza</button>
         </div>
         ${!per ? `<div class="cont-err" style="margin-top:.6rem">Elige un mes en el selector de periodo de arriba (hoy dice "Todo el ejercicio"): la Balanza del SAT es de un solo mes.</div>` : ""}
@@ -1377,6 +1397,7 @@ ${ctas}
         <div class="card">
           <h3 class="cont-ef-titulo">DIOT · Operaciones con terceros</h3>
           <p style="color:var(--faint);font-size:.78rem;margin:0 0 .6rem">Resumen de referencia por proveedor, a partir de pólizas de CFDI recibidos. No es el archivo de la DIOT: faltan tipo de tercero, tipo de operación y desglose por tasa.</p>
+          ${diotAviso}
           <div style="overflow-x:auto"><table class="tbl">
             <thead><tr><th>RFC</th><th>Proveedor</th><th style="text-align:right">Base</th><th style="text-align:right">IVA</th></tr></thead>
             <tbody>${diotFilas}</tbody>${diotFoot}</table></div>
@@ -3090,6 +3111,7 @@ ${ctas}
     }
     if (e.target.closest("[data-cont-contabilizar]")) { openContabilizarCfdi(); return; }
     if (e.target.closest("[data-cont-importar-xml]")) { openImportarXml(); return; }
+    if (e.target.closest("[data-sat-csv-cat]")) { descargarTexto("Cuentas_para_contadora.csv", csvCuentasContadora(), "text/csv;charset=utf-8"); return; }
     if (e.target.closest("[data-sat-xml-cat]")) { descargarXmlSAT("catalogo"); return; }
     if (e.target.closest("[data-sat-xml-bal]")) { descargarXmlSAT("balanza"); return; }
     const nav = e.target.closest('.nav-item[data-view="contabilidad"]');

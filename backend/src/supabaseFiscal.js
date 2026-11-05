@@ -31,7 +31,7 @@ import { config } from './config.js';
 import { obtenerRolUsuario } from './supabaseCfdis.js';
 import {
   esUuid, hoyMexico, diasEntre, validarObligacion, validarDeclaracionNueva,
-  validarActualizacionDeclaracion, validarDocumentoNuevo, rutaDocumentoValida,
+  validarActualizacionDeclaracion, validarDocumentoNuevo, rutaDocumentoValida, alertasVigencia,
 } from './validacionesFiscal.js';
 
 const ROLES_VEN = ['contador', 'admin', 'director', 'auditor'];
@@ -266,6 +266,20 @@ export async function crearDocumentoFiscal(accessToken, userId, datos, log = con
     .select().single();
   if (error) return errorAmigable(error, 'guardar el documento', log);
   return { ok: true, documento: data };
+}
+
+// ---------------- Alertas de vigencia de documentos (para el Dashboard) ----------------
+// Nunca lanza: si no se puede leer, el Dashboard sigue sin esas alertas.
+export async function obtenerAlertasDocumentos(supabase, log = console) {
+  try {
+    const { data, error } = await supabase
+      .from('documentos_fiscales').select('tipo, nombre, vigencia_hasta').not('vigencia_hasta', 'is', null);
+    if (error) { log.warn('[postgres] alertas de documentos:', error.message); return []; }
+    return alertasVigencia(data || []);
+  } catch (e) {
+    log.warn('[postgres] alertas de documentos:', e?.message);
+    return [];
+  }
 }
 
 // ---------------- Calendario (derivado, sin tabla propia) ----------------

@@ -69,6 +69,57 @@
     if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0, v = c === "x" ? r : (r & 0x3) | 0x8; return v.toString(16); });
   }
+  // ---------- Sugerencias (solo orientativas; la persona confirma) ----------
+  // Obligaciones habituales, TODAS "día 17 del mes siguiente" (el mismo criterio
+  // de sugerirFechaLimite). No incluye Contabilidad Electrónica ni la anual:
+  // su fecha límite depende del régimen y no sigue esa regla. Son punto de
+  // partida: se editan o desactivan desde la tabla de Obligaciones.
+  const PLANTILLA_OBLIGACIONES = [
+    { nombre: "IVA mensual", periodicidad: "mensual", diaLimite: 17 },
+    { nombre: "ISR pagos provisionales", periodicidad: "mensual", diaLimite: 17 },
+    { nombre: "DIOT", periodicidad: "mensual", diaLimite: 17 },
+    { nombre: "Retenciones de ISR por sueldos", periodicidad: "mensual", diaLimite: 17 },
+    { nombre: "Cuotas IMSS", periodicidad: "mensual", diaLimite: 17 },
+    { nombre: "RCV e INFONAVIT", periodicidad: "bimestral", diaLimite: 17 },
+  ];
+  function ultimoDiaMes(anio, mes0) { return new Date(Date.UTC(anio, mes0 + 1, 0)).getUTCDate(); }
+  // `indice`: mensual 0-11 (mes del periodo), bimestral 0-5 (bimestre), anual se ignora.
+  // Mensual y bimestral vencen el `dia_limite` del mes siguiente al periodo; la anual,
+  // en `mes_limite` del año siguiente. Si cae en sábado o domingo se recorre al lunes.
+  // NO considera días inhábiles por feriados. Devuelve AAAA-MM-DD o null.
+  function sugerirFechaLimite(obl, indice, anio) {
+    if (!obl || !(anio >= 2000 && anio <= 2100) || !(Number(obl.dia_limite) >= 1)) return null;
+    let mes0, anioVence = anio;
+    if (obl.periodicidad === "mensual") { if (!(indice >= 0 && indice <= 11)) return null; mes0 = indice + 1; }
+    else if (obl.periodicidad === "bimestral") { if (!(indice >= 0 && indice <= 5)) return null; mes0 = indice * 2 + 2; }
+    else if (obl.periodicidad === "anual") { if (!(obl.mes_limite >= 1 && obl.mes_limite <= 12)) return null; mes0 = obl.mes_limite - 1; anioVence = anio + 1; }
+    else return null;
+    if (mes0 > 11) { mes0 -= 12; anioVence += 1; }
+    let f = new Date(Date.UTC(anioVence, mes0, Math.min(Number(obl.dia_limite), ultimoDiaMes(anioVence, mes0))));
+    const dow = f.getUTCDay();
+    if (dow === 6) f = new Date(f.getTime() + 2 * 86400000);
+    else if (dow === 0) f = new Date(f.getTime() + 86400000);
+    return f.toISOString().slice(0, 10);
+  }
+  function textoPeriodo(obl, indice, anio) {
+    if (obl.periodicidad === "mensual") return MESES[indice] + " " + anio;
+    if (obl.periodicidad === "bimestral") return MESES[indice * 2] + "–" + MESES[indice * 2 + 1] + " " + anio;
+    return "Ejercicio " + anio;
+  }
+  // Periodo ya concluido más reciente (el que normalmente toca declarar hoy).
+  function periodoAnterior(obl, hoy) {
+    const a = Number(hoy.slice(0, 4)), m0 = Number(hoy.slice(5, 7)) - 1;
+    if (obl.periodicidad === "anual") return { indice: 0, anio: a - 1 };
+    if (obl.periodicidad === "bimestral") { const b = Math.floor(m0 / 2) - 1; return b < 0 ? { indice: 5, anio: a - 1 } : { indice: b, anio: a }; }
+    return m0 === 0 ? { indice: 11, anio: a - 1 } : { indice: m0 - 1, anio: a };
+  }
+  // El tipo de declaración se guarda como prefijo de las notas (sin cambiar la tabla).
+  const TIPOS_DECLARACION = ["Normal", "Complementaria", "Extemporánea"];
+  function tipoDeNotas(notas) {
+    const m = /^\[(Complementaria|Extemporánea)\]/.exec(String(notas || ""));
+    return m ? m[1] : null;
+  }
+
   function toast(msg, tipo) {
     let t = document.createElement("div");
     t.className = "v-toast v-toast--" + (tipo || "ok");
@@ -192,7 +243,7 @@
 
       <div class="grid-2" style="margin-bottom:1.2rem">
         <div class="card">
-          <div class="card__head"><h3>Obligaciones</h3>${puedeConfigurar() ? '<button class="btn btn--ghost" style="padding:.45rem .8rem;font-size:.84rem" data-fis-nueva-obl>+ Obligación</button>' : ""}</div>
+          <div class="card__head"><h3>Obligaciones</h3>${puedeConfigurar() ? '<span style="display:flex;gap:.4rem"><button class="btn btn--ghost" style="padding:.45rem .8rem;font-size:.84rem" data-fis-plantilla>Cargar comunes</button><button class="btn btn--ghost" style="padding:.45rem .8rem;font-size:.84rem" data-fis-nueva-obl>+ Obligación</button></span>' : ""}</div>
           <div data-fis-obl-error></div>
           <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nombre</th><th>Periodicidad</th><th>Día límite</th><th>Estado</th>${puedeConfigurar() ? "<th></th>" : ""}</tr></thead><tbody data-fis-obligaciones></tbody></table></div>
         </div>
@@ -240,7 +291,7 @@
       const per = PERIODICIDADES.find((p) => p.v === o.periodicidad);
       const mes = o.periodicidad === "anual" && o.mes_limite ? " de " + (MESES[o.mes_limite - 1] || "") : "";
       const accion = puedeConfigurar()
-        ? '<td><button class="v-mini" data-fis-toggle-obl="' + esc(o.id) + '" data-activa="' + (o.activa ? "1" : "0") + '">' + (o.activa ? "Desactivar" : "Activar") + "</button></td>"
+        ? '<td style="white-space:nowrap"><button class="v-mini" data-fis-editar-obl="' + esc(o.id) + '">Editar</button> <button class="v-mini" data-fis-toggle-obl="' + esc(o.id) + '" data-activa="' + (o.activa ? "1" : "0") + '">' + (o.activa ? "Desactivar" : "Activar") + "</button></td>"
         : "";
       return "<tr><td>" + esc(o.nombre) + "</td><td>" + esc(per ? per.t : o.periodicidad) + '</td><td class="num">Día ' + esc(o.dia_limite) + esc(mes) +
         '</td><td><span class="pill ' + (o.activa ? "pill--ok" : "pill--late") + '">' + (o.activa ? "Activa" : "Inactiva") + "</span></td>" + accion + "</tr>";
@@ -282,10 +333,13 @@
       let acciones = "";
       if (puedeRegistrar() && d.estado !== "presentada") {
         acciones = '<button class="v-mini v-mini--ok" data-fis-marcar="' + esc(d.id) + '">Marcar presentada</button>';
-      } else if (d.documento_path) {
-        acciones = '<button class="v-mini" data-fis-ver-doc="' + esc(d.documento_path) + '">Ver acuse</button>';
+      } else {
+        if (d.documento_path) acciones += '<button class="v-mini" data-fis-ver-doc="' + esc(d.documento_path) + '">Ver acuse</button> ';
+        if (puedeRegistrar()) acciones += '<button class="v-mini" data-fis-deshacer="' + esc(d.id) + '">Regresar a pendiente</button>';
       }
-      return "<tr><td>" + esc(nombreObligacion(d.obligacion_id)) + "</td><td>" + esc(d.periodo) + "</td><td>" + esc(fmtFecha(d.fecha_vencimiento)) +
+      const tipoDecl = tipoDeNotas(d.notas);
+      const etiquetaTipo = tipoDecl ? ' <span class="v-badge v-badge--warn">' + esc(tipoDecl) + "</span>" : "";
+      return "<tr><td>" + esc(nombreObligacion(d.obligacion_id)) + "</td><td>" + esc(d.periodo) + etiquetaTipo + "</td><td>" + esc(fmtFecha(d.fecha_vencimiento)) +
         "</td><td>" + esc(fmtFecha(d.fecha_presentacion)) + "</td><td>" + esc(d.folio_acuse || "—") +
         '</td><td><span class="v-badge ' + e.cls + '">' + e.txt + "</span></td><td>" + acciones + "</td></tr>";
     }).join("");
@@ -312,15 +366,19 @@
     try { await fn(); } finally { btn.disabled = false; }
   }
 
-  function openNuevaObligacion() {
+  let obligacionEditando = null; // obligación en edición (null = alta)
+  function openFormObligacion(o) {
+    obligacionEditando = o || null;
+    const per = o ? o.periodicidad : "mensual";
     openModal(`
-      <h2 class="v-h2">Nueva obligación fiscal</h2>
-      <div class="v-field"><label>Nombre</label><input class="v-inp" id="fo-nombre" maxlength="120" placeholder="Ej. IVA mensual"></div>
+      <h2 class="v-h2">${o ? "Editar obligación fiscal" : "Nueva obligación fiscal"}</h2>
+      ${o ? '<p style="color:var(--muted);font-size:.82rem;margin:0 0 .8rem">Los cambios no modifican las declaraciones que ya registraste.</p>' : ""}
+      <div class="v-field"><label>Nombre</label><input class="v-inp" id="fo-nombre" maxlength="120" placeholder="Ej. IVA mensual" value="${o ? esc(o.nombre) : ""}"></div>
       <div class="v-grid2">
-        <div class="v-field"><label>Periodicidad</label><select class="v-inp" id="fo-periodicidad">${PERIODICIDADES.map((p) => `<option value="${p.v}">${p.t}</option>`).join("")}</select></div>
-        <div class="v-field"><label>Día límite</label><input class="v-inp" id="fo-dia" type="number" min="1" max="31" placeholder="17"></div>
+        <div class="v-field"><label>Periodicidad</label><select class="v-inp" id="fo-periodicidad">${PERIODICIDADES.map((p) => `<option value="${p.v}"${p.v === per ? " selected" : ""}>${p.t}</option>`).join("")}</select></div>
+        <div class="v-field"><label>Día límite</label><input class="v-inp" id="fo-dia" type="number" min="1" max="31" placeholder="17" value="${o ? esc(o.dia_limite) : ""}"></div>
       </div>
-      <div class="v-field" id="fo-mes-wrap" style="display:none"><label>Mes límite (solo anual)</label><select class="v-inp" id="fo-mes"><option value="">Elige el mes…</option>${MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join("")}</select></div>
+      <div class="v-field" id="fo-mes-wrap" style="display:${per === "anual" ? "" : "none"}"><label>Mes límite (solo anual)</label><select class="v-inp" id="fo-mes"><option value="">Elige el mes…</option>${MESES.map((m, i) => `<option value="${i + 1}"${o && o.mes_limite === i + 1 ? " selected" : ""}>${m}</option>`).join("")}</select></div>
       <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-fis-guardar-obl>Guardar</button></div>`);
   }
   async function guardarObligacion() {
@@ -331,11 +389,14 @@
     if (!nombre) { toast("Captura el nombre de la obligación", "warn"); return; }
     if (!diaLimite || diaLimite < 1 || diaLimite > 31) { toast("Captura un día límite válido (1-31)", "warn"); return; }
     if (periodicidad === "anual" && !mesLimite) { toast("Elige el mes límite de la obligación anual", "warn"); return; }
-    const cuerpo = { nombre, periodicidad, diaLimite };
-    if (periodicidad === "anual") cuerpo.mesLimite = mesLimite;
-    const data = await enviar("POST", "/api/fiscal/obligaciones", cuerpo);
+    const cuerpo = { nombre, periodicidad, diaLimite, mesLimite: periodicidad === "anual" ? mesLimite : null };
+    const editando = obligacionEditando;
+    const data = editando
+      ? await enviar("PUT", "/api/fiscal/obligaciones/" + encodeURIComponent(editando.id), cuerpo)
+      : await enviar("POST", "/api/fiscal/obligaciones", cuerpo);
     if (!data.ok) { toast(data.error || "No se pudo guardar", "warn"); return; }
-    closeModal(); toast("Obligación creada"); await render();
+    obligacionEditando = null;
+    closeModal(); toast(editando ? "Obligación actualizada" : "Obligación creada"); await render();
   }
   async function alternarObligacion(btn) {
     const id = btn.getAttribute("data-fis-toggle-obl");
@@ -343,6 +404,32 @@
     const data = await enviar("PUT", "/api/fiscal/obligaciones/" + encodeURIComponent(id), { activa: activar });
     if (!data.ok) { toast(data.error || "No se pudo actualizar", "warn"); return; }
     toast(activar ? "Obligación activada" : "Obligación desactivada"); await render();
+  }
+
+  // Plantilla de obligaciones habituales: se eligen y se crean; después se editan igual que cualquiera.
+  function openPlantilla() {
+    const existentes = obligaciones.map((o) => String(o.nombre).trim().toLowerCase());
+    openModal(`
+      <h2 class="v-h2">Cargar obligaciones comunes</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .8rem">Son sugerencias (día 17 del mes siguiente). Revísalas con tu contadora: después puedes editarlas o desactivarlas aquí mismo. No incluye Contabilidad Electrónica ni la declaración anual, que dependen del régimen.</p>
+      ${PLANTILLA_OBLIGACIONES.map((p, i) => {
+        const ya = existentes.indexOf(p.nombre.toLowerCase()) !== -1;
+        const per = PERIODICIDADES.find((x) => x.v === p.periodicidad);
+        return `<label style="display:flex;gap:.6rem;align-items:center;margin-bottom:.45rem${ya ? ";opacity:.55" : ""}"><input type="checkbox" data-fis-tpl="${i}"${ya ? " disabled" : " checked"}> <span><b>${esc(p.nombre)}</b> · ${esc(per ? per.t : p.periodicidad)} · día ${p.diaLimite}${ya ? " · ya existe" : ""}</span></label>`;
+      }).join("")}
+      <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-fis-cargar-plantilla>Crear seleccionadas</button></div>`);
+  }
+  async function cargarPlantilla() {
+    const elegidas = Array.from(document.querySelectorAll("[data-fis-tpl]")).filter((c) => c.checked).map((c) => PLANTILLA_OBLIGACIONES[Number(c.getAttribute("data-fis-tpl"))]);
+    if (!elegidas.length) { toast("Elige al menos una obligación", "warn"); return; }
+    let creadas = 0, fallo = null;
+    for (const p of elegidas) {
+      const data = await enviar("POST", "/api/fiscal/obligaciones", { nombre: p.nombre, periodicidad: p.periodicidad, diaLimite: p.diaLimite });
+      if (data.ok) creadas++; else { fallo = data.error || "No se pudo guardar"; break; }
+    }
+    closeModal();
+    toast(fallo ? creadas + " creada(s); se detuvo: " + fallo : creadas + " obligación(es) creada(s)", fallo ? "warn" : "ok");
+    await render();
   }
 
   let archivoDoc = null;
@@ -385,21 +472,72 @@
     if (!activas.length) { toast("Primero da de alta (o activa) al menos una obligación", "warn"); return; }
     openModal(`
       <h2 class="v-h2">Nueva declaración</h2>
-      <div class="v-field"><label>Obligación</label><select class="v-inp" id="fdec-obl">${activas.map((o) => `<option value="${esc(o.id)}">${esc(o.nombre)}</option>`).join("")}</select></div>
       <div class="v-grid2">
-        <div class="v-field"><label>Periodo</label><input class="v-inp" id="fdec-periodo" maxlength="60" placeholder="Ej. Julio 2026"></div>
+        <div class="v-field"><label>Obligación</label><select class="v-inp" id="fdec-obl">${activas.map((o) => `<option value="${esc(o.id)}">${esc(o.nombre)}</option>`).join("")}</select></div>
+        <div class="v-field"><label>Tipo</label><select class="v-inp" id="fdec-tipo">${TIPOS_DECLARACION.map((t) => `<option>${t}</option>`).join("")}</select></div>
+      </div>
+      <div class="v-grid2">
+        <div class="v-field" id="fdec-idx-wrap"><label>Mes o bimestre</label><select class="v-inp" id="fdec-idx"></select></div>
+        <div class="v-field"><label>Año</label><input class="v-inp" id="fdec-anio" type="number" min="2000" max="2100"></div>
+      </div>
+      <div class="v-grid2">
+        <div class="v-field"><label>Periodo (se arma solo; puedes editarlo)</label><input class="v-inp" id="fdec-periodo" maxlength="60" placeholder="Ej. Julio 2026"></div>
         <div class="v-field"><label>Fecha límite</label><input class="v-inp" id="fdec-vence" type="date"></div>
       </div>
+      <p style="color:var(--faint);font-size:.78rem;margin:0" data-fdec-hint></p>
       <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-fis-guardar-decl>Guardar</button></div>`);
+    prepararDeclaracion(true);
+  }
+  function obligacionElegida() {
+    const sel = document.getElementById("fdec-obl");
+    return sel ? obligaciones.find((o) => o.id === sel.value) : null;
+  }
+  // Llena mes/bimestre, año, periodo y la fecha límite sugerida. `reiniciar`: al
+  // cambiar de obligación se vuelve al periodo más reciente ya concluido.
+  function prepararDeclaracion(reiniciar) {
+    const o = obligacionElegida(); if (!o) return;
+    const idxSel = document.getElementById("fdec-idx"), anioInp = document.getElementById("fdec-anio");
+    if (reiniciar) {
+      const p = periodoAnterior(o, hoyISO());
+      const opciones = o.periodicidad === "bimestral"
+        ? [0, 1, 2, 3, 4, 5].map((b) => ({ v: b, t: MESES[b * 2] + "–" + MESES[b * 2 + 1] }))
+        : MESES.map((m, i) => ({ v: i, t: m }));
+      idxSel.innerHTML = o.periodicidad === "anual" ? '<option value="0">—</option>' : opciones.map((x) => '<option value="' + x.v + '">' + esc(x.t) + "</option>").join("");
+      idxSel.value = String(p.indice); anioInp.value = String(p.anio);
+      document.getElementById("fdec-idx-wrap").style.display = o.periodicidad === "anual" ? "none" : "";
+    }
+    const indice = parseInt(idxSel.value, 10), anio = parseInt(anioInp.value, 10);
+    document.getElementById("fdec-periodo").value = anio ? textoPeriodo(o, indice, anio) : "";
+    const f = sugerirFechaLimite(o, indice, anio);
+    document.getElementById("fdec-vence").value = f || "";
+    document.querySelector("[data-fdec-hint]").textContent = f
+      ? "Fecha sugerida: " + (o.periodicidad === "anual" ? "el mes límite del año siguiente" : "el día límite del mes siguiente al periodo") + ", recorrida al lunes si cae en fin de semana. No considera días inhábiles por feriados: confírmala."
+      : "No se pudo sugerir la fecha (revisa el año o el mes límite de la obligación); captúrala a mano.";
   }
   async function guardarDeclaracion() {
     const obligacionId = document.getElementById("fdec-obl").value;
     const periodo = document.getElementById("fdec-periodo").value.trim();
     const fechaVencimiento = document.getElementById("fdec-vence").value;
+    const tipo = document.getElementById("fdec-tipo").value;
     if (!periodo || !fechaVencimiento) { toast("Captura el periodo y la fecha límite", "warn"); return; }
-    const data = await enviar("POST", "/api/fiscal/declaraciones", { obligacionId, periodo, fechaVencimiento });
+    const cuerpo = { obligacionId, periodo, fechaVencimiento };
+    if (tipo !== "Normal") cuerpo.notas = "[" + tipo + "]";
+    const data = await enviar("POST", "/api/fiscal/declaraciones", cuerpo);
     if (!data.ok) { toast(data.error || "No se pudo guardar", "warn"); return; }
     closeModal(); toast("Declaración registrada"); await render();
+  }
+
+  function openDeshacerPresentada(id) {
+    declaracionActual = id;
+    openModal(`
+      <h2 class="v-h2">Regresar a pendiente</h2>
+      <p style="color:var(--muted);font-size:.88rem">Se borrará la fecha de presentación y quién la registró; el folio y el acuse adjunto se conservan. Úsalo si la marcaste como presentada por error.</p>
+      <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-fis-confirmar-deshacer>Regresar a pendiente</button></div>`);
+  }
+  async function confirmarDeshacer() {
+    const data = await enviar("PUT", "/api/fiscal/declaraciones/" + encodeURIComponent(declaracionActual), { estado: "pendiente" });
+    if (!data.ok) { toast(data.error || "No se pudo actualizar", "warn"); return; }
+    closeModal(); toast("Declaración regresada a pendiente"); await render();
   }
 
   let archivoAcuse = null, declaracionActual = null;
@@ -455,7 +593,11 @@
 
   // ---------- Eventos ----------
   document.addEventListener("click", (e) => {
-    if (e.target.closest("[data-fis-nueva-obl]")) { openNuevaObligacion(); return; }
+    if (e.target.closest("[data-fis-nueva-obl]")) { openFormObligacion(null); return; }
+    if (e.target.closest("[data-fis-plantilla]")) { openPlantilla(); return; }
+    const cPlan = e.target.closest("[data-fis-cargar-plantilla]"); if (cPlan) { conBoton(cPlan, cargarPlantilla); return; }
+    const edObl = e.target.closest("[data-fis-editar-obl]");
+    if (edObl) { const o = obligaciones.find((x) => x.id === edObl.getAttribute("data-fis-editar-obl")); if (o) openFormObligacion(o); return; }
     const gObl = e.target.closest("[data-fis-guardar-obl]"); if (gObl) { conBoton(gObl, guardarObligacion); return; }
     const tog = e.target.closest("[data-fis-toggle-obl]"); if (tog) { conBoton(tog, () => alternarObligacion(tog)); return; }
     if (e.target.closest("[data-fis-nuevo-doc]")) { openNuevoDocumento(); return; }
@@ -464,6 +606,8 @@
     const gDec = e.target.closest("[data-fis-guardar-decl]"); if (gDec) { conBoton(gDec, guardarDeclaracion); return; }
     const marcar = e.target.closest("[data-fis-marcar]"); if (marcar) { openMarcarPresentada(marcar.getAttribute("data-fis-marcar")); return; }
     const conf = e.target.closest("[data-fis-confirmar-presentada]"); if (conf) { conBoton(conf, confirmarPresentada); return; }
+    const des = e.target.closest("[data-fis-deshacer]"); if (des) { openDeshacerPresentada(des.getAttribute("data-fis-deshacer")); return; }
+    const cDes = e.target.closest("[data-fis-confirmar-deshacer]"); if (cDes) { conBoton(cDes, confirmarDeshacer); return; }
     const ver = e.target.closest("[data-fis-ver-doc]"); if (ver) { verDocumento(ver.getAttribute("data-fis-ver-doc")); return; }
     if (e.target.closest("[data-fd-file]")) { const i = document.getElementById("fd-archivo"); if (i) i.click(); return; }
     if (e.target.closest("[data-fm-file]")) { const i = document.getElementById("fm-archivo"); if (i) i.click(); return; }
@@ -481,6 +625,8 @@
       const wrap = document.getElementById("fo-mes-wrap");
       if (wrap) wrap.style.display = e.target.value === "anual" ? "" : "none";
     }
+    if (e.target.id === "fdec-obl") prepararDeclaracion(true);
+    if (e.target.id === "fdec-idx" || e.target.id === "fdec-anio") prepararDeclaracion(false);
   });
   document.addEventListener("click", (e) => {
     if (e.target.closest('.nav-item[data-view="sat"]')) setTimeout(render, 30);

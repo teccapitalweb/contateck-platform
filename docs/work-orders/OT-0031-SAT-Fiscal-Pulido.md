@@ -3,7 +3,7 @@
 **Rama:** `feature/OT-0031-sat-fiscal-pulido` (sobre OT-0030)
 **Alcance:** revisión de solo lectura del módulo "SAT y Fiscal" (vista Fiscal → SAT y Fiscal y pestaña
 Contabilidad → SAT / Declaraciones) y pulidos de bajo riesgo. **Sin cambios de esquema SQL** y sin decisiones
-contables o fiscales: lo que depende de criterio de la contadora quedó como pregunta (sección 6).
+contables o fiscales: lo que depende de criterio de la contadora quedó como pregunta (sección 7; lo de proceso se decidió por defecto, sección 6).
 
 ## 1. Qué se cambió
 
@@ -33,6 +33,26 @@ Versiones de caché subidas en `dashboard.html`: `app.js` v8, `contabilidad.js` 
 Los cambios en `contabilidad.js` se limitan al bloque "Contabilidad Electrónica SAT · IVA · DIOT", `renderSAT()` y
 `descargarXmlSAT()`.
 
+### 1b. Segunda tanda (decisiones por defecto, ver sección 6)
+
+| # | Pulido | Dónde |
+|---|---|---|
+| S19 | Tipo de declaración (Normal / Complementaria / Extemporánea) al crearla; se muestra como etiqueta junto al periodo | `frontend/fiscal.js` |
+| S20 | Botón "Regresar a pendiente" en declaraciones presentadas (con confirmación) | `frontend/fiscal.js` |
+| S21 | Alerta en el Dashboard de documentos con vigencia a ≤ 5 días o vencidos; solo cuenta el documento más reciente de cada tipo (si ya subiste la opinión nueva, la vieja no avisa) | `backend/src/validacionesFiscal.js` (`alertasVigencia`), `supabaseFiscal.js`, `supabaseDashboard.js` |
+| S22 | Nueva declaración: se elige mes o bimestre y año; el periodo y la fecha límite sugerida se arman solos (editables). Por defecto propone el último periodo concluido | `frontend/fiscal.js` (`sugerirFechaLimite`) |
+| S23 | DIOT: las operaciones con proveedores sin RFC válido salen de la tabla y de los totales, con un aviso que dice cuántas son y cuánto suman | `frontend/contabilidad.js` (`renderSAT`) |
+| S24 | **Editar obligación** (nombre, periodicidad, día, mes) para admin/director, y botón "Cargar comunes" con la plantilla de 6 obligaciones (se eligen cuáles; las que ya existen salen deshabilitadas) | `frontend/fiscal.js` |
+| S25 | Botón "Hoja de cuentas para la contadora (CSV)": cuentas con una columna vacía de código agrupador SAT; se abre bien en Excel y no ejecuta fórmulas | `frontend/contabilidad.js` |
+
+Versiones de caché: `contabilidad.js` v12, `fiscal.js` v3.
+
+Pruebas de esta tanda (sin servidor ni pantalla): `sugerirFechaLimite` con fin de semana, cambio de mes y de año,
+bimestral, anual, día 31 en mes corto y entradas inválidas; periodo por defecto; `alertasVigencia` (5 días, hoy,
+vencida, documento reemplazado, fechas inválidas); el CSV (comillas, saltos de línea, intento de fórmula).
+No verificado: la interfaz nueva de `fiscal.js` (modales de editar, plantilla, tipo y regresar a pendiente) ni la alerta
+en el Dashboard real.
+
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
 | Sev. | Hallazgo | Estado |
@@ -50,11 +70,11 @@ Los cambios en `contabilidad.js` se limitan al bloque "Contabilidad Electrónica
 | Media | `fiscal.js:126-127` + `data-firestore.js:350`: botones `data-soon` pintados después del listener: no hacen nada | Corregido (S9) |
 | Media | `fiscal.js:119-157`: botones de alta evaluados antes del perfil | Corregido (S10) |
 | Media | **No hay SQL en el repo** de `obligaciones_fiscales`, `declaraciones`, `documentos_fiscales` ni de las políticas del bucket `documentos`. Con la RLS depende todo el aislamiento por empresa (el backend no filtra `empresa_id` en select/update) y no se puede auditar | **Pendiente** (ver 4) |
-| Media | Calendario: una obligación sin declaración capturada no aparece nunca; el subtítulo decía "derivado de tus obligaciones". Texto corregido; la generación automática de declaraciones depende de reglas fiscales | Parcial (preguntas 7 y 8) |
+| Media | Calendario: una obligación sin declaración capturada no aparece nunca; el subtítulo decía "derivado de tus obligaciones". Texto corregido; la generación automática de declaraciones depende de reglas fiscales | Parcial: se sugiere la fecha al capturar (S22); la generación automática queda pendiente |
 | Media | `contabilidad.js:153,340`: `getCuentasAfectables` excluye cuentas desactivadas; una cuenta desactivada con movimientos desaparece de la Balanza y el "cuadra" no lo detecta (compara solo lo que quedó). Función compartida con otros módulos | **No tocado** |
-| Media | `contabilidad.js:597`: `CodAgrup` = código interno de la cuenta; solo es válido si ese código existe en el Código Agrupador del SAT | **Pendiente** (pregunta 1) |
-| Media | `contabilidad.js:629-655`: DIOT con cuentas fijas (601/602/603/501), proveedores sin RFC agrupados en "—", base por fecha de póliza (devengo) | **Pendiente** (preguntas 2, 3, 4, 17) |
-| Baja | `contabilidad.js:620-621`: `Math.abs` en IVA oculta un saldo contrario a su naturaleza; no considera saldo a favor anterior ni retenciones | Texto aclarado (S18); fórmula pendiente (pregunta 5) |
+| Media | `contabilidad.js:597`: `CodAgrup` = código interno de la cuenta; solo es válido si ese código existe en el Código Agrupador del SAT | **Pendiente** (sección 7, pregunta 1) |
+| Media | `contabilidad.js:629-655`: DIOT con cuentas fijas (601/602/603/501), proveedores sin RFC agrupados en "—", base por fecha de póliza (devengo) | **Pendiente** (pregunta 3; el aviso de proveedores sin RFC ya está, S23) |
+| Baja | `contabilidad.js:620-621`: `Math.abs` en IVA oculta un saldo contrario a su naturaleza; no considera saldo a favor anterior ni retenciones | Texto aclarado (S18); fórmula pendiente (pregunta 3 de la sección 7) |
 | Baja | `contabilidad.js:1166-1175`: `descargarTexto` se traga cualquier error | No tocado (función compartida) |
 | Baja | `routes/fiscal.js`: los GET responden 403 ante cualquier error (también fallas de base) | No tocado |
 | Info | Roles coinciden en front y back: ver = contador/admin/director/auditor; escribir declaraciones y documentos = contador/admin/director; configurar obligaciones = admin/director. El Dashboard llama `obtenerCalendario` con su propio cliente (sin chequeo de rol del módulo fiscal) | Sin cambio |
@@ -68,7 +88,7 @@ Coincidían: espacios de nombres, nodos raíz (`Catalogo`, `Balanza`), `Version=
 `NumCta`, `SaldoIni`, `Debe`, `Haber`, `SaldoFin`), `Natur` D/A, importes con 2 decimales. `Sello`,
 `noCertificado` y `Certificado` son opcionales y no se generan. Lo que fallaba está en S14-S17.
 Balanza: `Mes` admite 01-13 (el 13 es de ajustes de cierre) y `TipoEnvio` N/C con `FechaModBal` en complementarias:
-no soportados todavía (pregunta 10).
+no soportados todavía (se dejó fuera).
 
 ## 3. Mapa del módulo (6 preguntas)
 
@@ -89,37 +109,39 @@ no soportados todavía (pregunta 10).
 
 **NO verificado:**
 - Nada en pantalla ni con el backend real: la interfaz de `fiscal.js` (modales, botones, aviso, Activar/Desactivar, selector de mes anual) solo se revisó leyendo y con `node --check`.
-- El XML generado no se validó con un validador XSD (no había uno disponible); la comparación con el XSD fue manual, atributo por atributo. Además `CodAgrup` depende del Código Agrupador (pregunta 1).
+- El XML generado no se validó con un validador XSD (no había uno disponible); la comparación con el XSD fue manual, atributo por atributo. Además `CodAgrup` depende del Código Agrupador (pregunta 1 de la sección 7).
 - Las políticas RLS y de Storage reales de DEV (no están en el repo). Tampoco que `mes_limite`, `vigencia_hasta` y los estados permitidos coincidan con las restricciones de las tablas (se infirió del código).
 - Que el navegador acepte abrir la ventana de "Ver" en todos los casos.
 
 ## 5. Pendiente / recomendaciones
 
 - **Exportar a `database/`** el SQL real de las tres tablas fiscales y de las políticas del bucket `documentos` (hoy solo existen en Supabase). Sin eso no se puede revisar el aislamiento por empresa. No se ejecutó ni se creó SQL en esta OT; **no hay script que correr**.
-- Generación automática de las próximas declaraciones según periodicidad (hoy hay que capturar cada una) y plantilla de obligaciones por régimen: requiere reglas de la contadora (preguntas 7 y 8).
-- UI para editar una obligación (nombre, día, mes) y para corregir una declaración presentada por error; la API ya lo permite.
+- Generación automática de las próximas declaraciones según periodicidad (hoy hay que capturar cada una) y plantilla de obligaciones por régimen: requiere reglas de la contadora (sección 7, preguntas 2 y 3).
 - Revisar `getCuentasAfectables`/Balanza con cuentas desactivadas (OT de Contabilidad, no de este módulo).
 - Código Agrupador SAT por cuenta (campo propio) para que `CodAgrup` sea correcto; DIOT real (tipo de tercero, tipo de operación, tasas) y ISR provisional: dependen de la contadora.
 - `e.firma`: Descarga masiva de XML y presentación electrónica siguen fuera de alcance; los botones quedan deshabilitados y la bitácora se llena a mano.
 
-## 6. Preguntas para la contadora
+## 6. Decisiones tomadas por defecto (sin esperar a la contadora)
 
-Cada una con la propuesta por defecto que se aplicaría si no hay otra instrucción.
+Se decidió con el usuario resolver por defecto lo que es de proceso, no cambia lo que se declara y se puede revertir.
+Si la contadora indica otra cosa, es un cambio pequeño.
 
-1. **Código Agrupador:** ¿el catálogo de cuentas ya usa los códigos del agrupador del SAT (p. ej. 102.01, 105.01)? *Por defecto:* agregar un campo "Código agrupador SAT" a cada cuenta y usarlo en `CodAgrup`; mientras tanto el XML usa el código interno (puede ser rechazado).
-2. **DIOT, qué cuentas:** hoy se toman 601/602/603/501 como base. ¿Qué cuentas de gasto, costo y activo con IVA acreditable entran? *Por defecto:* todas las cuentas de gasto/costo y las de activo fijo ligadas a CFDI recibido.
-3. **DIOT, criterio:** ¿por pago efectivo (flujo) o por fecha de factura? *Por defecto:* flujo de efectivo, usando los pagos a proveedor de Cuentas por Pagar.
-4. **DIOT, formato:** tipo de tercero (04/05/15), tipo de operación (03/06/85), desglose por tasa 16/8/0/exento y proveedores sin RFC. *Por defecto:* capturar tipo de tercero y operación por proveedor, excluir sin RFC con aviso.
-5. **IVA:** ¿cobrado/pagado o devengado?, ¿saldo a favor de meses anteriores?, ¿retenciones?, ¿acreditamiento proporcional? *Por defecto:* flujo de efectivo, con saldo a favor anterior capturado a mano.
-6. **ISR provisional:** fórmula (coeficiente de utilidad, ingresos acumulados, deducciones autorizadas, pérdidas, pagos anteriores, retenciones) y qué cuentas son deducción autorizada. *Por defecto:* no mostrar nada hasta definirlo (como ahora).
-7. **Fechas límite:** regla del día 17 del mes siguiente, bimestrales y anuales; ajuste por días inhábiles (fines de semana y feriados oficiales). *Por defecto:* sugerir la fecha al capturar la declaración (sin recorrerla por feriados) y que tú la confirmes; necesito la lista anual de días inhábiles.
-8. **Obligaciones por régimen:** ¿qué obligaciones debe traer cada régimen (IVA, ISR provisional, DIOT, retenciones de sueldos, IMSS/INFONAVIT, contabilidad electrónica, anual)? *Por defecto:* una plantilla por régimen que tú apruebes, creada con un botón.
-9. **Contabilidad Electrónica, alcance:** ¿el catálogo lleva también cuentas inactivas?, ¿la balanza solo cuentas con movimiento o todas?, ¿qué nivel (mayor y subcuentas)? *Por defecto:* catálogo completo; balanza con todas las cuentas afectables activas.
-10. **Balanza, casos especiales:** saldos contrarios a su naturaleza con signo negativo (supuesto actual), mes 13 de ajustes de cierre y envío complementario (`TipoEnvio="C"` con `FechaModBal`). *Por defecto:* negativo; mes 13 y complementaria no soportados.
-11. **Declaraciones complementarias/extemporáneas:** ¿puede haber más de una por obligación y periodo? *Por defecto:* sí, y se distingue en las notas (el sistema no lo impide hoy).
-12. **Deshacer "presentada":** ¿se permite regresarla a pendiente? *Por defecto:* sí (la API lo permite y limpia fecha y responsable), pero no hay botón.
-13. **Vigencia de documentos:** opinión de cumplimiento (30 días), constancia de situación fiscal. ¿Alertar al vencer? *Por defecto:* alerta 5 días antes, igual que las declaraciones.
-14. **Conservación de documentos:** ¿cuántos años y quién puede borrar? *Por defecto:* nadie borra; no hay botón de eliminar.
-15. **Pagos de impuestos:** ¿registrar en la declaración monto a pagar, línea de captura y fecha de pago, y ligarlo a una póliza? *Por defecto:* no; solo bitácora, el pago se contabiliza aparte.
-16. **Periodo:** hoy es texto libre ("Julio 2026"). ¿Se quiere estructurado (mes/año/bimestre)? *Por defecto:* texto libre.
-17. **Proveedores sin RFC en la DIOT:** ¿bloquear la póliza o solo avisar? *Por defecto:* avisar y excluir de la DIOT.
+| Tema | Decisión | Dónde quedó |
+|---|---|---|
+| Complementarias y extemporáneas | Se permiten varias declaraciones por obligación y periodo; el tipo se guarda como prefijo de las notas | S19 |
+| Deshacer "presentada" | Se permite; borra fecha y responsable, conserva folio y acuse | S20 |
+| Vigencia de documentos | Alerta en el Dashboard a 5 días o menos, igual que las declaraciones | S21 |
+| Conservación de documentos | Nadie borra (no existe botón de eliminar) | sin cambio |
+| Pagos de impuestos | La declaración no registra pagos ni línea de captura; solo bitácora | sin cambio |
+| Periodo | Sigue como texto libre (ahora se arma solo a partir de mes/año) | S22 |
+| Proveedores sin RFC en la DIOT | Se avisan y se excluyen de la tabla y de los totales | S23 |
+| Contabilidad Electrónica | Catálogo completo; balanza con todas las cuentas afectables activas | sin cambio |
+| Fecha límite | Se sugiere (editable), recorrida al lunes si cae en fin de semana; no considera feriados | S22 |
+| Obligaciones habituales | Plantilla editable "Cargar comunes" (6 obligaciones, día 17 del mes siguiente) | S24 |
+| Saldos contrarios a su naturaleza | Con signo negativo. Se puede comprobar sin la contadora subiendo los dos XML al validador gratuito de Contabilidad Electrónica del SAT | sin cambio |
+
+## 7. Preguntas para la contadora (solo lo que de verdad depende de ella)
+
+1. **Código Agrupador SAT por cuenta (bloquea el XML del catálogo).** Hoy `CodAgrup` lleva el código interno de la cuenta y el SAT puede rechazarlo. Se descarga desde Contabilidad → SAT / Declaraciones el botón **"Hoja de cuentas para la contadora (CSV)"**: ella solo escribe el código del SAT en la última columna. Cargarlo al sistema requiere una columna nueva en `cuentas_contables` (cambio de SQL, pendiente de otra OT). *Por defecto:* mientras no esté, el XML usa el código interno.
+2. **Revisar la plantilla y las fechas (sí/no).** Las 6 obligaciones de "Cargar comunes" (IVA, ISR provisional, DIOT, retenciones de ISR por sueldos, cuotas IMSS: mensuales día 17; RCV e INFONAVIT: bimestral día 17) y la regla "día límite del mes siguiente, al lunes si cae en fin de semana". Faltan, por depender del régimen: Contabilidad Electrónica y la declaración anual. *Por defecto:* se queda como está, editable en el panel.
+3. **Cálculo de IVA, DIOT e ISR provisional.** Qué cuentas entran a la DIOT (hoy 601/602/603/501 fijas), si va por flujo de efectivo o por factura, tipo de tercero/operación y desglose por tasa; IVA cobrado/pagado, saldo a favor anterior, retenciones, acreditamiento proporcional; fórmula del ISR provisional y deducciones autorizadas. *Por defecto:* todo sigue rotulado "cifra de referencia, no es la declaración" y el ISR provisional sigue oculto. Puede esperar: nadie presenta con estas cifras.

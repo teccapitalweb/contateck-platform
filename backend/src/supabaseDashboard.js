@@ -16,7 +16,7 @@
 // ============================================================
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
-import { obtenerCalendario } from './supabaseFiscal.js';
+import { obtenerCalendario, obtenerAlertasDocumentos } from './supabaseFiscal.js';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -50,7 +50,7 @@ export async function obtenerDashboard(accessToken, log = console) {
   const desde6Meses = inicioMesesAtras(6);
 
   try {
-    const [cfdisMes, cfdis6Meses, polizasMes, gastos6Meses, empleados, cuentas, partidas, calendarioSat] = await Promise.all([
+    const [cfdisMes, cfdis6Meses, polizasMes, gastos6Meses, empleados, cuentas, partidas, calendarioSat, alertasDocs] = await Promise.all([
       supabase.from('cfdis').select('total, tipo, estatus, fecha, cancelled_at, created_at')
         .gte('created_at', desdeMesActual),
       supabase.from('cfdis').select('total, tipo, estatus, created_at')
@@ -72,6 +72,7 @@ export async function obtenerDashboard(accessToken, log = console) {
         .select('debe, haber, cuentas_contables(codigo, nombre, naturaleza), polizas!inner(estado)')
         .eq('polizas.estado', 'ok'),
       obtenerCalendario(accessToken, log, supabase),
+      obtenerAlertasDocumentos(supabase, log),
     ]);
 
     if (cfdisMes.error) throw cfdisMes.error;
@@ -213,6 +214,9 @@ export async function obtenerDashboard(accessToken, log = console) {
         });
       }
     });
+
+    // Documentos fiscales (opinión de cumplimiento, constancia…) por vencer o vencidos.
+    alertas.push(...alertasDocs);
 
     // Desvío drástico de gastos: mes en curso vs mes anterior, ±50% o más.
     const ultimoGasto = gastosSerieMensual[gastosSerieMensual.length - 1]?.monto || 0;
