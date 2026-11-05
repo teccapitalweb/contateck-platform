@@ -57,6 +57,23 @@ export const EMISOR_PRUEBA = _emisorReal
 // Código postal del emisor (lugar de expedición). En producción, el de tu CSD.
 export const CP_EMISOR = _e.cp || '42501';
 
+// OT-0030: receptor tal cual lo capturó el usuario. Antes, si faltaba un
+// dato se rellenaba con el receptor de PRUEBAS (RFC EKU9003173C9, CP 42501,
+// régimen 601, correo pruebas@contateck.mx) y en producción se timbraba un
+// CFDI con datos ajenos. Ahora la ruta valida (validaciones.js) que lleguen
+// completos; aquí ya no se inventa nada. El correo es opcional.
+function armarReceptor(r, usoCfdiPorDefecto) {
+  const rec = {
+    tin: String(r.rfc || '').toUpperCase().trim(),
+    legalName: String(r.nombre || '').toUpperCase().trim(),
+    zipCode: String(r.cp || '').trim(),
+    taxRegimeCode: String(r.regimen || '').trim(),
+    cfdiUseCode: r.usoCfdi || usoCfdiPorDefecto,
+  };
+  if (r.email) rec.email = String(r.email).trim();
+  return rec;
+}
+
 // Construye una factura de ingreso CFDI 4.0 a partir de datos capturados
 // en el frontend. El emisor y su CSD se ponen del lado del backend (seguro);
 // el frontend solo manda receptor y conceptos.
@@ -118,14 +135,7 @@ export function construirFactura(datos = {}) {
     expeditionZipCode: CP_EMISOR,
     exportCode: '01',
     issuer: EMISOR_PRUEBA,
-    recipient: {
-      tin: (r.rfc || 'EKU9003173C9').toUpperCase().trim(),
-      legalName: (r.nombre || 'ESCUELA KEMPER URGATE').toUpperCase().trim(),
-      zipCode: r.cp || '42501',
-      taxRegimeCode: r.regimen || '601',
-      cfdiUseCode: r.usoCfdi || 'G03',
-      email: r.email || 'pruebas@contateck.mx',
-    },
+    recipient: armarReceptor(r, 'G03'),
     items,
   };
 }
@@ -178,14 +188,7 @@ export function construirNotaCredito(datos = {}) {
     expeditionZipCode: CP_EMISOR,
     exportCode: '01',
     issuer: EMISOR_PRUEBA,
-    recipient: {
-      tin: (r.rfc || 'EKU9003173C9').toUpperCase().trim(),
-      legalName: (r.nombre || 'ESCUELA KEMPER URGATE').toUpperCase().trim(),
-      zipCode: r.cp || '42501',
-      taxRegimeCode: r.regimen || '601',
-      cfdiUseCode: r.usoCfdi || 'G02',             // G02: Devoluciones, descuentos o bonificaciones
-      email: r.email || 'pruebas@contateck.mx',
-    },
+    recipient: armarReceptor(r, 'G02'),            // G02: Devoluciones, descuentos o bonificaciones
     relatedInvoices: [
       { relationshipTypeCode: datos.tipoRelacion || '01', uuid: String(datos.uuidRelacionado || '').trim() },
     ],
@@ -254,14 +257,7 @@ export function construirREP(datos = {}) {
     expeditionZipCode: CP_EMISOR,
     exportCode: '01',
     issuer: EMISOR_PRUEBA,
-    recipient: {
-      tin: (r.rfc || 'EKU9003173C9').toUpperCase().trim(),
-      legalName: (r.nombre || 'ESCUELA KEMPER URGATE').toUpperCase().trim(),
-      zipCode: r.cp || '42501',
-      taxRegimeCode: r.regimen || '601',
-      cfdiUseCode: 'CP01',                         // CP01: uso CFDI obligatorio para pagos
-      email: r.email || 'pruebas@contateck.mx',
-    },
+    recipient: { ...armarReceptor(r, 'CP01'), cfdiUseCode: 'CP01' }, // CP01: uso CFDI obligatorio para pagos
     complement: {
       payment: {
         paymentDate: p.fecha || fechaMexico(),
@@ -279,7 +275,7 @@ export function construirREP(datos = {}) {
 export function facturaDePrueba() {
   return construirFactura({
     serie: 'DEMO',
-    receptor: { rfc: 'EKU9003173C9', nombre: 'ESCUELA KEMPER URGATE', usoCfdi: 'G03' },
+    receptor: { rfc: 'EKU9003173C9', nombre: 'ESCUELA KEMPER URGATE', cp: '42501', regimen: '601', usoCfdi: 'G03', email: 'pruebas@contateck.mx' },
     conceptos: [{ descripcion: 'Servicio de prueba CONTATECK', cantidad: 1, precioUnitario: 100 }],
   });
 }

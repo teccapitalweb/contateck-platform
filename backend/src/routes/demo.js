@@ -4,12 +4,30 @@
 //    con el CSD público del SAT (sandbox). Pensado para abrirse
 //    directo en el navegador y comprobar el flujo de punta a punta.
 //  (Esta ruta es solo para pruebas; en producción se quita.)
+//
+//  OT-0030: antes era pública (cualquiera que conociera la URL podía
+//  gastar timbres del PAC). Ahora:
+//   · solo existe cuando Fiscalapi está en ambiente de PRUEBAS (en
+//     producción responde 404, aunque se olvide quitar la ruta);
+//   · exige sesión y rol de facturación, así que ya no se abre "directo en
+//     el navegador": hay que llamarla con el token (Authorization: Bearer).
 // ============================================================
 import { Router } from 'express';
 import { getFiscalapi, unwrap } from '../fiscalapi.js';
 import { facturaDePrueba } from '../demo-data.js';
+import { config } from '../config.js';
+import { verifyAuth } from '../supabaseAuth.js';
+import { requireRolFacturacion } from './invoices.js';
 
 export const demoRouter = Router();
+
+demoRouter.use((_req, res, next) => {
+  if (!config.fiscalapi.apiUrl.includes('test.')) {
+    return res.status(404).json({ ok: false, error: 'Ruta no encontrada.' });
+  }
+  next();
+});
+demoRouter.use(verifyAuth, requireRolFacturacion);
 
 demoRouter.get('/timbrar', async (_req, res) => {
   try {

@@ -144,12 +144,8 @@ var CFDIS = [
   { folio:"A-1038", uuid:"1A55…6F44", cliente:"Agroindustrias del Valle", fecha:"08 Jun", total:212300, estado:"ok" },
 ];
 
-var FACT_STATS = [
-  { label:"Timbradas (mes)", valor:"38" },
-  { label:"Monto facturado", valor:"$1.28M" },
-  { label:"Canceladas",      valor:"3", tono:"warn" },
-  { label:"Por cobrar",      valor:"$984k", tono:"warn" },
-];
+// OT-0030: FACT_STATS (cifras de ejemplo: 38 timbradas, $1.28M…) se eliminó.
+// Los KPIs de Facturación se calculan con los CFDI reales (renderFactStats en app.js).
 
 /* ============================================================
    MÓDULO 08 · NÓMINA

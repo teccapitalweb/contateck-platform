@@ -1,22 +1,42 @@
 // ============================================================
 //  CONTATECK · Backend · Rutas de facturación
-//    POST /api/timbrar           -> timbra un CFDI
+//    POST /api/facturar          -> timbra una factura (datos simples)
+//    POST /api/nota-credito      -> nota de crédito (CFDI de Egreso)
+//    POST /api/rep               -> complemento de pago (CFDI de Pago)
+//    POST /api/timbrar           -> timbra un invoice armado (SOLO pruebas)
 //    POST /api/cancelar          -> cancela un CFDI
 //    GET  /api/cfdis             -> lista CFDIs de la empresa (OT-0012)
 //    GET  /api/cfdi/:id/pdf      -> PDF (base64)
 //    GET  /api/cfdi/:id/xml      -> XML (base64)
 //    GET  /api/cfdi/:id/status   -> estatus ante el SAT
+//
+//  OT-0030 · Pulido de seguridad y registro:
+//   · Todo lo que opera sobre un CFDI existente (PDF, XML, estatus, correo,
+//     cancelar, nota de crédito, REP) comprueba PRIMERO que ese CFDI sea de
+//     la empresa del usuario (la RLS de `cfdis` lo filtra). Antes cualquier
+//     usuario con sesión —o sin ella con REQUIRE_AUTH=false— podía pedir el
+//     PDF/XML de otra empresa o cancelar su factura con solo conocer el id.
+//   · Si un CFDI se timbra pero NO se puede guardar, la respuesta lo avisa
+//     (antes decía "timbrado correctamente" y el CFDI quedaba huérfano).
+//   · Los datos del receptor ya no se completan con el receptor de pruebas.
 // ============================================================
 import { Router } from 'express';
 import { getFiscalapi, unwrap } from '../fiscalapi.js';
+import { config } from '../config.js';
 import { verifyAuth } from '../supabaseAuth.js';
 import { saveCfdi, markCfdiCancelled } from '../firebase.js';
-import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis } from '../supabaseCfdis.js';
+import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis, buscarCfdi } from '../supabaseCfdis.js';
 import { construirFactura, construirNotaCredito, construirREP, EMISOR_PRUEBA } from '../demo-data.js';
 import { generarPdfCfdi } from '../pdf-cfdi.js';
+import { validarFactura, validarConceptos, validarReceptor, validarCorreo, uuidValido } from '../validaciones.js';
 
 export const invoicesRouter = Router();
 invoicesRouter.use(verifyAuth);
+
+// En pruebas se devuelve el diagnóstico crudo del PAC (ayuda a depurar);
+// en producción NO: puede traer datos internos que el navegador no necesita.
+const EN_PRUEBAS = config.fiscalapi.apiUrl.includes('test.');
+const diag = (x) => (EN_PRUEBAS ? x : undefined);
 
 // OT-0011 (Opción A): Postgres es el destino principal del registro de
 // CFDIs. Firestore queda SOLO como respaldo de emergencia — un CFDI ya
@@ -32,12 +52,27 @@ async function guardarConRespaldo(req, resumen, rawData, log = console) {
   return { ok: !!idFirestore, respaldoFirestore: true, error: r.error };
 }
 
+// OT-0030: antes las rutas ignoraban el resultado de guardarConRespaldo y
+// respondían "timbrado correctamente" aunque el CFDI no quedara en ningún
+// lado. Ahora se informa: el CFDI SÍ existe ante el SAT, pero no está en el
+// panel, y se deja el UUID en el log del servidor para recuperarlo a mano.
+function estadoRegistro(g, resumen, log = console) {
+  if (g && g.ok && !g.respaldoFirestore) return { registroGuardado: true };
+  const motivo = (g && g.error) || 'error desconocido';
+  log.error(`[CFDI SIN REGISTRO] UUID ${resumen.uuid} (fiscalapi ${resumen.id}) timbrado pero NO guardado en Postgres: ${motivo}`);
+  return {
+    registroGuardado: false,
+    aviso: `El CFDI ${resumen.uuid || ''} SÍ quedó timbrado ante el SAT, pero no se pudo guardar en el panel (${motivo}). ` +
+      'Anota el UUID y avisa a soporte para registrarlo.',
+  };
+}
+
 // OT-0011 · aprobado: solo director/admin/contador pueden iniciar timbrado
 // o cancelación — mismo criterio que las políticas RLS de insert/update en
 // `cfdis`. Corta ANTES de llamar a Fiscalapi/SAT, para no generar un CFDI
 // real que después no se pudiera registrar bien en Postgres.
 const ROLES_FACTURACION = ['director', 'admin', 'contador'];
-async function requireRolFacturacion(req, res, next) {
+export async function requireRolFacturacion(req, res, next) {
   if (!req.user || !req.token) {
     return res.status(401).json({ ok: false, error: 'Falta autenticación.' });
   }
@@ -45,6 +80,26 @@ async function requireRolFacturacion(req, res, next) {
   if (!rol || !ROLES_FACTURACION.includes(rol)) {
     return res.status(403).json({ ok: false, error: 'No tienes permiso para timbrar o cancelar CFDIs (tu rol no lo permite).' });
   }
+  next();
+}
+
+// OT-0030: sesión obligatoria SIEMPRE (aunque REQUIRE_AUTH esté en false):
+// estas rutas consumen el PAC o muestran documentos fiscales.
+function requireSesion(req, res, next) {
+  if (!req.user || !req.token) return res.status(401).json({ ok: false, error: 'Falta autenticación.' });
+  next();
+}
+
+// OT-0030: el CFDI de la URL (:id = id de Fiscalapi) debe ser de la empresa
+// del usuario. Cualquier rol de la empresa puede LEER (el vendedor ve la
+// facturación en solo lectura); quien opera (timbrar/cancelar/correo) además
+// pasa por requireRolFacturacion.
+async function requireCfdiDeMiEmpresa(req, res, next) {
+  if (!req.user || !req.token) return res.status(401).json({ ok: false, error: 'Falta autenticación.' });
+  const r = await buscarCfdi(req.token, { fiscalapiId: req.params.id });
+  if (!r.ok) return res.status(500).json({ ok: false, error: 'No se pudo verificar el CFDI.' });
+  if (!r.cfdi) return res.status(404).json({ ok: false, error: 'No encontré ese CFDI en tu empresa.' });
+  req.cfdi = r.cfdi;
   next();
 }
 
@@ -91,17 +146,42 @@ function resumenCfdi(data, user) {
   };
 }
 
+// OT-0030: nota de crédito y REP ya NO reciben el receptor del navegador
+// (que, por un campo que no se mapeaba, caía siempre en el RFC de pruebas):
+// se toma de la factura ORIGINAL guardada. Lo que falte se completa con lo
+// que mande el navegador y, si aun así no está completo, se rechaza.
+function receptorDesdeCfdi(cfdi, extra = {}) {
+  const rec = (cfdi && cfdi.raw && cfdi.raw.recipient) || {};
+  return {
+    rfc: cfdi.receptor_rfc || rec.tin || extra.rfc,
+    nombre: cfdi.receptor_nombre || rec.legalName || extra.nombre,
+    cp: rec.zipCode || extra.cp,
+    regimen: rec.taxRegimeCode || extra.regimen,
+    email: rec.email || extra.email,
+  };
+}
+
+// Busca la factura original por UUID y comprueba que sirva para el trámite.
+// Devuelve { error: {status, msg} } o { cfdi }.
+async function facturaOriginal(req, uuid, { exigirPPD = false } = {}) {
+  const r = await buscarCfdi(req.token, { uuidSat: uuid });
+  if (!r.ok) return { error: { status: 500, msg: 'No se pudo verificar la factura original.' } };
+  if (!r.cfdi) return { error: { status: 404, msg: 'La factura original no existe en tu empresa.' } };
+  if (r.cfdi.estatus === 'cancelado') return { error: { status: 409, msg: 'La factura original está cancelada.' } };
+  if (r.cfdi.tipo && r.cfdi.tipo !== 'I') return { error: { status: 400, msg: 'Solo se puede aplicar a facturas de ingreso.' } };
+  if (exigirPPD && r.cfdi.metodo_pago === 'PUE') {
+    return { error: { status: 400, msg: 'Esa factura es PUE (pago en una exhibición): no lleva complemento de pago.' } };
+  }
+  return { cfdi: r.cfdi };
+}
+
 // ---------- FACTURAR (desde el frontend: recibe datos simples) ----------
 // El frontend manda solo receptor + conceptos; el backend agrega el emisor
 // y su CSD de forma segura, arma el CFDI y lo timbra.
 invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
   const datos = req.body || {};
-  if (!datos.receptor || !datos.receptor.rfc) {
-    return res.status(400).json({ ok: false, error: 'Falta el RFC del receptor.' });
-  }
-  if (!Array.isArray(datos.conceptos) || datos.conceptos.length === 0) {
-    return res.status(400).json({ ok: false, error: 'Agrega al menos un concepto.' });
-  }
+  const errValidacion = validarFactura(datos);
+  if (errValidacion) return res.status(400).json({ ok: false, error: errValidacion });
 
   try {
     const fiscalapi = getFiscalapi();
@@ -117,7 +197,7 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
     }
 
     const resumen = resumenCfdi(r.data, req.user);
-    const savedId = await guardarConRespaldo(req, resumen, r.data);
+    const registro = estadoRegistro(await guardarConRespaldo(req, resumen, r.data), resumen);
 
     return res.json({
       ok: true,
@@ -125,7 +205,7 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
       uuid: resumen.uuid,
       id: resumen.id,
       total: resumen.total,
-      firestoreId: savedId,
+      ...registro,
       cfdi: resumen,
     });
   } catch (err) {
@@ -137,16 +217,26 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
 // Recibe el UUID de la factura original + los conceptos del descuento/devolución.
 invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => {
   const datos = req.body || {};
-  if (!datos.uuidRelacionado) {
+  if (!uuidValido(datos.uuidRelacionado)) {
     return res.status(400).json({ ok: false, error: 'Falta el UUID de la factura original a la que se aplica la nota de crédito.' });
   }
-  if (!Array.isArray(datos.conceptos) || datos.conceptos.length === 0) {
-    return res.status(400).json({ ok: false, error: 'Agrega al menos un concepto (el monto del descuento o devolución).' });
+  const errConceptos = validarConceptos(datos.conceptos);
+  if (errConceptos) return res.status(400).json({ ok: false, error: errConceptos });
+  if (datos.tipoRelacion !== undefined && !/^\d{2}$/.test(String(datos.tipoRelacion))) {
+    return res.status(400).json({ ok: false, error: 'El tipo de relación no es válido.' });
+  }
+
+  const orig = await facturaOriginal(req, datos.uuidRelacionado);
+  if (orig.error) return res.status(orig.error.status).json({ ok: false, error: orig.error.msg });
+  const receptor = receptorDesdeCfdi(orig.cfdi, datos.receptor || {});
+  const errReceptor = validarReceptor(receptor);
+  if (errReceptor) {
+    return res.status(400).json({ ok: false, error: `No pude obtener los datos fiscales del receptor de la factura original. ${errReceptor}` });
   }
 
   try {
     const fiscalapi = getFiscalapi();
-    const egreso = construirNotaCredito(datos);
+    const egreso = construirNotaCredito({ ...datos, receptor });
     const r = unwrap(await fiscalapi.invoices.create(egreso));
 
     if (!r.ok) {
@@ -154,14 +244,14 @@ invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => 
         ok: false,
         error: r.message || 'El PAC rechazó la nota de crédito.',
         details: r.details || '',
-        diagnostico: r.data,
+        diagnostico: diag(r.data),
       });
     }
 
     const resumen = resumenCfdi(r.data, req.user);
     resumen.tipo = 'E';
     resumen.relacionadoCon = datos.uuidRelacionado;
-    const savedId = await guardarConRespaldo(req, resumen, r.data);
+    const registro = estadoRegistro(await guardarConRespaldo(req, resumen, r.data), resumen);
 
     return res.json({
       ok: true,
@@ -169,7 +259,7 @@ invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => 
       uuid: resumen.uuid,
       id: resumen.id,
       total: resumen.total,
-      firestoreId: savedId,
+      ...registro,
       cfdi: resumen,
     });
   } catch (err) {
@@ -182,17 +272,25 @@ invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => 
 invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
   const datos = req.body || {};
   const f = datos.facturaPagada || {};
-  if (!f.uuid) {
+  if (!uuidValido(f.uuid)) {
     return res.status(400).json({ ok: false, error: 'Falta el UUID de la factura PPD que se está pagando.' });
   }
   const monto = Number(datos.pago?.monto || f.montoPagado || 0);
-  if (!(monto > 0)) {
+  if (!Number.isFinite(monto) || !(monto > 0)) {
     return res.status(400).json({ ok: false, error: 'El monto del pago debe ser mayor a cero.' });
+  }
+
+  const orig = await facturaOriginal(req, f.uuid, { exigirPPD: true });
+  if (orig.error) return res.status(orig.error.status).json({ ok: false, error: orig.error.msg });
+  const receptor = receptorDesdeCfdi(orig.cfdi, datos.receptor || {});
+  const errReceptor = validarReceptor(receptor);
+  if (errReceptor) {
+    return res.status(400).json({ ok: false, error: `No pude obtener los datos fiscales del receptor de la factura original. ${errReceptor}` });
   }
 
   try {
     const fiscalapi = getFiscalapi();
-    const rep = construirREP(datos);
+    const rep = construirREP({ ...datos, receptor });
     const r = unwrap(await fiscalapi.invoices.create(rep));
 
     if (!r.ok) {
@@ -200,7 +298,7 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
         ok: false,
         error: r.message || 'El PAC rechazó el complemento de pago (REP).',
         details: r.details || '',
-        diagnostico: r.data,
+        diagnostico: diag(r.data),
       });
     }
 
@@ -208,7 +306,7 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
     resumen.tipo = 'P';
     resumen.pagoDe = f.uuid;
     resumen.total = monto;
-    const savedId = await guardarConRespaldo(req, resumen, r.data);
+    const registro = estadoRegistro(await guardarConRespaldo(req, resumen, r.data), resumen);
 
     return res.json({
       ok: true,
@@ -216,7 +314,7 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
       uuid: resumen.uuid,
       id: resumen.id,
       total: monto,
-      firestoreId: savedId,
+      ...registro,
       cfdi: resumen,
     });
   } catch (err) {
@@ -226,16 +324,22 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
 
 // ---------- ENVIAR POR CORREO (Fiscalapi manda el PDF + XML) ----------
 // Recibe el id de la factura y el correo destino; opcionalmente logo y color.
-invoicesRouter.post('/enviar-correo', async (req, res) => {
+// OT-0030: antes lo podía llamar cualquiera con sesión (o sin ella) y mandar
+// el CFDI de CUALQUIER empresa a CUALQUIER correo usando la cuenta del PAC.
+// Ahora exige rol de facturación y que el CFDI sea de la empresa.
+invoicesRouter.post('/enviar-correo', requireRolFacturacion, async (req, res) => {
   const { id, email, base64Logo, bandColor, fontColor } = req.body || {};
   if (!id) return res.status(400).json({ ok: false, error: 'Falta el id de la factura.' });
-  if (!email || !/.+@.+\..+/.test(email)) {
-    return res.status(400).json({ ok: false, error: 'Correo del destinatario inválido.' });
-  }
+  const errCorreo = validarCorreo(email);
+  if (errCorreo) return res.status(400).json({ ok: false, error: errCorreo });
+
+  const propio = await buscarCfdi(req.token, { fiscalapiId: id });
+  if (!propio.ok) return res.status(500).json({ ok: false, error: 'No se pudo verificar el CFDI.' });
+  if (!propio.cfdi) return res.status(404).json({ ok: false, error: 'No encontré ese CFDI en tu empresa.' });
 
   try {
     const fiscalapi = getFiscalapi();
-    const sendReq = { invoiceId: id, toEmail: email };
+    const sendReq = { invoiceId: id, toEmail: String(email).trim() };
     if (base64Logo) sendReq.base64Logo = base64Logo;
     if (bandColor) sendReq.bandColor = bandColor;
     if (fontColor) sendReq.fontColor = fontColor;
@@ -246,10 +350,10 @@ invoicesRouter.post('/enviar-correo', async (req, res) => {
         ok: false,
         error: r.message || 'No se pudo enviar el correo.',
         details: r.details || '',
-        diagnostico: r.data,
+        diagnostico: diag(r.data),
       });
     }
-    return res.json({ ok: true, mensaje: `Factura enviada a ${email}.` });
+    return res.json({ ok: true, mensaje: `Factura enviada a ${String(email).trim()}.` });
   } catch (err) {
     return res.status(500).json({ ok: false, error: 'Error al enviar el correo.', details: err.message });
   }
@@ -259,7 +363,7 @@ invoicesRouter.post('/enviar-correo', async (req, res) => {
 // GET /api/catalogo/:nombre/:q  -> busca en un catálogo del SAT.
 // Catálogos útiles: SatProductCodes, SatUnitMeasurements, SatPaymentForms,
 // SatCfdiUses, SatTaxRegimes. La búsqueda requiere mínimo 3 caracteres.
-invoicesRouter.get('/catalogo/:nombre/:q', async (req, res) => {
+invoicesRouter.get('/catalogo/:nombre/:q', requireSesion, async (req, res) => {
   const { nombre, q } = req.params;
   const texto = String(q || '').trim();
   if (texto.length < 3) {
@@ -283,7 +387,13 @@ invoicesRouter.get('/catalogo/:nombre/:q', async (req, res) => {
 });
 
 // ---------- TIMBRAR (avanzado: recibe el invoice ya armado) ----------
+// OT-0030: acepta CUALQUIER invoice (incluido el emisor y su CSD) tal como
+// llega del cliente, y el panel no lo usa (usa /api/facturar). Se deja solo
+// para pruebas con Postman/curl en ambiente de PRUEBAS; en producción no existe.
 invoicesRouter.post('/timbrar', requireRolFacturacion, async (req, res) => {
+  if (!EN_PRUEBAS) {
+    return res.status(404).json({ ok: false, error: 'Ruta no disponible en producción. Usa /api/facturar.' });
+  }
   const invoice = req.body?.invoice ?? req.body;
   if (!invoice || typeof invoice !== 'object') {
     return res.status(400).json({ ok: false, error: 'Falta el objeto "invoice" en el body.' });
@@ -303,14 +413,14 @@ invoicesRouter.post('/timbrar', requireRolFacturacion, async (req, res) => {
 
     const resumen = resumenCfdi(r.data, req.user);
     // OT-0011: Postgres primero, Firestore solo como respaldo de emergencia.
-    const savedId = await guardarConRespaldo(req, resumen, r.data);
+    const registro = estadoRegistro(await guardarConRespaldo(req, resumen, r.data), resumen);
 
     return res.json({
       ok: true,
       mensaje: 'CFDI timbrado correctamente.',
       uuid: resumen.uuid,
       id: resumen.id,
-      firestoreId: savedId,
+      ...registro,
       cfdi: resumen,
     });
   } catch (err) {
@@ -321,7 +431,7 @@ invoicesRouter.post('/timbrar', requireRolFacturacion, async (req, res) => {
 // ---------- CANCELAR ----------
 invoicesRouter.post('/cancelar', requireRolFacturacion, async (req, res) => {
   const { id, invoiceUuid, cancellationReasonCode, replacementUuid } = req.body || {};
-  if (!cancellationReasonCode) {
+  if (!['01', '02', '03', '04'].includes(String(cancellationReasonCode || ''))) {
     return res
       .status(400)
       .json({ ok: false, error: 'Falta el motivo de cancelación (01, 02, 03 o 04).' });
@@ -331,9 +441,18 @@ invoicesRouter.post('/cancelar', requireRolFacturacion, async (req, res) => {
   }
   // El motivo 01 (comprobante emitido con errores con relación) exige el UUID
   // de la factura que lo sustituye.
-  if (cancellationReasonCode === '01' && !replacementUuid) {
+  if (cancellationReasonCode === '01' && !uuidValido(replacementUuid)) {
     return res.status(400).json({ ok: false, error: 'El motivo 01 requiere el UUID de la factura que sustituye.' });
   }
+
+  // OT-0030: ANTES de pedirle al SAT que cancele nada, el CFDI tiene que ser
+  // de la empresa del usuario y seguir vigente. Y el UUID que se manda al SAT
+  // es el guardado en nuestra base, no el que diga el navegador.
+  const propio = await buscarCfdi(req.token, invoiceUuid ? { uuidSat: invoiceUuid } : { fiscalapiId: id });
+  if (!propio.ok) return res.status(500).json({ ok: false, error: 'No se pudo verificar el CFDI.' });
+  if (!propio.cfdi) return res.status(404).json({ ok: false, error: 'No encontré ese CFDI en tu empresa.' });
+  if (propio.cfdi.estatus === 'cancelado') return res.status(409).json({ ok: false, error: 'Ese CFDI ya está cancelado.' });
+  const cfdi = propio.cfdi;
 
   try {
     const fiscalapi = getFiscalapi();
@@ -345,34 +464,42 @@ invoicesRouter.post('/cancelar', requireRolFacturacion, async (req, res) => {
       replacementUuid: replacementUuid || undefined,
       taxCredentials: EMISOR_PRUEBA.taxCredentials,
     };
-    if (invoiceUuid) cancelReq.invoiceUuid = invoiceUuid;
-    else if (id) cancelReq.id = id;
+    if (cfdi.uuid_sat) cancelReq.invoiceUuid = cfdi.uuid_sat;
+    else cancelReq.id = cfdi.fiscalapi_id;
     const r = unwrap(await fiscalapi.invoices.cancel(cancelReq));
 
     if (!r.ok) {
       return res
         .status(r.status || 400)
-        .json({ ok: false, error: r.message || 'No se pudo cancelar.', details: r.details || '', diagnostico: r.data });
+        .json({ ok: false, error: r.message || 'No se pudo cancelar.', details: r.details || '', diagnostico: diag(r.data) });
     }
 
+    const acuse = r.data?.base64CancellationAcknowledgement || null;
     const cancelResultado = await marcarCfdiCancelado(
       req.token,
-      { fiscalapiId: id, uuidSat: invoiceUuid },
-      { acuse: r.data?.base64CancellationAcknowledgement || null }
+      { cfdiId: cfdi.id },
+      { acuse, rawActual: cfdi.raw }
     );
     if (!cancelResultado.ok) {
-      console.error('[OT-0011] Postgres no pudo marcar cancelado, usando respaldo Firestore:', cancelResultado.error);
-      await markCfdiCancelled(id, { acuse: r.data?.base64CancellationAcknowledgement || null });
+      console.error(`[CFDI CANCELADO SIN ACTUALIZAR] UUID ${cfdi.uuid_sat} cancelado ante el SAT pero no marcado en Postgres:`, cancelResultado.error);
+      await markCfdiCancelled(cfdi.fiscalapi_id, { acuse });
+      return res.json({
+        ok: true,
+        mensaje: 'CFDI cancelado ante el SAT.',
+        registroActualizado: false,
+        aviso: `El CFDI quedó cancelado ante el SAT, pero no se pudo actualizar en el panel (${cancelResultado.error}). Avisa a soporte para marcarlo.`,
+        resultado: r.data,
+      });
     }
 
-    return res.json({ ok: true, mensaje: 'CFDI cancelado.', resultado: r.data });
+    return res.json({ ok: true, mensaje: 'CFDI cancelado.', registroActualizado: true, resultado: r.data });
   } catch (err) {
     return res.status(500).json({ ok: false, error: 'Error al cancelar.', details: err.message });
   }
 });
 
 // ---------- PDF (devuelve el archivo directo, se abre en el navegador) ----------
-invoicesRouter.get('/cfdi/:id/pdf', async (req, res) => {
+invoicesRouter.get('/cfdi/:id/pdf', requireCfdiDeMiEmpresa, async (req, res) => {
   try {
     const fiscalapi = getFiscalapi();
     const raw = await fiscalapi.invoices.getPdf({ invoiceId: req.params.id });
@@ -385,7 +512,7 @@ invoicesRouter.get('/cfdi/:id/pdf', async (req, res) => {
         error: r.message || 'No se pudo generar el PDF.',
         details: r.details || '',
         invoiceId: req.params.id,
-        diagnostico: raw,
+        diagnostico: diag(raw),
       });
     }
     const buffer = Buffer.from(b64, 'base64');
@@ -393,13 +520,14 @@ invoicesRouter.get('/cfdi/:id/pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${r.data.fileName || 'cfdi.pdf'}"`);
     return res.send(buffer);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message, invoiceId: req.params.id, stack: String(err.stack || '').slice(0, 500) });
+    console.error('[pdf] error:', err.message);
+    return res.status(500).json({ ok: false, error: 'No se pudo generar el PDF.', invoiceId: req.params.id });
   }
 });
 
 // ---------- PDF CON LOGO (POST: el logo base64 no cabe en un GET) ----------
 // El frontend manda { base64Logo, bandColor, fontColor } y recibe el PDF con marca.
-invoicesRouter.post('/cfdi/:id/pdf', async (req, res) => {
+invoicesRouter.post('/cfdi/:id/pdf', requireCfdiDeMiEmpresa, async (req, res) => {
   try {
     const fiscalapi = getFiscalapi();
     const { base64Logo, bandColor, fontColor } = req.body || {};
@@ -413,7 +541,7 @@ invoicesRouter.post('/cfdi/:id/pdf', async (req, res) => {
     if (!r.ok || !b64) {
       return res.status(r.status || 400).json({
         ok: false, error: r.message || 'No se pudo generar el PDF.', details: r.details || '',
-        invoiceId: req.params.id, diagnostico: raw,
+        invoiceId: req.params.id, diagnostico: diag(raw),
       });
     }
     const buffer = Buffer.from(b64, 'base64');
@@ -421,26 +549,28 @@ invoicesRouter.post('/cfdi/:id/pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${r.data.fileName || 'cfdi.pdf'}"`);
     return res.send(buffer);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message, invoiceId: req.params.id });
+    console.error('[pdf] error:', err.message);
+    return res.status(500).json({ ok: false, error: 'No se pudo generar el PDF.', invoiceId: req.params.id });
   }
 });
 
 // ---------- XML (devuelve el archivo directo) ----------
-invoicesRouter.get('/cfdi/:id/xml', async (req, res) => {
+invoicesRouter.get('/cfdi/:id/xml', requireCfdiDeMiEmpresa, async (req, res) => {
   try {
     const fiscalapi = getFiscalapi();
     const raw = await fiscalapi.invoices.getXml(req.params.id);
     const r = unwrap(raw);
     const b64 = r.data?.base64File || r.data?.base64Content;
     if (!r.ok || !b64) {
-      return res.status(r.status || 400).json({ ok: false, error: r.message || 'No se pudo obtener el XML.', details: r.details || '', invoiceId: req.params.id, diagnostico: raw });
+      return res.status(r.status || 400).json({ ok: false, error: r.message || 'No se pudo obtener el XML.', details: r.details || '', invoiceId: req.params.id, diagnostico: diag(raw) });
     }
     const buffer = Buffer.from(b64, 'base64');
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.setHeader('Content-Disposition', `inline; filename="${r.data.fileName || 'cfdi.xml'}"`);
     return res.send(buffer);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message, invoiceId: req.params.id });
+    console.error('[xml] error:', err.message);
+    return res.status(500).json({ ok: false, error: 'No se pudo obtener el XML.', invoiceId: req.params.id });
   }
 });
 
@@ -460,7 +590,7 @@ async function obtenerXmlString(id) {
   return Buffer.from(b64, 'base64').toString('utf-8');
 }
 
-invoicesRouter.get('/cfdi/:id/pdf-pro', async (req, res) => {
+invoicesRouter.get('/cfdi/:id/pdf-pro', requireCfdiDeMiEmpresa, async (req, res) => {
   try {
     const xml = await obtenerXmlString(req.params.id);
     const buffer = await generarPdfCfdi(xml, {});
@@ -468,11 +598,11 @@ invoicesRouter.get('/cfdi/:id/pdf-pro', async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="CFDI_${req.params.id}.pdf"`);
     return res.send(buffer);
   } catch (err) {
-    return res.status(err.status || 500).json({ ok: false, error: err.message, details: err.details || '', invoiceId: req.params.id, diagnostico: err.diagnostico });
+    return res.status(err.status || 500).json({ ok: false, error: err.message, details: err.details || '', invoiceId: req.params.id, diagnostico: diag(err.diagnostico) });
   }
 });
 
-invoicesRouter.post('/cfdi/:id/pdf-pro', async (req, res) => {
+invoicesRouter.post('/cfdi/:id/pdf-pro', requireCfdiDeMiEmpresa, async (req, res) => {
   try {
     const { base64Logo, bandColor, marcaNombre } = req.body || {};
     const xml = await obtenerXmlString(req.params.id);
@@ -481,7 +611,7 @@ invoicesRouter.post('/cfdi/:id/pdf-pro', async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="CFDI_${req.params.id}.pdf"`);
     return res.send(buffer);
   } catch (err) {
-    return res.status(err.status || 500).json({ ok: false, error: err.message, details: err.details || '', invoiceId: req.params.id, diagnostico: err.diagnostico });
+    return res.status(err.status || 500).json({ ok: false, error: err.message, details: err.details || '', invoiceId: req.params.id, diagnostico: diag(err.diagnostico) });
   }
 });
 
@@ -498,13 +628,14 @@ invoicesRouter.get('/cfdis', async (req, res) => {
 });
 
 // ---------- ESTATUS SAT ----------
-invoicesRouter.get('/cfdi/:id/status', async (req, res) => {
+invoicesRouter.get('/cfdi/:id/status', requireCfdiDeMiEmpresa, async (req, res) => {
   try {
     const fiscalapi = getFiscalapi();
     const r = unwrap(await fiscalapi.invoices.getStatus({ id: req.params.id }));
     if (!r.ok) return res.status(r.status || 400).json({ ok: false, error: r.message });
     return res.json({ ok: true, estatus: r.data });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    console.error('[status] error:', err.message);
+    return res.status(500).json({ ok: false, error: 'No se pudo consultar el estatus.' });
   }
 });

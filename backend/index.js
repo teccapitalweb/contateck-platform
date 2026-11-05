@@ -45,7 +45,6 @@ app.get('/', (_req, res) => {
     supabaseAuth: isSupabaseAuthReady() ? 'conectado' : 'no-configurado',
     postgresData: isPostgresDataReady() ? 'conectado' : 'no-configurado',
     timbrado: config.fiscalapi.apiKey ? 'listo' : 'faltan-llaves',
-    probarTimbrado: '/api/demo/timbrar',
   });
 });
 app.get('/health', (_req, res) => res.json({ ok: true }));

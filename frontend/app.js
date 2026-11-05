@@ -486,7 +486,47 @@
     if (window.POLIZAS) renderPolizas(POLIZAS);
 
     /* ---------- Módulo 03 · Facturación ---------- */
-    if (window.FACT_STATS) setStats("[data-fact-stats]", FACT_STATS);
+    // OT-0030: escapa texto que viene de la base (cliente, folio…) antes de
+    // pintarlo con innerHTML. Un nombre con <script> o <img onerror=…> ya no
+    // se ejecuta en el navegador de quien lo ve.
+    function esc(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+    // OT-0030: KPIs reales de Facturación. Antes eran las cifras de ejemplo
+    // de data.js (38 timbradas, $1.28M, 3 canceladas, $984k) aunque la base
+    // estuviera vacía. `todos` = lista COMPLETA (no la filtrada por la búsqueda).
+    function renderFactStats(todos) {
+      if (!todos) {
+        setStats("[data-fact-stats]", [
+          { label: "Timbradas (mes)", valor: "—" }, { label: "Monto facturado", valor: "—" },
+          { label: "Canceladas (mes)", valor: "—" }, { label: "Por cobrar", valor: "—" },
+        ]);
+        return;
+      }
+      const hoy = new Date();
+      const delMes = function (f) {
+        const d = new Date(f.fechaISO || f.createdAt || 0);
+        return d.getFullYear() === hoy.getFullYear() && d.getMonth() === hoy.getMonth();
+      };
+      const mes = todos.filter(delMes);
+      const ingresos = mes.filter(function (f) { return f.tipo !== "E" && f.tipo !== "P"; });
+      const monto = ingresos.filter(function (f) { return f.estado === "ok"; })
+        .reduce(function (a, f) { return a + (Number(f.total) || 0); }, 0);
+      const canceladas = mes.filter(function (f) { return f.estado === "cancelada"; }).length;
+      const porCobrar = (window.CONTATECK_CFDIS_SALDO_PG || [])
+        .reduce(function (a, r) { return a + (Number(r.saldo_pendiente) || 0); }, 0);
+      setStats("[data-fact-stats]", [
+        { label: "Timbradas (mes)", valor: String(ingresos.length) },
+        { label: "Monto facturado", valor: "$" + money(monto) },
+        { label: "Canceladas (mes)", valor: String(canceladas), tono: canceladas ? "warn" : undefined },
+        { label: "Por cobrar", valor: "$" + money(porCobrar), tono: porCobrar > 0 ? "warn" : undefined },
+      ]);
+    }
+    window.CTRender = window.CTRender || {};
+    window.CTRender.cfdiStats = renderFactStats;
+    renderFactStats(null);
     function renderCfdis(arr) {
       fill("[data-cfdis]", (arr || []).map(function (f) {
         const ok = f.estado === "ok";
@@ -507,8 +547,8 @@
         // ni se borra de forma genérica (eso viviría solo en Firestore,
         // sin tocar el SAT). Las únicas acciones válidas son las de arriba
         // (PDF, correo, nota de crédito, REP, cancelar ante el SAT).
-        return '<tr><td class="num">' + f.folio + '</td><td class="num" style="color:var(--faint)">' + f.uuid +
-          "</td><td>" + f.cliente + '</td><td class="num">' + f.fecha + '</td><td class="num" style="text-align:right">$' + money(f.total) +
+        return '<tr><td class="num">' + esc(f.folio) + '</td><td class="num" style="color:var(--faint)">' + esc(f.uuid) +
+          "</td><td>" + esc(f.cliente) + '</td><td class="num">' + esc(f.fecha) + '</td><td class="num" style="text-align:right">$' + money(f.total) +
           '</td><td><span class="pill ' + (ok ? "pill--ok" : "pill--late") + '">' + (ok ? "Vigente" : "Cancelada") + "</span></td><td class=\"row-act\">" + btns + "</td></tr>";
       }).join(""));
     }

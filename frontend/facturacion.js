@@ -25,6 +25,23 @@
     return h;
   }
 
+  // OT-0030: texto que viene del servidor, de la base o del propio formulario
+  // se escapa antes de meterlo en innerHTML (antes un nombre de cliente con
+  // HTML se ejecutaba al abrirse la ventana).
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  // OT-0030: si el backend timbró pero NO pudo guardar el CFDI (o cancelar sin
+  // actualizar el panel), manda `aviso`; se muestra bien visible en el resultado.
+  function avisoHtml(data) {
+    return data && data.aviso
+      ? `<div class="fac-err" style="margin-top:.9rem;text-align:left"><b>⚠ Atención:</b> ${esc(data.aviso)}</div>` : "";
+  }
+  // Tras operar se vuelve a leer la lista real de la base (ver recargarCfdis en data-firestore.js).
+  function refrescarLista() {
+    try { if (window.CTData && typeof window.CTData.recargarCfdis === "function") window.CTData.recargarCfdis(); } catch (e) { /* no rompe el flujo */ }
+  }
+
   // Catálogo c_UsoCFDI del SAT — completo y vigente para CFDI 4.0.
   // OJO: "P01 · Por definir" YA NO EXISTE en CFDI 4.0 (el SAT lo eliminó
   // al pasar de 3.3 a 4.0) — por eso no aparece aquí, aunque se vea en
@@ -244,7 +261,7 @@
     return local.concat(pg.filter((p) => !descLocal.has(p.descripcion)));
   }
   function clienteOptions() {
-    return getClientesList().map((c, i) => `<option value="${i}">${(c.nombre || "").slice(0, 40)} · ${c.rfc}</option>`).join("");
+    return getClientesList().map((c, i) => `<option value="${i}">${esc((c.nombre || "").slice(0, 40))} · ${esc(c.rfc)}</option>`).join("");
   }
   function productoOptions() {
     return getProductosList().map((p, i) => `<option value="${i}">${(p.descripcion || "").slice(0, 45)} · $${Number(p.precioUnitario || 0).toFixed(2)}</option>`).join("");
@@ -491,13 +508,18 @@
     // persona física 4 letras+6 dígitos+3 alfanumérico (13).
     const rfcValido = /^[A-ZÑ&]{3}\d{6}[A-Z0-9]{3}$/.test(rfc) || /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/.test(rfc);
     if (!rfcValido) {
-      msg.innerHTML = `<div class="fac-err">El RFC "${rfc}" no tiene un formato válido (12 caracteres persona moral, 13 persona física).</div>`;
+      msg.innerHTML = `<div class="fac-err">El RFC "${esc(rfc)}" no tiene un formato válido (12 caracteres persona moral, 13 persona física).</div>`;
       return;
     }
+    // OT-0030: el backend ya no completa con datos de prueba lo que falte,
+    // así que se pide completo desde aquí con un mensaje claro.
+    if (!nombre) { msg.innerHTML = `<div class="fac-err">Falta el nombre o razón social del receptor.</div>`; return; }
+    if (!/^\d{5}$/.test(cp)) { msg.innerHTML = `<div class="fac-err">Captura el código postal fiscal del receptor (5 dígitos).</div>`; return; }
+    if (!/^\d{3}$/.test(regimen)) { msg.innerHTML = `<div class="fac-err">Elige el régimen fiscal del receptor.</div>`; return; }
     // Los 2 RFC genéricos del SAT ("público en general") exigen régimen 616
     // sin excepción — es una regla propia de esos 2 RFC, no de física/moral.
     if ((rfc === "XAXX010101000" || rfc === "XEXX010101000") && regimen !== "616") {
-      msg.innerHTML = `<div class="fac-err">El RFC genérico "${rfc}" exige régimen fiscal 616 ("Sin obligaciones fiscales") — el SAT no acepta otro régimen con este RFC.</div>`;
+      msg.innerHTML = `<div class="fac-err">El RFC genérico "${esc(rfc)}" exige régimen fiscal 616 ("Sin obligaciones fiscales") — el SAT no acepta otro régimen con este RFC.</div>`;
       return;
     }
     if (!conceptos.length) { msg.innerHTML = `<div class="fac-err">Agrega al menos un concepto con descripción, cantidad y precio.</div>`; return; }
@@ -548,6 +570,7 @@
             });
           }
         } catch (e) { /* la persistencia no debe romper el flujo de timbrado */ }
+        refrescarLista(); // OT-0030: reemplaza la fila local por la real de Postgres
         // Acumular cliente y productos en el catálogo (silencioso, sin duplicar).
         try {
           if (window.CTData) {
@@ -567,7 +590,7 @@
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = "Timbrar factura";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor de timbrado.<br><small>${err.message}</small></div>`;
+      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor de timbrado.<br><small>${esc(err.message)}</small></div>`;
     }
   }
 
@@ -581,8 +604,9 @@
         <div class="fac-badge">✓ TIMBRADO</div>
         <h3 style="margin:.3rem 0">¡Factura timbrada con éxito!</h3>
         <p style="color:var(--muted);font-size:.9rem">Folio fiscal (UUID) asignado por el SAT:</p>
-        <div class="uuid">${data.uuid || "—"}</div>
+        <div class="uuid">${esc(data.uuid || "—")}</div>
         <p style="font-size:.95rem">Total: <b>${money(data.total)}</b></p>
+        ${avisoHtml(data)}
         <div style="display:flex;gap:.6rem;justify-content:center;margin-top:1.2rem;flex-wrap:wrap">
           <button class="btn btn--ghost" data-fac-pdf>Ver PDF</button>
           <button class="btn btn--ghost" data-fac-pdf-dl>Descargar PDF</button>
@@ -616,7 +640,7 @@
       const blob = await resp.blob();
       window.open(URL.createObjectURL(blob), "_blank");
     } catch (e) {
-      if (dl) dl.innerHTML = `<div class="fac-err">No se pudo abrir el ${tipo.toUpperCase()}: ${e.message}</div>`;
+      if (dl) dl.innerHTML = `<div class="fac-err">No se pudo abrir el ${tipo.toUpperCase()}: ${esc(e.message)}</div>`;
     }
   }
 
@@ -693,22 +717,24 @@
             await window.CTData.markCfdiCancelled(rowId);
           }
         } catch (e) { /* no romper el flujo */ }
+        refrescarLista();
         content.innerHTML = `
           <div class="fac-result">
             <div class="fac-badge" style="background:rgba(251,113,133,.14);color:#FB7185">✓ CANCELADO</div>
             <h3 style="margin:.3rem 0">CFDI cancelado</h3>
-            <p style="color:var(--muted);font-size:.9rem">El comprobante quedó cancelado ante el SAT y se actualizó en tu tabla.</p>
+            <p style="color:var(--muted);font-size:.9rem">El comprobante quedó cancelado ante el SAT${data.registroActualizado === false ? "." : " y se actualizó en tu tabla."}</p>
+            ${avisoHtml(data)}
             <div style="margin-top:1.2rem"><button class="btn btn--primary" data-fac-close>Cerrar</button></div>
           </div>`;
       } else {
         btn.disabled = false;
         btn.innerHTML = "Cancelar CFDI";
-        msg.innerHTML = `<div class="fac-err"><b>No se pudo cancelar:</b><br>${data.error || "Error desconocido"}${data.details ? "<br><small>" + String(data.details).slice(0, 300) + "</small>" : ""}</div>`;
+        msg.innerHTML = `<div class="fac-err"><b>No se pudo cancelar:</b><br>${esc(data.error || "Error desconocido")}${data.details ? "<br><small>" + esc(String(data.details).slice(0, 300)) + "</small>" : ""}</div>`;
       }
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = "Cancelar CFDI";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${err.message}</small></div>`;
+      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${esc(err.message)}</small></div>`;
     }
   }
 
@@ -719,19 +745,20 @@
     const list = (window.CTData && window.CTData.getCfdis) ? window.CTData.getCfdis() : [];
     return list.find((c) => c.id === id) || null;
   }
-  function resultadoOK(titulo, uuid, texto) {
+  function resultadoOK(titulo, uuid, texto, data) {
     return `<div class="fac-result">
       <div class="fac-badge">✓ LISTO</div>
       <h3 style="margin:.3rem 0">${titulo}</h3>
-      ${uuid ? `<div class="uuid">${uuid}</div>` : ""}
+      ${uuid ? `<div class="uuid">${esc(uuid)}</div>` : ""}
       <p style="color:var(--muted);font-size:.9rem">${texto}</p>
+      ${avisoHtml(data)}
       <div style="margin-top:1.2rem"><button class="btn btn--primary" data-fac-close>Cerrar</button></div>
     </div>`;
   }
   function errBox(titulo, data) {
     const principal = (data && data.error) || "Error desconocido";
     const extra = data && data.details && data.details !== principal ? " " + String(data.details).slice(0, 300) : "";
-    return `<div class="fac-err"><b>${titulo}:</b><br>${principal}${extra}</div>`;
+    return `<div class="fac-err"><b>${titulo}:</b><br>${esc(principal)}${esc(extra)}</div>`;
   }
 
   // ---------- Nota de crédito (CFDI de Egreso) ----------
@@ -744,7 +771,7 @@
     setTitle("Nota de crédito");
     content.innerHTML = `
       <p style="color:var(--muted);font-size:.9rem;margin-top:0">
-        Emitir una nota de crédito sobre la factura <b>${f.folio || ""}</b> (${f.cliente || "—"}).
+        Emitir una nota de crédito sobre la factura <b>${esc(f.folio || "")}</b> (${esc(f.cliente || "—")}).
         Aplica un descuento, devolución o bonificación sin cancelar la factura.
       </p>
       <div class="fac-grid">
@@ -783,8 +810,9 @@
     try {
       const resp = await fetch(BACKEND + "/api/nota-credito", {
         method: "POST", headers: headersConAuth(),
+        // OT-0030: el receptor ya NO se manda desde aquí (antes caía en el RFC
+        // de pruebas); el backend lo toma de la factura original guardada.
         body: JSON.stringify({
-          receptor: { rfc: f.receptorRfc || "EKU9003173C9", nombre: f.cliente || "ESCUELA KEMPER URGATE" },
           conceptos: [{ descripcion: desc, cantidad: 1, precioUnitario: monto }],
           uuidRelacionado: uuid,
           tipoRelacion: motivo,
@@ -795,14 +823,15 @@
         if (window.CTData && window.CTData.addCfdi) {
           window.CTData.addCfdi({ uuid: data.uuid, folio: data.cfdi && data.cfdi.folio, cliente: f.cliente || "—", total: data.total, serie: "NC", cfdiId: data.id, tipo: "E" });
         }
-        content.innerHTML = resultadoOK("Nota de crédito emitida", data.uuid, "Quedó timbrada y relacionada con la factura original.");
+        refrescarLista();
+        content.innerHTML = resultadoOK("Nota de crédito emitida", data.uuid, "Quedó timbrada y relacionada con la factura original.", data);
       } else {
         btn.disabled = false; btn.innerHTML = "Emitir nota de crédito";
         msg.innerHTML = errBox("No se pudo emitir la nota de crédito", data);
       }
     } catch (err) {
       btn.disabled = false; btn.innerHTML = "Emitir nota de crédito";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${err.message}</small></div>`;
+      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${esc(err.message)}</small></div>`;
     }
   }
 
@@ -820,7 +849,7 @@
     setTitle("Registrar pago (REP)");
     content.innerHTML = `
       <p style="color:var(--muted);font-size:.9rem;margin-top:0">
-        Registrar un pago recibido sobre la factura PPD <b>${f.folio || ""}</b> (${f.cliente || "—"}).
+        Registrar un pago recibido sobre la factura PPD <b>${esc(f.folio || "")}</b> (${esc(f.cliente || "—")}).
         Se emitirá el Complemento para Recepción de Pagos.
       </p>
       <div style="background:var(--brand-soft,rgba(110,139,255,.08));padding:.7rem 1rem;border-radius:10px;font-size:.86rem;margin-bottom:1rem">
@@ -860,8 +889,9 @@
     try {
       const resp = await fetch(BACKEND + "/api/rep", {
         method: "POST", headers: headersConAuth(),
+        // OT-0030: igual que la nota de crédito, el receptor lo resuelve el
+        // backend desde la factura original (ya no se manda el RFC de pruebas).
         body: JSON.stringify({
-          receptor: { rfc: f.receptorRfc || "EKU9003173C9", nombre: f.cliente || "ESCUELA KEMPER URGATE" },
           pago: { monto, formaPago: forma },
           facturaPagada: { uuid, serie, folio, saldoAnterior: saldoActual, montoPagado: monto, parcialidad: 1, conIva: true },
         }),
@@ -873,15 +903,16 @@
         if (window.CTData && window.CTData.addCfdi) {
           window.CTData.addCfdi({ uuid: data.uuid, folio: data.cfdi && data.cfdi.folio, cliente: f.cliente || "—", total: monto, serie: "PAGO", cfdiId: data.id, tipo: "P" });
         }
+        refrescarLista();
         content.innerHTML = resultadoOK("Complemento de pago emitido", data.uuid,
-          nuevoSaldo > 0 ? `Pago registrado. Saldo pendiente: ${money(nuevoSaldo)}.` : "Pago registrado. La factura quedó liquidada.");
+          nuevoSaldo > 0 ? `Pago registrado. Saldo pendiente: ${money(nuevoSaldo)}.` : "Pago registrado. La factura quedó liquidada.", data);
       } else {
         btn.disabled = false; btn.innerHTML = "Emitir REP";
         msg.innerHTML = errBox("No se pudo emitir el REP", data);
       }
     } catch (err) {
       btn.disabled = false; btn.innerHTML = "Emitir REP";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${err.message}</small></div>`;
+      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${esc(err.message)}</small></div>`;
     }
   }
 
@@ -891,7 +922,7 @@
     setTitle("Enviar por correo");
     content.innerHTML = `
       <p style="color:var(--muted);font-size:.9rem;margin-top:0">
-        Enviar la factura <b>${f.folio || ""}</b> (PDF + XML) por correo al cliente.
+        Enviar la factura <b>${esc(f.folio || "")}</b> (PDF + XML) por correo al cliente.
         Se incluye el logo y color de tu empresa si los configuraste.
       </p>
       <div class="field">
@@ -921,11 +952,11 @@
         body: JSON.stringify({ id: cfdiId, email, base64Logo: cfg.logo || undefined, bandColor: cfg.color || undefined }),
       });
       const data = await resp.json();
-      if (data.ok) content.innerHTML = resultadoOK("Correo enviado", "", `La factura se envió a ${email}.`);
+      if (data.ok) content.innerHTML = resultadoOK("Correo enviado", "", `La factura se envió a ${esc(email)}.`);
       else { btn.disabled = false; btn.innerHTML = "Enviar"; msg.innerHTML = errBox("No se pudo enviar el correo", data); }
     } catch (err) {
       btn.disabled = false; btn.innerHTML = "Enviar";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${err.message}</small></div>`;
+      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${esc(err.message)}</small></div>`;
     }
   }
 

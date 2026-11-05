@@ -121,26 +121,53 @@ export async function listarCfdis(accessToken, log = console) {
   return { ok: true, cfdis: data || [] };
 }
 
-// Busca por fiscalapi_id o por uuid_sat (la cancelación puede venir con
-// cualquiera de los dos, según cómo se haya solicitado).
-export async function marcarCfdiCancelado(accessToken, { fiscalapiId, uuidSat }, extra = {}, log = console) {
+// OT-0030: busca UN CFDI de la empresa del usuario (la RLS ya filtra por
+// empresa_id, así que si no es suyo simplemente no aparece). Sirve para
+// comprobar pertenencia ANTES de pedirle al PAC/SAT cualquier cosa sobre
+// ese comprobante (PDF, XML, cancelar, correo, nota de crédito, REP).
+export async function buscarCfdi(accessToken, { fiscalapiId, uuidSat }, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  let query = supabase.from('cfdis').update({
-    estatus: 'cancelado',
-    cancelled_at: new Date().toISOString(),
-    ...(extra.acuse ? { raw: extra.acuse } : {}),
-  });
+  let query = supabase.from('cfdis')
+    .select('id, fiscalapi_id, uuid_sat, tipo, estatus, metodo_pago, receptor_rfc, receptor_nombre, raw');
+  if (uuidSat) query = query.eq('uuid_sat', String(uuidSat).trim());
+  else if (fiscalapiId) query = query.eq('fiscalapi_id', String(fiscalapiId).trim());
+  else return { ok: false, error: 'Falta el id o UUID del CFDI.' };
 
-  if (fiscalapiId) query = query.eq('fiscalapi_id', fiscalapiId);
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) {
+    log.warn('[postgres] buscarCfdi:', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, cfdi: data || null };
+}
+
+// OT-0030: el acuse de cancelación YA NO sustituye a `raw` (antes se perdía
+// el CFDI original timbrado); se agrega dentro de `raw` como `acuseCancelacion`.
+// Y se confirma que de verdad se actualizó una fila (antes devolvía ok aunque
+// no hubiera tocado nada).
+export async function marcarCfdiCancelado(accessToken, { cfdiId, fiscalapiId, uuidSat }, extra = {}, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  const cambios = { estatus: 'cancelado', cancelled_at: new Date().toISOString() };
+  if (extra.acuse) {
+    const base = extra.rawActual && typeof extra.rawActual === 'object' ? extra.rawActual : (extra.rawActual ? { original: extra.rawActual } : {});
+    cambios.raw = { ...base, acuseCancelacion: extra.acuse };
+  }
+
+  let query = supabase.from('cfdis').update(cambios);
+  if (cfdiId) query = query.eq('id', cfdiId);
+  else if (fiscalapiId) query = query.eq('fiscalapi_id', fiscalapiId);
   else if (uuidSat) query = query.eq('uuid_sat', uuidSat);
   else return { ok: false, error: 'Falta el id o UUID del CFDI a marcar como cancelado.' };
 
-  const { error } = await query;
+  const { data, error } = await query.select('id');
   if (error) {
     log.warn('[postgres] marcarCfdiCancelado:', error.message);
     return { ok: false, error: error.message };
   }
+  if (!data || data.length === 0) return { ok: false, error: 'No se encontró el CFDI para marcarlo como cancelado.' };
   return { ok: true };
 }

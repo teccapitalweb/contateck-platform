@@ -65,6 +65,8 @@ function refresh(coll) {
   const arr = state[coll];
   const shown = term ? arr.filter((r) => searchText(coll, r).indexOf(term) > -1) : arr;
   if (window.CTRender && typeof window.CTRender[coll] === "function") window.CTRender[coll](shown);
+  // OT-0030: los KPIs de Facturación se calculan con la lista COMPLETA, no con la filtrada.
+  if (coll === "cfdis" && window.CTRender && typeof window.CTRender.cfdiStats === "function") window.CTRender.cfdiStats(arr);
 }
 
 /* ---------- Esquemas ---------- */
@@ -496,6 +498,10 @@ function mapCfdiPostgres(r) {
     cfdiId: r.fiscalapi_id || null,
     tipo: r.tipo || "I",
     metodoPago: r.metodo_pago || null,
+    // OT-0030: antes no se mapeaba el RFC del receptor, y Nota de crédito / REP
+    // caían en el RFC de pruebas para toda factura leída de la base.
+    receptorRfc: r.receptor_rfc || "",
+    fechaISO: r.fecha || r.created_at || null,
   };
 }
 async function esperarCfdisPostgres(maxMs = 5000) {
@@ -558,6 +564,7 @@ async function addCfdiTimbrado(parcial) {
     perfilId: parcial.perfilId || "",
     saldo: typeof parcial.total === "number" ? parcial.total : parseMoney(parcial.total || 0),
     createdAt: Date.now(),
+    fechaISO: new Date().toISOString(),
   };
   state.cfdis.unshift(obj);
   refresh("cfdis");
@@ -566,6 +573,29 @@ async function addCfdiTimbrado(parcial) {
 
 window.CTData = window.CTData || {};
 window.CTData.addCfdi = addCfdiTimbrado;
+
+// OT-0030: después de timbrar / cancelar se vuelve a leer la lista REAL de
+// Postgres. Antes solo quedaba la fila local "local-N": si el backend no
+// había guardado el CFDI, desaparecía al recargar la página sin que nadie
+// supiera por qué. Devuelve true si pudo refrescar.
+async function recargarCfdis() {
+  const base = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
+  const token = window.CONTATECK_SUPABASE_TOKEN;
+  if (!base || !token) return false;
+  try {
+    const h = { Authorization: "Bearer " + token };
+    const [rc, rs] = await Promise.all([
+      fetch(base + "/api/cfdis", { headers: h }).then((r) => r.json()),
+      fetch(base + "/api/cfdis-saldo", { headers: h }).then((r) => r.json()).catch(() => null),
+    ]);
+    if (!rc || !rc.ok) return false;
+    window.CONTATECK_CFDIS_PG = rc.cfdis || [];
+    if (rs && rs.ok) window.CONTATECK_CFDIS_SALDO_PG = rs.facturas || [];
+    cargarCfdisPostgres();
+    return true;
+  } catch (e) { return false; }
+}
+window.CTData.recargarCfdis = recargarCfdis;
 
 async function markCfdiCancelledLocal(rowId) {
   const f = state.cfdis.find((x) => x.id === rowId);
