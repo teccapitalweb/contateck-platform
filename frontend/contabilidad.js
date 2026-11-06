@@ -3170,5 +3170,6 @@ ${ctas}
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
 
   window.CTCont.render = renderTodo;
+  window.CTCont.verPoliza = verPoliza; // OT-0029: Ventas abre el detalle de su póliza
   window.__CT_CONT_READY = true;
 })();
