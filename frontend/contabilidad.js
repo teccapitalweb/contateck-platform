@@ -1500,10 +1500,43 @@ ${ctas}
         <button class="btn btn--ghost" data-cont-close>Cancelar</button>
         <button class="btn btn--primary" data-config-contable-guardar>Guardar configuración</button></div>`;
   }
+  // OT-0033: qué tipo de cuenta lleva normalmente cada rol. No bloquea (cada
+  // empresa tiene su catálogo y la última palabra es de su contador), pero avisa
+  // antes de guardar. Caso real que lo motivó: se puso "118 · IVA acreditable"
+  // (de activo, deudora) en el rol "Ventas y servicios" y el sistema lo aceptó
+  // sin decir nada, con lo que cada venta se habría registrado como IVA a favor.
+  const REGLAS_ROL_CUENTA = {
+    bancos:         { nat: "Deudora",   grupos: ["1"],      tipo: "de activo (1xx)" },
+    clientes:       { nat: "Deudora",   grupos: ["1"],      tipo: "de activo (1xx)" },
+    proveedores:    { nat: "Acreedora", grupos: ["2"],      tipo: "de pasivo (2xx)" },
+    ventas:         { nat: "Acreedora", grupos: ["4"],      tipo: "de ingresos (4xx)" },
+    ivaTrasladado:  { nat: "Acreedora", grupos: ["2"],      tipo: "de pasivo (2xx)" },
+    ivaAcreditable: { nat: "Deudora",   grupos: ["1"],      tipo: "de activo (1xx)" },
+    gastos:         { nat: "Deudora",   grupos: ["5", "6"], tipo: "de costos o gastos (5xx/6xx)" },
+  };
+  // porRol: { rol: cuenta | null }  ->  lista de textos de advertencia
+  function advertenciasConfigContable(porRol) {
+    const avisos = [];
+    const usados = {};
+    Object.keys(porRol).forEach((rol) => {
+      const c = porRol[rol], r = REGLAS_ROL_CUENTA[rol];
+      if (!c || !r) return;
+      const grupo = String(c.codigo || "").charAt(0);
+      if (!r.grupos.includes(grupo) || c.nat !== r.nat) {
+        avisos.push(`${NOMBRES_ROL[rol]}: elegiste ${c.codigo} · ${c.nombre} (${String(c.nat).toLowerCase()}), pero este rol normalmente lleva una cuenta ${r.tipo}, ${r.nat.toLowerCase()}.`);
+      }
+      (usados[c.codigo] = usados[c.codigo] || []).push(NOMBRES_ROL[rol]);
+    });
+    Object.keys(usados).forEach((cod) => {
+      if (usados[cod].length > 1) avisos.push(`La cuenta ${cod} está en ${usados[cod].join(" y ")}: cada rol debería tener su propia cuenta.`);
+    });
+    return avisos;
+  }
   async function guardarConfigContableForm() {
     const msg = cbody.querySelector("[data-cont-msg]");
     const btn = cbody.querySelector("[data-config-contable-guardar]");
     const payload = {};
+    const porRol = {};
     cbody.querySelectorAll("[data-config-rol]").forEach((h) => {
       const rol = h.getAttribute("data-config-rol");
       const campo = ROLES_CONFIG_CONTABLE[rol];
@@ -1512,7 +1545,21 @@ ${ctas}
       // convierte al id (uuid) que es lo que la tabla realmente guarda.
       const cta = h.value ? getCuentaPorCodigo(h.value) : null;
       payload[campo] = cta ? cta.id : null;
+      porRol[rol] = cta;
     });
+    // Primera pulsación con advertencias: se muestran y el botón pasa a "Guardar de
+    // todos modos". Una segunda pulsación con las MISMAS advertencias guarda; si el
+    // usuario cambia una cuenta, las advertencias cambian y se vuelven a mostrar.
+    const avisos = advertenciasConfigContable(porRol);
+    const firma = JSON.stringify(avisos);
+    if (avisos.length && btn && btn.dataset.avisosVistos !== firma) {
+      msg.innerHTML = `<div class="cont-err"><b>Revisa antes de guardar:</b>
+        <ul style="margin:.4rem 0 0 1.1rem">${avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
+        <div style="margin-top:.5rem;font-size:.85rem">Si así lo quieres, pulsa de nuevo para guardar de todos modos; si no, corrige la cuenta.</div></div>`;
+      btn.dataset.avisosVistos = firma;
+      btn.textContent = "Guardar de todos modos";
+      return;
+    }
     if (btn) btn.disabled = true;
     const r = await window.CTPostgres.guardarConfigContable(payload);
     if (!r.ok) {
