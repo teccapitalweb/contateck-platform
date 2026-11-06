@@ -2398,7 +2398,7 @@ ${ctas}
       <tfoot><tr style="font-weight:700"><td colspan="2" style="text-align:right">Totales</td>
         <td class="num" style="text-align:right">$${fmt(debe)}</td><td class="num" style="text-align:right">$${fmt(haber)}</td></tr></tfoot></table></div>
       <div class="cont-foot" style="display:flex;align-items:center;justify-content:space-between">
-        <div>${p.origen === "ventas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Ventas ' + esc(p.concepto || '').split(' — ')[0].replace('Venta ', '') + '</span>' : (p.origen === "nominas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Nómina</span>' : '')}</div>
+        <div>${p.origen === "ventas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Ventas ' + esc(p.concepto || '').split(' — ')[0].replace('Venta ', '') + ' · no se edita aquí; si hay un error, avisa a tu contador (la corrección de ventas ya confirmadas está en definición)</span>' : (p.origen === "nominas" ? '<span style="color:var(--faint);font-size:.82rem">Generada automáticamente desde Nómina</span>' : '')}</div>
         <div style="display:flex;gap:.5rem">
         <button class="btn btn--ghost" data-cont-close>Cerrar</button>
         ${botonAnularDuplicada(p)}
@@ -2450,9 +2450,10 @@ ${ctas}
     if (p.estado === "corregida") return "";
     if (p.estado === "anulada") return "";
     // Conexión Ventas↔Contabilidad: las pólizas generadas automáticamente
-    // desde Ventas NO se editan — si algo está mal, se corrige desde la
-    // venta misma (rechazar y re-registrar), no editando la póliza por
-    // atrás, porque eso rompería la consistencia entre los dos módulos.
+    // desde Ventas NO se editan, porque eso rompería la consistencia entre
+    // los dos módulos. OJO (OT-0029): una venta ya CONFIRMADA no se puede
+    // rechazar, así que hoy su corrección es un pendiente de definir con la
+    // contadora (reversa/cancelación) — no existe aún un camino en la UI.
     if (p.origen === "ventas" || p.origen === "nominas") return "";
     return `<button class="btn btn--primary" data-cont-editar-pol="${esc(p.id)}">Editar</button>`;
   }

@@ -1,9 +1,11 @@
 // ============================================================
 //  CONTATECK · Backend · Ventas y Pagos
 //  OT-0014 · Épica 2: Evolución UX/UI
+//  OT-0029 · Pulido de Ventas (validaciones, póliza ligada, motivo
+//            de rechazo, reintento de póliza). Ver docs/work-orders/OT-0029.
 //
 //  Reglas de negocio finas que RLS no cubre (documentado también
-//  en addendum_ventas_policies.sql):
+//  en database/OT-0029-ventas.sql):
 //    - Quien registra una venta (created_by) NO puede tomarla para
 //      revisión ni confirmarla/rechazarla — separación de funciones.
 //      EXCEPCIÓN (OT-mejoras-ventas): admin/director SÍ pueden
@@ -13,6 +15,7 @@
 //        pendiente -> revision -> (confirmado | rechazado)
 //      Nunca se salta "revision"; "Tomar para revisión" es SIEMPRE
 //      manual (aprobado explícitamente, nunca automático).
+//    - Rechazar exige un motivo (OT-0029).
 // ============================================================
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
@@ -26,6 +29,12 @@ const ROLES_REGISTRO = ['vendedor', 'contador', 'admin', 'director'];
 // el mismo pago). El rol "contador" a secas se queda sin esta excepción,
 // para conservar el control si algún día se usa para alguien más junior.
 const ROLES_AUTOVALIDAN = ['admin', 'director'];
+
+// OT-0029: límites de captura (la validación crítica también va en backend).
+const LIMITES_TEXTO = { cliente: 150, concepto: 250, metodoPago: 60, referencia: 100, banco: 60, notas: 1000 };
+const IMPORTE_MAXIMO = 999999999.99;
+const MOTIVO_MIN = 3;
+const MOTIVO_MAX = 500;
 
 function clienteComoUsuario(accessToken) {
   if (!config.supabase.url || !config.supabase.anonKey) return null;
@@ -63,34 +72,87 @@ async function obtenerEmpresaId(supabase, accessToken, log = console) {
   return data.empresa_id;
 }
 
+// ---- Validación de captura (OT-0029) ----
+
+function fechaValida(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T12:00:00Z');
+  if (isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) return false;
+  if (s < '2000-01-01') return false;
+  // Un pago no puede haberse recibido en el futuro (1.5 días de holgura por zona horaria).
+  const limite = new Date(Date.now() + 36 * 3600 * 1000).toISOString().slice(0, 10);
+  return s <= limite;
+}
+
+// Devuelve { error } o { valores } ya limpios (trim, importe a 2 decimales).
+export function validarDatosVenta(datos, empresaId) {
+  const txt = (campo, obligatorio) => {
+    const v = datos[campo] == null ? '' : String(datos[campo]).trim();
+    if (obligatorio && !v) return { error: 'Falta el campo obligatorio: ' + campo + '.' };
+    if (v.length > LIMITES_TEXTO[campo]) return { error: `El campo ${campo} excede ${LIMITES_TEXTO[campo]} caracteres.` };
+    return { v: v || null };
+  };
+  const out = {};
+  for (const [campo, obligatorio] of [['cliente', true], ['concepto', true], ['metodoPago', false], ['referencia', false], ['banco', false], ['notas', false]]) {
+    const r = txt(campo, obligatorio);
+    if (r.error) return { error: r.error };
+    out[campo] = r.v;
+  }
+
+  const importe = Math.round(Number(datos.importe) * 100) / 100;
+  if (!Number.isFinite(importe) || importe <= 0) return { error: 'El importe debe ser un número mayor a cero.' };
+  if (importe > IMPORTE_MAXIMO) return { error: 'El importe excede el máximo permitido.' };
+  out.importe = importe;
+
+  if (!fechaValida(datos.fechaPago)) return { error: 'La fecha de pago no es válida (formato AAAA-MM-DD, sin fechas futuras).' };
+  out.fechaPago = datos.fechaPago;
+
+  // El comprobante solo puede vivir en la carpeta de ventas de la propia empresa.
+  if (datos.comprobantePath) {
+    const p = String(datos.comprobantePath);
+    if (p.includes('..') || !p.startsWith(empresaId + '/ventas/')) {
+      return { error: 'La ruta del comprobante no es válida.' };
+    }
+    out.comprobantePath = p;
+  } else {
+    out.comprobantePath = null;
+  }
+  out.incluyeIva = datos.incluyeIva !== false;
+  return { valores: out };
+}
+
 export async function crearVenta(accessToken, userId, datos, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  if (!datos.cliente || !datos.concepto || !datos.importe || !datos.fechaPago) {
-    return { ok: false, error: 'Faltan datos obligatorios (cliente, concepto, importe, fecha de pago).' };
+  const rol = await obtenerRolUsuario(accessToken, log);
+  if (!ROLES_REGISTRO.includes(rol)) {
+    return { ok: false, error: 'Tu rol no permite registrar ventas.' };
   }
 
   const empresaId = await obtenerEmpresaId(supabase, accessToken, log);
   if (!empresaId) return { ok: false, error: 'No se pudo determinar la empresa del usuario.' };
+
+  const v = validarDatosVenta(datos || {}, empresaId);
+  if (v.error) return { ok: false, error: v.error };
+  const d = v.valores;
 
   const folio = await nextFolio(supabase);
   const { data, error } = await supabase
     .from('ventas')
     .insert({
       folio,
-      cliente: datos.cliente,
-      concepto: datos.concepto,
-      consultora_id: datos.consultoraId || null,
-      importe: datos.importe,
-      fecha_pago: datos.fechaPago,
-      metodo_pago: datos.metodoPago || null,
-      referencia: datos.referencia || null,
-      banco: datos.banco || null,
+      cliente: d.cliente,
+      concepto: d.concepto,
+      importe: d.importe,
+      fecha_pago: d.fechaPago,
+      metodo_pago: d.metodoPago,
+      referencia: d.referencia,
+      banco: d.banco,
       vendedor_id: userId,
-      comprobante_path: datos.comprobantePath || null,
-      notas: datos.notas || null,
-      incluye_iva: datos.incluyeIva !== false,
+      comprobante_path: d.comprobantePath,
+      notas: d.notas,
+      incluye_iva: d.incluyeIva,
       created_by: userId,
       empresa_id: empresaId,
     })
@@ -104,21 +166,37 @@ export async function crearVenta(accessToken, userId, datos, log = console) {
   return { ok: true, venta: data };
 }
 
+// OT-0029: devuelve también el folio de la póliza ligada (poliza_id → polizas.folio).
+// Si el script database/OT-0029-ventas.sql aún no se corrió (no existe la
+// columna/FK), cae a la lectura simple y la pantalla se comporta como antes.
 export async function listarVentas(accessToken, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('ventas')
-    .select('*')
+    .select('*, poliza:polizas(folio)')
     .order('created_at', { ascending: false })
     .limit(300);
+
+  if (error) {
+    ({ data, error } = await supabase
+      .from('ventas')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(300));
+  }
 
   if (error) {
     log.warn('[postgres] listarVentas:', error.message);
     return { ok: false, error: error.message };
   }
-  return { ok: true, ventas: data || [] };
+  const ventas = (data || []).map((v) => {
+    if (v.poliza === undefined) return v;
+    const { poliza, ...resto } = v;
+    return { ...resto, poliza_folio: poliza ? poliza.folio : null };
+  });
+  return { ok: true, ventas, limite: 300 };
 }
 
 // ---- Transiciones de estado (con reglas finas de negocio) ----
@@ -168,7 +246,12 @@ export async function tomarParaRevision(accessToken, userId, ventaId, log = cons
 // Lee los códigos de cuenta desde configuracion_contable (no hardcodeados,
 // así cada empresa usa sus propias cuentas). Si alguna no está configurada,
 // la póliza no se genera (pero la venta sí se confirma — el dinero se
-// recibió, y la contadora puede crear la póliza manualmente después).
+// recibió — y desde OT-0029 la póliza se puede GENERAR DESPUÉS con
+// "Generar póliza", sin duplicar nada).
+//
+// Devuelve { bancos, ventas, iva } (códigos o null) o null si no hay
+// configuración. OT-0029: ya no exige "mínimo 2 ids"; cada cuenta se
+// resuelve por separado y quien la usa decide qué le falta.
 async function obtenerCuentasContables(supabase, empresaId, log) {
   const { data, error } = await supabase
     .from('configuracion_contable')
@@ -182,14 +265,15 @@ async function obtenerCuentasContables(supabase, empresaId, log) {
   // Necesitamos los CÓDIGOS (no los IDs) porque crear_poliza_completa
   // busca cuentas por código + empresa_id.
   const ids = [data.cuenta_bancos_id, data.cuenta_ventas_id, data.cuenta_iva_trasladado_id].filter(Boolean);
-  if (ids.length < 2) return null; // mínimo Bancos + Ventas
-  const { data: cuentas, error: e2 } = await supabase
-    .from('cuentas_contables')
-    .select('id, codigo')
-    .in('id', ids);
-  if (e2 || !cuentas) return null;
   const mapa = {};
-  cuentas.forEach(c => { mapa[c.id] = c.codigo; });
+  if (ids.length) {
+    const { data: cuentas, error: e2 } = await supabase
+      .from('cuentas_contables')
+      .select('id, codigo')
+      .in('id', ids);
+    if (e2 || !cuentas) return null;
+    cuentas.forEach(c => { mapa[c.id] = c.codigo; });
+  }
   return {
     bancos: mapa[data.cuenta_bancos_id] || null,
     ventas: mapa[data.cuenta_ventas_id] || null,
@@ -197,25 +281,47 @@ async function obtenerCuentasContables(supabase, empresaId, log) {
   };
 }
 
+function faltantesConfig(cuentas, requiereIva) {
+  const f = [];
+  if (!cuentas || !cuentas.bancos) f.push('Bancos');
+  if (!cuentas || !cuentas.ventas) f.push('Ventas y servicios');
+  if (requiereIva && (!cuentas || !cuentas.iva)) f.push('IVA trasladado');
+  return f;
+}
+
+// OT-0029: para que la pantalla avise ANTES de confirmar si la póliza saldría.
+export async function estadoConfigContable(accessToken, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const empresaId = await obtenerEmpresaId(supabase, accessToken, log);
+  if (!empresaId) return { ok: false, error: 'No se pudo determinar la empresa del usuario.' };
+  const cuentas = await obtenerCuentasContables(supabase, empresaId, log);
+  const faltantes = faltantesConfig(cuentas, true);
+  return { ok: true, listo: faltantes.length === 0, faltantes };
+}
+
 async function generarPolizaVenta(supabase, venta, log) {
   const empresaId = venta.empresa_id;
   const cuentas = await obtenerCuentasContables(supabase, empresaId, log);
-  if (!cuentas || !cuentas.bancos || !cuentas.ventas) {
-    log.warn('[postgres] generarPolizaVenta: cuentas no configuradas, póliza no generada');
-    return { ok: false, error: 'Cuentas contables no configuradas — la póliza no se generó.' };
-  }
-
   const total = Number(venta.importe) || 0;
   const incluyeIva = venta.incluye_iva !== false;
   // Desglose: si incluye IVA, se separa el 16%; si no, todo va a Ventas.
   const subtotal = incluyeIva ? Math.round((total / 1.16) * 100) / 100 : total;
   const iva = incluyeIva ? Math.round((total - subtotal) * 100) / 100 : 0;
 
+  // OT-0029: antes, con IVA y sin cuenta de IVA, la póliza salía descuadrada
+  // y Postgres la rechazaba con un error críptico. Ahora se dice qué falta.
+  const faltantes = faltantesConfig(cuentas, iva > 0);
+  if (faltantes.length) {
+    log.warn('[postgres] generarPolizaVenta: cuentas no configuradas, póliza no generada:', faltantes.join(', '));
+    return { ok: false, error: 'Falta configurar en Configuración contable: ' + faltantes.join(', ') + '. La póliza no se generó.' };
+  }
+
   const partidas = [
     { codigo: cuentas.bancos, debe: total, haber: 0, descripcion: 'Cobro ' + (venta.folio || '') + ' — ' + (venta.cliente || '') },
     { codigo: cuentas.ventas, debe: 0, haber: subtotal, descripcion: (venta.concepto || 'Venta') },
   ];
-  if (iva > 0 && cuentas.iva) {
+  if (iva > 0) {
     partidas.push({ codigo: cuentas.iva, debe: 0, haber: iva, descripcion: 'IVA trasladado' });
   }
 
@@ -236,13 +342,29 @@ async function generarPolizaVenta(supabase, venta, log) {
   return { ok: true, poliza: data };
 }
 
-async function resolverVenta(accessToken, userId, ventaId, nuevoEstado, log) {
+// OT-0029: guarda en la venta el id de su póliza. Si la columna aún no
+// existe (script SQL sin correr) se avisa en el log pero no se rompe nada.
+async function ligarPoliza(supabase, ventaId, polizaId, log) {
+  if (!polizaId) return;
+  const { error } = await supabase.from('ventas').update({ poliza_id: polizaId }).eq('id', ventaId).is('poliza_id', null);
+  if (error) log.warn('[postgres] ligarPoliza (¿falta correr database/OT-0029-ventas.sql?):', error.message);
+}
+
+async function resolverVenta(accessToken, userId, ventaId, nuevoEstado, motivo, log) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
   const rol = await obtenerRolUsuario(accessToken, log);
   if (!ROLES_VALIDADORES.includes(rol)) {
     return { ok: false, error: 'No tienes permiso para validar ventas (tu rol no lo permite).' };
+  }
+
+  // OT-0029: rechazar exige un motivo (que el vendedor pueda enterarse del porqué).
+  let motivoLimpio = null;
+  if (nuevoEstado === 'rechazado') {
+    motivoLimpio = String(motivo == null ? '' : motivo).trim();
+    if (motivoLimpio.length < MOTIVO_MIN) return { ok: false, error: 'Escribe el motivo del rechazo.' };
+    if (motivoLimpio.length > MOTIVO_MAX) return { ok: false, error: `El motivo excede ${MOTIVO_MAX} caracteres.` };
   }
 
   try {
@@ -255,26 +377,36 @@ async function resolverVenta(accessToken, userId, ventaId, nuevoEstado, log) {
       return { ok: false, error: `Esta venta debe estar en 'revision' antes de confirmar/rechazar (estado actual: ${venta.estado}). Tómala primero con "Tomar para revisión".` };
     }
 
-    const { data, error } = await supabase
+    const cambios = { estado: nuevoEstado, revisado_por: userId, revisado_en: new Date().toISOString() };
+    const actualizar = (extra) => supabase
       .from('ventas')
-      .update({ estado: nuevoEstado, revisado_por: userId, revisado_en: new Date().toISOString() })
+      .update({ ...cambios, ...extra })
       .eq('id', ventaId)
       .eq('estado', 'revision')
       .select()
       .single();
 
+    let { data, error } = await actualizar(motivoLimpio ? { motivo_rechazo: motivoLimpio } : {});
+    // Si la columna motivo_rechazo aún no existe (SQL sin correr), se rechaza igual.
+    if (error && motivoLimpio && /motivo_rechazo/i.test(error.message || '')) {
+      log.warn('[postgres] resolverVenta: falta la columna motivo_rechazo (correr database/OT-0029-ventas.sql); se rechaza sin guardar el motivo.');
+      ({ data, error } = await actualizar({}));
+    }
     if (error) throw error;
 
     // Conexión Ventas↔Contabilidad: si se CONFIRMÓ el pago (no rechazó),
     // se genera la póliza contable automáticamente. Si la póliza falla, la
     // venta SÍ se confirmó (el dinero se recibió) pero se devuelve una
-    // advertencia para que la contadora la revise.
+    // advertencia, y desde OT-0029 queda un botón "Generar póliza" para reintentar.
     let polizaWarning = null;
     if (nuevoEstado === 'confirmado') {
       const rPol = await generarPolizaVenta(supabase, venta, log);
       if (!rPol.ok) {
         polizaWarning = rPol.error || 'No se pudo generar la póliza contable.';
         log.warn('[postgres] resolverVenta: venta confirmada pero póliza falló:', polizaWarning);
+      } else {
+        await ligarPoliza(supabase, ventaId, rPol.poliza?.id, log);
+        data = { ...data, poliza_id: rPol.poliza?.id || null, poliza_folio: rPol.poliza?.folio || null };
       }
     }
 
@@ -286,8 +418,49 @@ async function resolverVenta(accessToken, userId, ventaId, nuevoEstado, log) {
 }
 
 export function confirmarVenta(accessToken, userId, ventaId, log = console) {
-  return resolverVenta(accessToken, userId, ventaId, 'confirmado', log);
+  return resolverVenta(accessToken, userId, ventaId, 'confirmado', null, log);
 }
-export function rechazarVenta(accessToken, userId, ventaId, log = console) {
-  return resolverVenta(accessToken, userId, ventaId, 'rechazado', log);
+export function rechazarVenta(accessToken, userId, ventaId, motivo, log = console) {
+  return resolverVenta(accessToken, userId, ventaId, 'rechazado', motivo, log);
+}
+
+// OT-0029: reintento de póliza para una venta ya CONFIRMADA que quedó sin ella.
+// Antes de crear una nueva busca si ya existe una póliza 'ventas' con el
+// concepto de esa venta (ventas confirmadas antes de OT-0029 sí tienen
+// póliza pero no tenían la liga): en ese caso solo la liga, sin duplicar.
+export async function generarPolizaDeVenta(accessToken, ventaId, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  const rol = await obtenerRolUsuario(accessToken, log);
+  if (!ROLES_VALIDADORES.includes(rol)) {
+    return { ok: false, error: 'No tienes permiso para generar pólizas (tu rol no lo permite).' };
+  }
+
+  try {
+    const venta = await obtenerVenta(supabase, ventaId);
+    if (!venta) return { ok: false, error: 'Venta no encontrada.' };
+    if (venta.estado !== 'confirmado') return { ok: false, error: 'Solo las ventas confirmadas tienen póliza.' };
+    if (venta.poliza_id) return { ok: false, error: 'Esta venta ya tiene póliza ligada.' };
+
+    const { data: existentes, error: eEx } = await supabase
+      .from('polizas')
+      .select('id, folio, estado')
+      .eq('origen', 'ventas')
+      .ilike('concepto', 'Venta ' + venta.folio + ' — %');
+    if (eEx) throw eEx;
+    const vigente = (existentes || []).find((p) => p.estado === 'ok') || (existentes || [])[0];
+    if (vigente) {
+      await ligarPoliza(supabase, ventaId, vigente.id, log);
+      return { ok: true, poliza: { id: vigente.id, folio: vigente.folio }, yaExistia: true };
+    }
+
+    const rPol = await generarPolizaVenta(supabase, venta, log);
+    if (!rPol.ok) return { ok: false, error: rPol.error };
+    await ligarPoliza(supabase, ventaId, rPol.poliza?.id, log);
+    return { ok: true, poliza: rPol.poliza, yaExistia: false };
+  } catch (error) {
+    log.warn('[postgres] generarPolizaDeVenta:', error.message);
+    return { ok: false, error: error.message };
+  }
 }
