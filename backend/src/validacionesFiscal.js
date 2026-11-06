@@ -189,3 +189,30 @@ export function alertasVigencia(documentos, hoy = hoyMexico()) {
   }
   return alertas;
 }
+
+// ---------------- Duplicados de periodo ----------------
+// Compara periodos sin importar mayúsculas, acentos ni espacios repetidos
+// ("Julio 2026" = " julio  2026 ").
+export function normalizarPeriodo(p) {
+  return String(p == null ? '' : p).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Las complementarias se marcan con el prefijo "[Complementaria]" en las notas.
+// Es el ÚNICO caso en que dos declaraciones de la misma obligación y periodo
+// conviven sin avisar (la extemporánea es una original tardía, no una corrección).
+export function esComplementaria(notas) {
+  return /^\[Complementaria\]/.test(String(notas || ''));
+}
+
+// Declaraciones de `existentes` de la misma obligación y mismo periodo que `nueva`.
+export function similaresDePeriodo(nueva, existentes) {
+  const k = normalizarPeriodo(nueva.periodo);
+  return (existentes || []).filter((o) => o.id !== nueva.id && o.obligacion_id === nueva.obligacion_id && normalizarPeriodo(o.periodo) === k);
+}
+
+// ¿`d` sobra? No está presentada, no es complementaria y ya hay otra PRESENTADA
+// de la misma obligación y periodo: no debe verse como vencida ni alertar.
+export function esDuplicadaDePresentada(d, todas) {
+  if (!d || d.estado === 'presentada' || esComplementaria(d.notas)) return false;
+  return similaresDePeriodo(d, todas).some((o) => o.estado === 'presentada');
+}

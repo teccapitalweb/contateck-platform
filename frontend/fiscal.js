@@ -29,6 +29,7 @@
     en_proceso: { txt: "En proceso", cls: "v-badge--warn" },
     presentada: { txt: "Presentada", cls: "v-badge--ok" },
     vencida: { txt: "Vencida", cls: "v-badge--bad" },
+    duplicada: { txt: "Duplicada", cls: "v-badge--warn" },
   };
   // Tipos de archivo aceptados → extensión que se guarda en Storage.
   const EXT_POR_MIME = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
@@ -115,6 +116,13 @@
   }
   // El tipo de declaración se guarda como prefijo de las notas (sin cambiar la tabla).
   const TIPOS_DECLARACION = ["Normal", "Complementaria", "Extemporánea"];
+  // Mismas reglas que backend/src/validacionesFiscal.js (esDuplicadaDePresentada).
+  function normalizarPeriodo(p) { return String(p == null ? "" : p).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim(); }
+  function esDuplicadaDePresentada(d, todas) {
+    if (!d || d.estado === "presentada" || /^\[Complementaria\]/.test(String(d.notas || ""))) return false;
+    const k = normalizarPeriodo(d.periodo);
+    return todas.some((o) => o.id !== d.id && o.estado === "presentada" && o.obligacion_id === d.obligacion_id && normalizarPeriodo(o.periodo) === k);
+  }
   function tipoDeNotas(notas) {
     const m = /^\[(Complementaria|Extemporánea)\]/.exec(String(notas || ""));
     return m ? m[1] : null;
@@ -328,8 +336,11 @@
     tb.innerHTML = declaraciones.slice().sort((a, b) => String(a.fecha_vencimiento).localeCompare(String(b.fecha_vencimiento))).map((d) => {
       // Comparación de fechas AAAA-MM-DD contra el día de hoy en México: el
       // día del vencimiento todavía no cuenta como vencida.
-      const vencida = d.estado !== "presentada" && String(d.fecha_vencimiento).slice(0, 10) < hoy;
-      const e = ESTADOS[vencida ? "vencida" : d.estado] || ESTADOS.pendiente;
+      // Una pendiente de un periodo que YA tiene una presentada (y no es complementaria)
+      // no se marca vencida: se rotula "Duplicada" (mismo criterio que el calendario del backend).
+      const duplicada = esDuplicadaDePresentada(d, declaraciones);
+      const vencida = !duplicada && d.estado !== "presentada" && String(d.fecha_vencimiento).slice(0, 10) < hoy;
+      const e = ESTADOS[duplicada ? "duplicada" : (vencida ? "vencida" : d.estado)] || ESTADOS.pendiente;
       let acciones = "";
       if (puedeRegistrar() && d.estado !== "presentada") {
         acciones = '<button class="v-mini v-mini--ok" data-fis-marcar="' + esc(d.id) + '">Marcar presentada</button>';
@@ -510,10 +521,22 @@
     document.getElementById("fdec-periodo").value = anio ? textoPeriodo(o, indice, anio) : "";
     const f = sugerirFechaLimite(o, indice, anio);
     document.getElementById("fdec-vence").value = f || "";
-    document.querySelector("[data-fdec-hint]").textContent = f
+    fechaSugerida = f || null;
+    textoBaseHint = f
       ? "Fecha sugerida: " + (o.periodicidad === "anual" ? "el mes límite del año siguiente" : "el día límite del mes siguiente al periodo") + ", recorrida al lunes si cae en fin de semana. No considera días inhábiles por feriados: confírmala."
       : "No se pudo sugerir la fecha (revisa el año o el mes límite de la obligación); captúrala a mano.";
+    document.querySelector("[data-fdec-hint]").textContent = textoBaseHint;
   }
+  // Si la fecha límite se cambia a mano y no coincide con la sugerida, se avisa (no se impide).
+  let fechaSugerida = null, textoBaseHint = "";
+  function avisarFechaDistinta() {
+    const hint = document.querySelector("[data-fdec-hint]"), v = document.getElementById("fdec-vence");
+    if (!hint || !v) return;
+    hint.textContent = fechaSugerida && v.value && v.value !== fechaSugerida
+      ? "Esta fecha difiere de la sugerida (" + fmtFecha(fechaSugerida) + "). Si no es a propósito, corrígela."
+      : textoBaseHint;
+  }
+  let declaracionPorConfirmar = null;
   async function guardarDeclaracion() {
     const obligacionId = document.getElementById("fdec-obl").value;
     const periodo = document.getElementById("fdec-periodo").value.trim();
@@ -522,9 +545,28 @@
     if (!periodo || !fechaVencimiento) { toast("Captura el periodo y la fecha límite", "warn"); return; }
     const cuerpo = { obligacionId, periodo, fechaVencimiento };
     if (tipo !== "Normal") cuerpo.notas = "[" + tipo + "]";
+    await enviarDeclaracion(cuerpo);
+  }
+  async function enviarDeclaracion(cuerpo) {
     const data = await enviar("POST", "/api/fiscal/declaraciones", cuerpo);
+    if (data.codigo === "DUPLICADA") { openConfirmarDuplicada(cuerpo, data.existentes || []); return; }
     if (!data.ok) { toast(data.error || "No se pudo guardar", "warn"); return; }
+    declaracionPorConfirmar = null;
     closeModal(); toast("Declaración registrada"); await render();
+  }
+  // Ya hay una declaración de esa obligación y periodo: se muestra cuál y se pide confirmar.
+  function openConfirmarDuplicada(cuerpo, existentes) {
+    declaracionPorConfirmar = cuerpo;
+    const filas = existentes.map((x) => {
+      const e = ESTADOS[x.estado] || ESTADOS.pendiente;
+      return "<li>" + esc(e.txt) + (x.fechaPresentacion ? " el " + esc(fmtFecha(x.fechaPresentacion)) : "") + " · vence " + esc(fmtFecha(x.fechaVencimiento)) + "</li>";
+    }).join("");
+    openModal(`
+      <h2 class="v-h2">Ya existe una declaración de este periodo</h2>
+      <p style="color:var(--muted);font-size:.88rem;margin:0 0 .5rem"><b>${esc(nombreObligacion(cuerpo.obligacionId))} · ${esc(cuerpo.periodo)}</b> ya está registrada:</p>
+      <ul style="margin:0 0 .8rem 1.1rem;font-size:.88rem">${filas}</ul>
+      <p style="color:var(--muted);font-size:.85rem;margin:0">Si es una corrección de la ya presentada, cancela y vuelve a crearla con el tipo <b>Complementaria</b>. Si la registras de todos modos quedará marcada como <b>Duplicada</b> y no generará alertas mientras exista una presentada.</p>
+      <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-fis-confirmar-dup>Registrar de todos modos</button></div>`);
   }
 
   function openDeshacerPresentada(id) {
@@ -606,6 +648,8 @@
     const gDec = e.target.closest("[data-fis-guardar-decl]"); if (gDec) { conBoton(gDec, guardarDeclaracion); return; }
     const marcar = e.target.closest("[data-fis-marcar]"); if (marcar) { openMarcarPresentada(marcar.getAttribute("data-fis-marcar")); return; }
     const conf = e.target.closest("[data-fis-confirmar-presentada]"); if (conf) { conBoton(conf, confirmarPresentada); return; }
+    const cDup = e.target.closest("[data-fis-confirmar-dup]");
+    if (cDup) { conBoton(cDup, () => enviarDeclaracion(Object.assign({}, declaracionPorConfirmar, { confirmarDuplicada: true }))); return; }
     const des = e.target.closest("[data-fis-deshacer]"); if (des) { openDeshacerPresentada(des.getAttribute("data-fis-deshacer")); return; }
     const cDes = e.target.closest("[data-fis-confirmar-deshacer]"); if (cDes) { conBoton(cDes, confirmarDeshacer); return; }
     const ver = e.target.closest("[data-fis-ver-doc]"); if (ver) { verDocumento(ver.getAttribute("data-fis-ver-doc")); return; }
@@ -627,6 +671,7 @@
     }
     if (e.target.id === "fdec-obl") prepararDeclaracion(true);
     if (e.target.id === "fdec-idx" || e.target.id === "fdec-anio") prepararDeclaracion(false);
+    if (e.target.id === "fdec-vence") avisarFechaDistinta();
   });
   document.addEventListener("click", (e) => {
     if (e.target.closest('.nav-item[data-view="sat"]')) setTimeout(render, 30);

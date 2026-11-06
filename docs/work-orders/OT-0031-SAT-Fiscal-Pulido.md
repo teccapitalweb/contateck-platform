@@ -47,11 +47,33 @@ Los cambios en `contabilidad.js` se limitan al bloque "Contabilidad Electrónica
 
 Versiones de caché: `contabilidad.js` v12, `fiscal.js` v3.
 
+
 Pruebas de esta tanda (sin servidor ni pantalla): `sugerirFechaLimite` con fin de semana, cambio de mes y de año,
 bimestral, anual, día 31 en mes corto y entradas inválidas; periodo por defecto; `alertasVigencia` (5 días, hoy,
 vencida, documento reemplazado, fechas inválidas); el CSV (comillas, saltos de línea, intento de fórmula).
 No verificado: la interfaz nueva de `fiscal.js` (modales de editar, plantilla, tipo y regresar a pendiente) ni la alerta
 en el Dashboard real.
+
+### 1c. Declaraciones duplicadas (hallazgo del usuario probando la rama unida)
+
+Caso: dos registros de "IVA Mensual · Julio 2026", uno Presentada (vence 31 jul) y otro pendiente (vence 17 ago); el Dashboard
+alertaba "vencida" aunque el periodo ya estaba presentado.
+
+| # | Cambio | Dónde |
+|---|---|---|
+| S26 | Calendario y alertas del Dashboard: una declaración no presentada se omite si existe OTRA **presentada** de la misma obligación y el mismo periodo (el periodo se compara sin importar mayúsculas, acentos ni espacios repetidos). Excepción: si sus notas empiezan con `[Complementaria]`, sigue contando. La "Extemporánea" NO es excepción (es una original tardía, no una corrección) | `backend/src/validacionesFiscal.js` (`esDuplicadaDePresentada`), `supabaseFiscal.js` (`obtenerCalendario`) |
+| S27 | Alta de declaración: si ya existe una de esa obligación y periodo (en cualquier estado) el backend NO guarda y responde `codigo: "DUPLICADA"` con el detalle; el panel muestra cuál es y pide "Registrar de todos modos" (o cancelar y usar el tipo Complementaria). Una complementaria no pide confirmación | `supabaseFiscal.js` (`crearDeclaracion`), `frontend/fiscal.js` |
+| S28 | En la tabla, esa pendiente sobrante se rotula **Duplicada** (no "Vencida") | `frontend/fiscal.js` |
+| S29 | Al cambiar a mano la fecha límite, un aviso indica que difiere de la sugerida | `frontend/fiscal.js` |
+
+Por qué la presentada vence el 31 jul: **no es un error del código**. El backend guarda tal cual la fecha que se captura
+(`crearDeclaracion` no calcula nada) y antes de S22 la fecha se escribía a mano; con el día 17 de la obligación, julio 2026 debe vencer
+el 17 ago 2026 (lunes), que es justo la fecha del otro registro. Además se marcó presentada el 31 jul, antes de que terminara
+el periodo, lo que apunta a un dato de prueba capturado a mano. No hay SQL en el repo (ni semillas) que lo cree. Limpieza: borrar o
+corregir ese registro directamente en Supabase DEV (el panel no tiene botón de eliminar declaraciones, por decisión de la sección 6).
+Si fuera un dato real habría que decidir con la contadora cuál de los dos vale.
+
+Versiones de caché: `fiscal.js` v4.
 
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
