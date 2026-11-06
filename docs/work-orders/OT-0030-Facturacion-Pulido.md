@@ -76,15 +76,52 @@ manda directo; la protección completa pide una validación de `tipo` dentro de 
 ## 4. Pendiente (bloque B, no incluido)
 
 - **Emisor/CSD por empresa.** Hoy todas las empresas facturan con un único emisor global (`EMISOR_PRUEBA`). Es el bloqueo principal para producción multiempresa.
-- Protección contra duplicados si se pierde la respuesta del timbrado y se reintenta.
-- Paginación y filtros del listado (hoy máximo 200).
+- ~~Protección contra duplicados~~ y ~~paginación del listado~~: hechos, ver la sección 5 (sin filtros por fecha).
 - Conectar el REP con Cobranza (que actualice el estado del complemento y el saldo en `pagos_cliente`).
 - Timbrado masivo (el botón sigue como aviso).
 - Sacar Firestore del flujo de CFDI.
 - Claves de producto/unidad: si el usuario no elige, se usa `01010101` / `E48`; revisar con la contadora.
 - El formulario de timbrado viene precargado con el receptor de pruebas (RFC, CP, régimen, nombre): útil en sandbox, hay que vaciarlo o ocultarlo al pasar a producción.
 
-## 5. Antes de producción (checklist)
+## 5. Protección contra duplicados y paginación (después del bloque A)
+
+**Problema.** Un timbrado es real y solo se deshace cancelando ante el SAT. Se duplicaba si (a) se daba doble clic o
+se usaban dos pestañas, o (b) se perdía la respuesta (red, cierre de pestaña) y se reintentaba sin saber que la
+primera sí se había timbrado. Además el listado cortaba en 200 CFDI sin avisar.
+
+**Qué se hizo (sin cambios de SQL):**
+- `backend/src/routes/invoices.js`: en `/facturar`, `/nota-credito` y `/rep`:
+  1. *Candado en memoria* por usuario + tipo + receptor + importe: dos timbrados iguales a la vez → 409 `EN_PROCESO`
+     (se libera al terminar o a los 90 s).
+  2. *Aviso de posible duplicado*: si en la base hay un CFDI vigente del mismo tipo, mismo RFC de receptor y mismo
+     importe (subtotal; total en REP) de los últimos 15 minutos → 409 `POSIBLE_DUPLICADO` con folio y UUID del
+     existente. El usuario puede confirmar (`confirmarDuplicado: true`). Si la consulta de duplicados falla, NO se
+     bloquea el timbrado (solo se registra en el log).
+- `backend/src/supabaseCfdis.js`: `buscarDuplicadoReciente`; `listarCfdis` ahora acepta `?pagina=` y `?limite=`
+  (máx. 500), devuelve `total`, y una página más allá del final devuelve lista vacía en vez de error.
+- `frontend/facturacion.js`: las tres operaciones usan `enviarOperacion` (tiempo límite de 90 s). Si la red falla o se
+  agota el tiempo se avisa "es posible que SÍ se haya realizado" y se refresca la lista, en vez de invitar a reintentar
+  a ciegas (también en cancelar). El 409 de posible duplicado muestra el folio existente con "Revisar la lista" o
+  "Sí, emitir otro de todos modos".
+- `frontend/data-firestore.js`, `frontend/auth-guard.js`, `frontend/dashboard.html`: "Mostrando los N más recientes
+  de TOTAL" y botón "Cargar más" cuando hay más de 200. Versiones de caché: `facturacion.js` v23,
+  `data-firestore.js` v13, `auth-guard.js` v4.
+
+**Probado (sandbox, 5-nov-2026):** primer timbrado de $100 sin aviso (el CFDI previo tenía 43 min); reintento
+inmediato con los mismos datos → detenido con el aviso de posible duplicado mostrando `CT-39`, sin emitir nada
+(la base quedó con 3 CFDI); pérdida de conexión simulada en el navegador → mensaje de respuesta incierta con el
+botón rehabilitado; paginación (`limite=1` páginas 1 y 2 sin repetir, página fuera de rango y parámetros raros).
+
+**NO probado:** el candado `EN_PROCESO` (dos solicitudes simultáneas), el botón "Sí, emitir otro de todos modos"
+(emitiría otro CFDI), el botón "Cargar más" con más de 200 CFDI, ni duplicados de nota de crédito y REP (comparten el
+mismo código pero no se ejercitaron).
+
+**Límites conocidos:** el candado vive en la memoria del servidor (se pierde al reiniciar y no se comparte entre
+varias instancias); la detección de duplicados compara tipo + receptor + importe, así que dos ventas legítimas
+iguales en 15 minutos piden confirmación; si un CFDI se timbra pero no se guarda en la base (aviso de registro),
+el reintento no lo detecta. Un candado/idempotencia persistente necesitaría una tabla o columna nueva (SQL).
+
+## 6. Antes de producción (checklist)
 
 - Fiscalapi en `https://live.fiscalapi.com` con la llave de producción y CSD real.
 - `REQUIRE_AUTH=true` y `ALLOWED_ORIGINS` con el dominio real en Railway.

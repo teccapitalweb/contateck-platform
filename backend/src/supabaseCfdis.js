@@ -104,21 +104,61 @@ export async function guardarCfdi(accessToken, resumen, raw, log = console) {
 // (reemplaza el arreglo estático window.CFDIS del frontend). RLS filtra
 // automáticamente por empresa_id del usuario autenticado — no hace
 // falta filtrar aquí a mano.
-export async function listarCfdis(accessToken, log = console) {
+// OT-0030: ahora devuelve también cuántos CFDI hay EN TOTAL y soporta páginas.
+// Antes cortaba en 200 sin avisar: con más facturas, el listado y los KPIs
+// quedaban incompletos sin que nadie lo notara.
+export async function listarCfdis(accessToken, { pagina = 1, limite = 200 } = {}, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  const { data, error } = await supabase
-    .from('cfdis')
-    .select('id, fiscalapi_id, uuid_sat, serie, folio, tipo, total, fecha, receptor_rfc, receptor_nombre, estatus, metodo_pago, created_at')
-    .order('created_at', { ascending: false })
-    .limit(200);
+  const lim = Math.min(Math.max(parseInt(limite, 10) || 200, 1), 500);
+  const pag = Math.max(parseInt(pagina, 10) || 1, 1);
+  const desde = (pag - 1) * lim;
 
+  const { data, error, count } = await supabase
+    .from('cfdis')
+    .select('id, fiscalapi_id, uuid_sat, serie, folio, tipo, total, fecha, receptor_rfc, receptor_nombre, estatus, metodo_pago, created_at', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(desde, desde + lim - 1);
+
+  // Una página más allá del final no es un error: simplemente no hay filas.
+  if (error && error.code === 'PGRST103') return { ok: true, cfdis: [], total: null, pagina: pag, limite: lim };
   if (error) {
     log.warn('[postgres] listarCfdis:', error.message);
     return { ok: false, error: error.message };
   }
-  return { ok: true, cfdis: data || [] };
+  return { ok: true, cfdis: data || [], total: count ?? (data || []).length, pagina: pag, limite: lim };
+}
+
+// OT-0030 · Protección contra duplicados: ¿hay un CFDI muy parecido emitido
+// hace poco? Compara tipo + RFC del receptor + importe (subtotal, o total si
+// no hay subtotal) dentro de una ventana de minutos, ignorando los cancelados.
+// Es solo un AVISO (el usuario puede confirmar que sí quiere otro); sirve para
+// el caso típico: se perdió la respuesta del timbrado o se pulsó dos veces, y
+// el reintento habría creado una segunda factura real. No necesita cambios de SQL.
+export async function buscarDuplicadoReciente(accessToken, { tipo, receptorRfc, subtotal, total, minutos = 15 }, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  const desde = new Date(Date.now() - minutos * 60 * 1000).toISOString();
+  let query = supabase.from('cfdis')
+    .select('folio, uuid_sat, total, created_at')
+    .eq('tipo', tipo)
+    .eq('receptor_rfc', String(receptorRfc || '').toUpperCase())
+    .neq('estatus', 'cancelado')
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (subtotal != null) query = query.eq('subtotal', subtotal);
+  else if (total != null) query = query.eq('total', total);
+  else return { ok: false, error: 'Falta el importe para buscar duplicados.' };
+
+  const { data, error } = await query;
+  if (error) {
+    log.warn('[postgres] buscarDuplicadoReciente:', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, duplicado: (data && data[0]) || null };
 }
 
 // OT-0030: busca UN CFDI de la empresa del usuario (la RLS ya filtra por

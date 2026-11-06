@@ -25,7 +25,7 @@ import { getFiscalapi, unwrap } from '../fiscalapi.js';
 import { config } from '../config.js';
 import { verifyAuth } from '../supabaseAuth.js';
 import { saveCfdi, markCfdiCancelled } from '../firebase.js';
-import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis, buscarCfdi } from '../supabaseCfdis.js';
+import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis, buscarCfdi, buscarDuplicadoReciente } from '../supabaseCfdis.js';
 import { construirFactura, construirNotaCredito, construirREP, EMISOR_PRUEBA } from '../demo-data.js';
 import { generarPdfCfdi } from '../pdf-cfdi.js';
 import { validarFactura, validarConceptos, validarReceptor, validarCorreo, uuidValido } from '../validaciones.js';
@@ -81,6 +81,60 @@ export async function requireRolFacturacion(req, res, next) {
     return res.status(403).json({ ok: false, error: 'No tienes permiso para timbrar o cancelar CFDIs (tu rol no lo permite).' });
   }
   next();
+}
+
+// ---------- OT-0030 · Protección contra duplicados ----------
+// Un timbrado es real e irreversible (solo se puede cancelar ante el SAT). Dos
+// casos lo duplicaban: (a) doble clic / dos pestañas a la vez, y (b) se pierde
+// la respuesta (red, cierre de pestaña) y el usuario reintenta sin saber que
+// la primera SÍ se timbró. Defensas, sin cambiar el esquema de la base:
+//  1) Candado en memoria: no dejar pasar dos timbrados iguales a la vez del
+//     mismo usuario (se libera al terminar o a los 90 s por si algo se cuelga).
+//  2) Aviso de posible duplicado: si en la base ya hay un CFDI vigente del
+//     mismo tipo, mismo receptor y mismo importe de hace pocos minutos, se
+//     responde 409 POSIBLE_DUPLICADO con los datos del existente; el usuario
+//     puede confirmar (confirmarDuplicado: true) si de verdad quería otro.
+const VENTANA_DUPLICADO_MIN = 15;
+const TIEMPO_MAX_CANDADO_MS = 90 * 1000;
+const candados = new Map();
+function tomarCandado(clave) {
+  const t = candados.get(clave);
+  if (t && Date.now() - t < TIEMPO_MAX_CANDADO_MS) return false;
+  candados.set(clave, Date.now());
+  return true;
+}
+const soltarCandado = (clave) => candados.delete(clave);
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+const subtotalConceptos = (conceptos) =>
+  round2((conceptos || []).reduce((s, c) => s + round2(Number(c.cantidad) * Number(c.precioUnitario)), 0));
+
+// Devuelve la clave del candado (el llamador DEBE soltarla en `finally`) o null
+// si ya respondió (409) porque hay un timbrado igual en curso o un posible duplicado.
+async function protegerDuplicado(req, res, { tipo, receptorRfc, subtotal, total, confirmar }) {
+  const rfc = String(receptorRfc || '').toUpperCase().trim();
+  const clave = `${req.user.uid}|${tipo}|${rfc}|${subtotal ?? total}`;
+  if (!tomarCandado(clave)) {
+    res.status(409).json({
+      ok: false, codigo: 'EN_PROCESO',
+      error: 'Ya hay un timbrado igual en proceso. Espera unos segundos y revisa la lista antes de volver a intentar.',
+    });
+    return null;
+  }
+  if (!confirmar) {
+    const d = await buscarDuplicadoReciente(req.token, { tipo, receptorRfc: rfc, subtotal, total, minutos: VENTANA_DUPLICADO_MIN });
+    if (d.ok && d.duplicado) {
+      soltarCandado(clave);
+      res.status(409).json({
+        ok: false, codigo: 'POSIBLE_DUPLICADO',
+        error: `Ya hay un CFDI ${d.duplicado.folio || ''} para este receptor por el mismo importe, emitido hace pocos minutos.`.replace('  ', ' '),
+        duplicado: { folio: d.duplicado.folio, uuid: d.duplicado.uuid_sat, creado: d.duplicado.created_at },
+      });
+      return null;
+    }
+    // Si la revisión falló (d.ok === false) NO se bloquea el timbrado: solo queda en el log.
+    if (!d.ok) console.warn('[duplicados] no se pudo revisar, se continúa:', d.error);
+  }
+  return clave;
 }
 
 // OT-0030: sesión obligatoria SIEMPRE (aunque REQUIRE_AUTH esté en false):
@@ -183,6 +237,12 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
   const errValidacion = validarFactura(datos);
   if (errValidacion) return res.status(400).json({ ok: false, error: errValidacion });
 
+  const clave = await protegerDuplicado(req, res, {
+    tipo: 'I', receptorRfc: datos.receptor.rfc, subtotal: subtotalConceptos(datos.conceptos),
+    confirmar: datos.confirmarDuplicado === true,
+  });
+  if (!clave) return;
+
   try {
     const fiscalapi = getFiscalapi();
     const invoice = construirFactura(datos);
@@ -210,6 +270,8 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: 'Error al timbrar.', details: err.message });
+  } finally {
+    soltarCandado(clave);
   }
 });
 
@@ -233,6 +295,12 @@ invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => 
   if (errReceptor) {
     return res.status(400).json({ ok: false, error: `No pude obtener los datos fiscales del receptor de la factura original. ${errReceptor}` });
   }
+
+  const clave = await protegerDuplicado(req, res, {
+    tipo: 'E', receptorRfc: receptor.rfc, subtotal: subtotalConceptos(datos.conceptos),
+    confirmar: datos.confirmarDuplicado === true,
+  });
+  if (!clave) return;
 
   try {
     const fiscalapi = getFiscalapi();
@@ -264,6 +332,8 @@ invoicesRouter.post('/nota-credito', requireRolFacturacion, async (req, res) => 
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: 'Error al timbrar la nota de crédito.', details: err.message });
+  } finally {
+    soltarCandado(clave);
   }
 });
 
@@ -287,6 +357,12 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
   if (errReceptor) {
     return res.status(400).json({ ok: false, error: `No pude obtener los datos fiscales del receptor de la factura original. ${errReceptor}` });
   }
+
+  const clave = await protegerDuplicado(req, res, {
+    tipo: 'P', receptorRfc: receptor.rfc, total: round2(monto),
+    confirmar: datos.confirmarDuplicado === true,
+  });
+  if (!clave) return;
 
   try {
     const fiscalapi = getFiscalapi();
@@ -319,6 +395,8 @@ invoicesRouter.post('/rep', requireRolFacturacion, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: 'Error al timbrar el complemento de pago.', details: err.message });
+  } finally {
+    soltarCandado(clave);
   }
 });
 
@@ -622,9 +700,10 @@ invoicesRouter.get('/cfdis', async (req, res) => {
   if (!req.user || !req.token) {
     return res.status(401).json({ ok: false, error: 'Falta autenticación.' });
   }
-  const r = await listarCfdis(req.token);
+  // OT-0030: ?pagina=2&limite=200 para cargar más; responde también `total`.
+  const r = await listarCfdis(req.token, { pagina: req.query.pagina, limite: req.query.limite });
   if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
-  return res.json({ ok: true, cfdis: r.cfdis });
+  return res.json({ ok: true, cfdis: r.cfdis, total: r.total, pagina: r.pagina, limite: r.limite });
 });
 
 // ---------- ESTATUS SAT ----------

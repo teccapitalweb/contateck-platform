@@ -515,7 +515,40 @@ function cargarCfdisPostgres() {
   if (!Array.isArray(pg)) return;
   state.cfdis = pg.map(mapCfdiPostgres);
   refresh("cfdis");
+  pintarMasCfdis();
 }
+
+// OT-0030: el backend entrega los CFDI por páginas de 200 (antes cortaba en
+// 200 sin avisar). Si hay más en la base, se muestra cuántos y un botón para
+// traer la siguiente página. Los indicadores se calculan con los ya cargados.
+function pintarMasCfdis() {
+  const host = document.querySelector("[data-cfdis-mas]");
+  if (!host) return;
+  const meta = window.CONTATECK_CFDIS_META;
+  const cargados = (window.CONTATECK_CFDIS_PG || []).length;
+  if (!meta || !(meta.total > cargados)) { host.innerHTML = ""; return; }
+  host.innerHTML = '<span style="color:var(--faint);font-size:.82rem;margin-right:.8rem">Mostrando los ' + cargados +
+    " CFDI más recientes de " + meta.total + ' (los indicadores usan los cargados)</span>' +
+    '<button class="btn btn--ghost btn--sm" data-cfdis-mas-btn>Cargar más</button>';
+}
+document.addEventListener("click", async function (e) {
+  const btn = e.target.closest("[data-cfdis-mas-btn]");
+  if (!btn) return;
+  const base = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
+  const token = window.CONTATECK_SUPABASE_TOKEN;
+  const meta = window.CONTATECK_CFDIS_META;
+  if (!base || !token || !meta) return;
+  btn.disabled = true; btn.textContent = "Cargando…";
+  try {
+    const r = await fetch(base + "/api/cfdis?pagina=" + (meta.pagina + 1) + "&limite=" + meta.limite, { headers: { Authorization: "Bearer " + token } }).then((x) => x.json());
+    if (r && r.ok) {
+      const ya = new Set((window.CONTATECK_CFDIS_PG || []).map((c) => c.id));
+      window.CONTATECK_CFDIS_PG = (window.CONTATECK_CFDIS_PG || []).concat((r.cfdis || []).filter((c) => !ya.has(c.id)));
+      window.CONTATECK_CFDIS_META = { total: r.total, pagina: r.pagina, limite: r.limite };
+      cargarCfdisPostgres();
+    } else { btn.disabled = false; btn.textContent = "Cargar más"; }
+  } catch (err) { btn.disabled = false; btn.textContent = "Cargar más"; }
+});
 try {
   await esperarCfdisPostgres();
   cargarCfdisPostgres();
@@ -590,6 +623,7 @@ async function recargarCfdis() {
     ]);
     if (!rc || !rc.ok) return false;
     window.CONTATECK_CFDIS_PG = rc.cfdis || [];
+    window.CONTATECK_CFDIS_META = { total: rc.total, pagina: rc.pagina || 1, limite: rc.limite || 200 };
     if (rs && rs.ok) window.CONTATECK_CFDIS_SALDO_PG = rs.facturas || [];
     cargarCfdisPostgres();
     return true;

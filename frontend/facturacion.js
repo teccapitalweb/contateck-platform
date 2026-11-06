@@ -37,6 +37,37 @@
     return data && data.aviso
       ? `<div class="fac-err" style="margin-top:.9rem;text-align:left"><b>⚠ Atención:</b> ${esc(data.aviso)}</div>` : "";
   }
+  // OT-0030 · Protección contra duplicados.
+  // POST con tiempo límite (90 s). Si la red falla o se agota el tiempo, la
+  // operación PUDO haberse hecho en el servidor (el PAC timbra aunque no
+  // lleguemos a ver la respuesta): se avisa claro y se refresca la lista, en
+  // vez de decir "no se pudo" e invitar a reintentar a ciegas.
+  async function enviarOperacion(ruta, cuerpo) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 90000);
+    try {
+      const resp = await fetch(BACKEND + ruta, { method: "POST", headers: headersConAuth(), body: JSON.stringify(cuerpo), signal: ctrl.signal });
+      return await resp.json();
+    } finally { clearTimeout(t); }
+  }
+  function cajaRedIncierta(err) {
+    refrescarLista();
+    const motivo = err && err.name === "AbortError" ? "El servidor tardó demasiado en responder." : "Se perdió la conexión con el servidor.";
+    return `<div class="fac-err"><b>No recibí respuesta.</b> ${motivo}<br>
+      <b>Es posible que la operación SÍ se haya realizado.</b> Cierra esta ventana y revisa la lista de Facturación (ya la estoy actualizando) antes de volver a intentarlo, para no duplicar el CFDI.</div>`;
+  }
+  // Si el backend avisa POSIBLE_DUPLICADO (409), se pide confirmación explícita.
+  let reintentoDuplicado = null;
+  function cajaDuplicado(data) {
+    const d = data.duplicado || {};
+    return `<div class="fac-err" style="border-color:#F2B84B;background:rgba(242,184,75,.1)">
+      <b>⚠ Posible CFDI duplicado</b><br>${esc(data.error)}<br>
+      <small>Folio ${esc(d.folio || "—")} · UUID ${esc(d.uuid || "—")}</small>
+      <div style="display:flex;gap:.5rem;margin-top:.7rem;flex-wrap:wrap">
+        <button class="btn btn--ghost btn--sm" data-fac-dup-no>Revisar la lista</button>
+        <button class="btn btn--primary btn--sm" data-fac-dup-si>Sí, emitir otro de todos modos</button>
+      </div></div>`;
+  }
   // Tras operar se vuelve a leer la lista real de la base (ver recargarCfdis en data-firestore.js).
   function refrescarLista() {
     try { if (window.CTData && typeof window.CTData.recargarCfdis === "function") window.CTData.recargarCfdis(); } catch (e) { /* no rompe el flujo */ }
@@ -470,7 +501,7 @@
     recalcTotal();
   }
 
-  async function timbrar() {
+  async function timbrar(forzar) {
     const rfc = content.querySelector("#fac-rfc").value.trim().toUpperCase();
     const nombre = content.querySelector("#fac-nombre").value.trim().toUpperCase();
     const usoCfdi = content.querySelector("#fac-uso").value;
@@ -541,12 +572,10 @@
     msg.innerHTML = "";
 
     try {
-      const resp = await fetch(BACKEND + "/api/facturar", {
-        method: "POST",
-        headers: headersConAuth(),
-        body: JSON.stringify({ receptor: { rfc, nombre, usoCfdi, cp, regimen }, conceptos, metodoPago, formaPago, retenciones, tasaIva }),
+      const data = await enviarOperacion("/api/facturar", {
+        receptor: { rfc, nombre, usoCfdi, cp, regimen }, conceptos, metodoPago, formaPago, retenciones, tasaIva,
+        confirmarDuplicado: forzar === true,
       });
-      const data = await resp.json();
 
       if (data.ok) {
         // Recordar la marca elegida como activa (para PDF/correo por defecto)
@@ -585,12 +614,17 @@
         // OT-0012: antes decía siempre "El PAC rechazó la factura", aunque el
         // rechazo viniera de auth (401), de rol (403) o de validación (400)
         // propia — nunca del PAC. Título neutral, igual que cancelar/nota-crédito.
-        msg.innerHTML = errBox("No se pudo timbrar", data);
+        if (data.codigo === "POSIBLE_DUPLICADO") {
+          reintentoDuplicado = () => timbrar(true);
+          msg.innerHTML = cajaDuplicado(data);
+        } else {
+          msg.innerHTML = errBox("No se pudo timbrar", data);
+        }
       }
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = "Timbrar factura";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor de timbrado.<br><small>${esc(err.message)}</small></div>`;
+      msg.innerHTML = cajaRedIncierta(err);
     }
   }
 
@@ -734,7 +768,7 @@
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = "Cancelar CFDI";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${esc(err.message)}</small></div>`;
+      msg.innerHTML = cajaRedIncierta(err);
     }
   }
 
@@ -796,7 +830,7 @@
       </div>`;
     modal.classList.add("is-open");
   }
-  async function ejecutarNotaCredito(uuid, rowId) {
+  async function ejecutarNotaCredito(uuid, rowId, forzar) {
     const f = getCfdiById(rowId) || {};
     const motivo = content.querySelector("#nc-motivo").value;
     const monto = parseFloat(content.querySelector("#nc-monto").value) || 0;
@@ -808,17 +842,14 @@
     btn.disabled = true; btn.innerHTML = `<span class="fac-spin"></span> Emitiendo…`;
     msg.innerHTML = "";
     try {
-      const resp = await fetch(BACKEND + "/api/nota-credito", {
-        method: "POST", headers: headersConAuth(),
-        // OT-0030: el receptor ya NO se manda desde aquí (antes caía en el RFC
-        // de pruebas); el backend lo toma de la factura original guardada.
-        body: JSON.stringify({
-          conceptos: [{ descripcion: desc, cantidad: 1, precioUnitario: monto }],
-          uuidRelacionado: uuid,
-          tipoRelacion: motivo,
-        }),
+      // OT-0030: el receptor ya NO se manda desde aquí (antes caía en el RFC
+      // de pruebas); el backend lo toma de la factura original guardada.
+      const data = await enviarOperacion("/api/nota-credito", {
+        conceptos: [{ descripcion: desc, cantidad: 1, precioUnitario: monto }],
+        uuidRelacionado: uuid,
+        tipoRelacion: motivo,
+        confirmarDuplicado: forzar === true,
       });
-      const data = await resp.json();
       if (data.ok) {
         if (window.CTData && window.CTData.addCfdi) {
           window.CTData.addCfdi({ uuid: data.uuid, folio: data.cfdi && data.cfdi.folio, cliente: f.cliente || "—", total: data.total, serie: "NC", cfdiId: data.id, tipo: "E" });
@@ -827,11 +858,16 @@
         content.innerHTML = resultadoOK("Nota de crédito emitida", data.uuid, "Quedó timbrada y relacionada con la factura original.", data);
       } else {
         btn.disabled = false; btn.innerHTML = "Emitir nota de crédito";
-        msg.innerHTML = errBox("No se pudo emitir la nota de crédito", data);
+        if (data.codigo === "POSIBLE_DUPLICADO") {
+          reintentoDuplicado = () => ejecutarNotaCredito(uuid, rowId, true);
+          msg.innerHTML = cajaDuplicado(data);
+        } else {
+          msg.innerHTML = errBox("No se pudo emitir la nota de crédito", data);
+        }
       }
     } catch (err) {
       btn.disabled = false; btn.innerHTML = "Emitir nota de crédito";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${esc(err.message)}</small></div>`;
+      msg.innerHTML = cajaRedIncierta(err);
     }
   }
 
@@ -872,7 +908,7 @@
       </div>`;
     modal.classList.add("is-open");
   }
-  async function ejecutarREP(uuid, rowId) {
+  async function ejecutarREP(uuid, rowId, forzar) {
     const f = getCfdiById(rowId) || {};
     const saldoActual = typeof f.saldo === "number" ? f.saldo : (f.total || 0);
     const monto = parseFloat(content.querySelector("#rep-monto").value) || 0;
@@ -887,16 +923,13 @@
     const serie = String(f.folio || "CT").split("-")[0] || "CT";
     const folio = String(f.folio || "1").split("-").pop();
     try {
-      const resp = await fetch(BACKEND + "/api/rep", {
-        method: "POST", headers: headersConAuth(),
-        // OT-0030: igual que la nota de crédito, el receptor lo resuelve el
-        // backend desde la factura original (ya no se manda el RFC de pruebas).
-        body: JSON.stringify({
-          pago: { monto, formaPago: forma },
-          facturaPagada: { uuid, serie, folio, saldoAnterior: saldoActual, montoPagado: monto, parcialidad: 1, conIva: true },
-        }),
+      // OT-0030: igual que la nota de crédito, el receptor lo resuelve el
+      // backend desde la factura original (ya no se manda el RFC de pruebas).
+      const data = await enviarOperacion("/api/rep", {
+        pago: { monto, formaPago: forma },
+        facturaPagada: { uuid, serie, folio, saldoAnterior: saldoActual, montoPagado: monto, parcialidad: 1, conIva: true },
+        confirmarDuplicado: forzar === true,
       });
-      const data = await resp.json();
       if (data.ok) {
         const nuevoSaldo = Math.max(saldoActual - monto, 0);
         if (window.CTData && window.CTData.updateCfdiSaldo) await window.CTData.updateCfdiSaldo(rowId, nuevoSaldo);
@@ -908,11 +941,16 @@
           nuevoSaldo > 0 ? `Pago registrado. Saldo pendiente: ${money(nuevoSaldo)}.` : "Pago registrado. La factura quedó liquidada.", data);
       } else {
         btn.disabled = false; btn.innerHTML = "Emitir REP";
-        msg.innerHTML = errBox("No se pudo emitir el REP", data);
+        if (data.codigo === "POSIBLE_DUPLICADO") {
+          reintentoDuplicado = () => ejecutarREP(uuid, rowId, true);
+          msg.innerHTML = cajaDuplicado(data);
+        } else {
+          msg.innerHTML = errBox("No se pudo emitir el REP", data);
+        }
       }
     } catch (err) {
       btn.disabled = false; btn.innerHTML = "Emitir REP";
-      msg.innerHTML = `<div class="fac-err">No se pudo conectar con el servidor.<br><small>${esc(err.message)}</small></div>`;
+      msg.innerHTML = cajaRedIncierta(err);
     }
   }
 
@@ -1251,6 +1289,9 @@
       if (rows.length > 1) { e.target.closest(".fac-concepto").remove(); recalcTotal(); }
     }
     if (e.target.closest("[data-fac-timbrar]")) timbrar();
+    // OT-0030: respuesta del usuario al aviso de posible duplicado.
+    if (e.target.closest("[data-fac-dup-si]") && reintentoDuplicado) { const r = reintentoDuplicado; reintentoDuplicado = null; r(); }
+    if (e.target.closest("[data-fac-dup-no]")) { reintentoDuplicado = null; close(); }
     if (e.target.closest("[data-fac-reten-ajustar]")) {
       const panel = content.querySelector("[data-fac-reten-manual]");
       if (panel) { panel.style.display = panel.style.display === "none" ? "" : "none"; }

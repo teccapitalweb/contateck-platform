@@ -112,6 +112,8 @@ if (!configured) {
         // OT-0012: CFDIs reales.
         if (cfdisData.ok) {
           window.CONTATECK_CFDIS_PG = cfdisData.cfdis || [];
+          // OT-0030: cuántos CFDI hay en total (el listado llega por páginas de 200).
+          window.CONTATECK_CFDIS_META = { total: cfdisData.total, pagina: cfdisData.pagina || 1, limite: cfdisData.limite || 200 };
         }
 
         // OT-0020: configuración contable (mapa de roles -> cuentas
