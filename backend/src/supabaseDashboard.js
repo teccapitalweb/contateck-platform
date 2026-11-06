@@ -19,6 +19,16 @@ import { config } from './config.js';
 import { obtenerCalendario, obtenerAlertasDocumentos } from './supabaseFiscal.js';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// OT-0033: "2026-08-17" -> "17 ago 2026" (mismo formato que la pantalla SAT y Fiscal).
+// Se parte el texto a mano: new Date('2026-08-17') se interpreta en UTC y en México
+// mostraría el día anterior.
+function fechaLegible(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  if (!m) return String(iso || '');
+  return `${parseInt(m[3], 10)} ${MESES_CORTO[parseInt(m[2], 10) - 1] || m[2]} ${m[1]}`;
+}
 
 function clienteComoUsuario(accessToken) {
   if (!config.supabase.url || !config.supabase.anonKey) return null;
@@ -202,14 +212,14 @@ export async function obtenerDashboard(accessToken, log = console) {
         alertas.push({
           tipo: 'danger',
           titulo: `${o.obligacion} vencida (${o.periodo})`,
-          texto: `Venció el ${o.fechaVencimiento} y sigue sin presentarse.`,
+          texto: `Venció el ${fechaLegible(o.fechaVencimiento)} y sigue sin presentarse.`,
           accion: { vista: 'sat' },
         });
       } else if (o.diasRestantes <= 5) {
         alertas.push({
           tipo: 'warn',
           titulo: `${o.obligacion} vence en ${o.diasRestantes} día${o.diasRestantes === 1 ? '' : 's'}`,
-          texto: `${o.periodo} — fecha límite ${o.fechaVencimiento}.`,
+          texto: `${o.periodo} — fecha límite ${fechaLegible(o.fechaVencimiento)}.`,
           accion: { vista: 'sat' },
         });
       }

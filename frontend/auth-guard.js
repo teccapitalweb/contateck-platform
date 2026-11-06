@@ -37,6 +37,45 @@ if (!configured) {
     // Evita el "flash" del panel antes de confirmar la sesión.
     if (app2) app2.style.visibility = "hidden";
 
+    // OT-0033 · Red de seguridad ante un token vencido. Si el panel lleva abierto
+    // más de una hora, o la pestaña estuvo en segundo plano y Supabase no alcanzó a
+    // renovar la sesión, TODAS las llamadas al backend fallaban con 401 ("Token
+    // inválido o expirado") y las pantallas se quedaban en "No se pudieron cargar los
+    // datos" hasta recargar a mano. Ahora, ante un 401 en una llamada al backend que
+    // iba con sesión: se pide UNA renovación (compartida si fallan varias a la vez) y
+    // se reintenta una sola vez con el token nuevo. Solo si la renovación misma falla
+    // (la sesión ya no sirve) se cierra la sesión y se manda al login. Si tras renovar
+    // el backend sigue respondiendo 401, se devuelve esa respuesta sin cerrar sesión.
+    (function instalarRenovacionDeToken() {
+      const original = window.fetch.bind(window);
+      const BASE = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      let renovando = null;
+      window.fetch = async function (input, init) {
+        const resp = await original(input, init);
+        if (resp.status !== 401) return resp;
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        const h = init && init.headers;
+        if (!url.startsWith(BASE) || !h || typeof h !== "object" || typeof h.get === "function") return resp;
+        if (!(h.Authorization || h.authorization)) return resp; // iba sin sesión: no es un token vencido
+        if (!renovando) {
+          renovando = supabase.auth.refreshSession().finally(() => { setTimeout(() => { renovando = null; }, 2000); });
+        }
+        let nuevo = null, fallo = false;
+        try {
+          const r = await renovando;
+          nuevo = r && r.data && r.data.session && r.data.session.access_token;
+          fallo = !!(r && r.error) || !nuevo;
+        } catch (e) { fallo = true; }
+        if (fallo) {
+          try { await supabase.auth.signOut(); } catch (e) { /* sigue al login */ }
+          window.location.replace("login.html");
+          return resp;
+        }
+        window.CONTATECK_SUPABASE_TOKEN = nuevo;
+        return original(input, Object.assign({}, init, { headers: Object.assign({}, h, { Authorization: "Bearer " + nuevo }) }));
+      };
+    })();
+
     async function checkSession() {
       const { data } = await supabase.auth.getSession();
       const user = data?.session?.user;
