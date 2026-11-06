@@ -591,25 +591,64 @@
   function getRfcEmisor() { try { return localStorage.getItem(K_RFC) || ""; } catch (e) { return ""; } }
   function setRfcEmisor(v) { try { localStorage.setItem(K_RFC, String(v || "")); } catch (e) {} }
 
+  // OT-0031 · Contabilidad Electrónica 1.3. Estructura verificada contra los
+  // XSD oficiales del SAT (CatalogoCuentas_1_3.xsd y BalanzaComprobacion_1_3.xsd).
+  const RFC_SAT = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
+  const RFC_GENERICOS = ["XAXX010101000", "XEXX010101000"];
+  // Importe con 2 decimales exactos; evita "-0.00".
+  function impSAT(n) { const r = round2(num(n)); return (r === 0 ? 0 : r).toFixed(2); }
+  // Texto para un atributo XML: sin caracteres de control, espacios colapsados, con largo máximo del XSD.
+  function attrSAT(s, max) {
+    return esc(String(s == null ? "" : s).replace(/[\u0000-\u001F]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max));
+  }
+  // Mensaje de error si RFC/mes/año no sirven para el XML; null si están bien.
+  function validarParametrosSAT(rfc, mes, anio) {
+    if (!RFC_SAT.test(rfc)) return "Captura un RFC de emisor válido (12 o 13 caracteres).";
+    if (RFC_GENERICOS.indexOf(rfc) !== -1) return "El RFC genérico no sirve para Contabilidad Electrónica: captura el RFC real del emisor.";
+    if (!(mes >= 1 && mes <= 12)) return "El mes debe estar entre 1 y 12.";
+    if (!(anio >= 2015 && anio <= 2099)) return "El año debe estar entre 2015 y 2099.";
+    return null;
+  }
+
+  // Hoja para la contadora: tus cuentas + una columna vacía donde anota el código
+  // agrupador del SAT. Abre bien en Excel (BOM UTF-8) y neutraliza celdas que
+  // empiezan con = + - @ para que no se interpreten como fórmula.
+  function csvCuentasContadora() {
+    const celda = (v) => {
+      let s = String(v == null ? "" : v).replace(/\r?\n/g, " ");
+      if (/^[=+\-@\t]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+    const filas = [["Código", "Nombre", "Nivel", "Naturaleza", "Cuenta de mayor", "Código agrupador SAT (llenar)"]]
+      .concat(getCuentas().map((c) => [c.codigo, c.nombre, c.nivel, c.nat, c.padre || "", ""]));
+    return "﻿" + filas.map((f) => f.map(celda).join(",")).join("\r\n");
+  }
+
   // XML Catálogo de cuentas (esquema SAT catalogocuentas 1.3)
+  // OJO: CodAgrup se llena con el mismo código de la cuenta; solo es correcto
+  // si ese código existe en el Código Agrupador del SAT (ver OT-0031, pendiente contadora).
   function xmlCatalogoSAT(rfc, mes, anio) {
     const ctas = getCuentas().map((c) =>
-      `    <catalogocuentas:Ctas CodAgrup="${esc(c.codigo)}" NumCta="${esc(c.codigo)}" Desc="${esc(c.nombre)}" Nivel="${c.nivel}" Natur="${c.nat === "Deudora" ? "D" : "A"}"${c.padre ? ` SubCtaDe="${esc(c.padre)}"` : ""}/>`
+      `    <catalogocuentas:Ctas CodAgrup="${attrSAT(c.codigo, 20)}" NumCta="${attrSAT(c.codigo, 100)}" Desc="${attrSAT(c.nombre || c.codigo, 400)}" Nivel="${parseInt(c.nivel, 10) || 1}" Natur="${c.nat === "Deudora" ? "D" : "A"}"${c.padre ? ` SubCtaDe="${attrSAT(c.padre, 100)}"` : ""}/>`
     ).join("\n");
+    const ns = "http://www.sat.gob.mx/esquemas/ContabilidadE/1_3/CatalogoCuentas";
     return `<?xml version="1.0" encoding="UTF-8"?>
-<catalogocuentas:Catalogo xmlns:catalogocuentas="http://www.sat.gob.mx/esquemas/ContabilidadE/1_3/CatalogoCuentas" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="1.3" RFC="${esc(rfc)}" Mes="${String(mes).padStart(2, "0")}" Anio="${anio}">
+<catalogocuentas:Catalogo xsi:schemaLocation="${ns} ${ns}/CatalogoCuentas_1_3.xsd" xmlns:catalogocuentas="${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="1.3" RFC="${esc(rfc)}" Mes="${String(mes).padStart(2, "0")}" Anio="${anio}">
 ${ctas}
 </catalogocuentas:Catalogo>`;
   }
   // XML Balanza de comprobación (esquema SAT BCE 1.3)
+  // SaldoIni = saldo antes del periodo; SaldoFin = SaldoIni ± movimientos. Ambos
+  // van con signo según la naturaleza de la cuenta (negativo si quedó del lado contrario).
   function xmlBalanzaSAT(rfc, mes, anio) {
     const b = balanza();
     const ctas = b.filas.map((f) => {
-      const saldoFin = round2(f.saldoDeudor + f.saldoAcreedor); // uno de los dos es 0
-      return `    <BCE:Ctas NumCta="${esc(f.codigo)}" SaldoIni="0.00" Debe="${f.debe.toFixed(2)}" Haber="${f.haber.toFixed(2)}" SaldoFin="${saldoFin.toFixed(2)}"/>`;
+      const saldoFin = f.nat === "Deudora" ? f.saldoDeudor - f.saldoAcreedor : f.saldoAcreedor - f.saldoDeudor;
+      return `    <BCE:Ctas NumCta="${attrSAT(f.codigo, 100)}" SaldoIni="${impSAT(f.saldoInicial)}" Debe="${impSAT(f.debe)}" Haber="${impSAT(f.haber)}" SaldoFin="${impSAT(saldoFin)}"/>`;
     }).join("\n");
+    const ns = "http://www.sat.gob.mx/esquemas/ContabilidadE/1_3/BalanzaComprobacion";
     return `<?xml version="1.0" encoding="UTF-8"?>
-<BCE:Balanza xmlns:BCE="http://www.sat.gob.mx/esquemas/ContabilidadE/1_3/BalanzaComprobacion" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="1.3" RFC="${esc(rfc)}" Mes="${String(mes).padStart(2, "0")}" Anio="${anio}" TipoEnvio="N">
+<BCE:Balanza xsi:schemaLocation="${ns} ${ns}/BalanzaComprobacion_1_3.xsd" xmlns:BCE="${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="1.3" RFC="${esc(rfc)}" Mes="${String(mes).padStart(2, "0")}" Anio="${anio}" TipoEnvio="N">
 ${ctas}
 </BCE:Balanza>`;
   }
@@ -1305,8 +1344,18 @@ ${ctas}
   function renderSAT() {
     const pane = document.querySelector('[data-pane="sat"]');
     if (!pane) return;
-    const iva = determinacionIVA(), dt = diot(), rfc = getRfcEmisor(), per = getPeriodo(), b = balanza();
-    const mes = per ? per.mes : (new Date().getMonth() + 1), anio = per ? per.anio : new Date().getFullYear();
+    // OT-0031: el RFC sale primero de la empresa (base de datos), no de lo que
+    // quedó guardado en este navegador; si no hay, se usa el último capturado.
+    const rfcEmpresa = (window.CONTATECK_EMPRESA_PG && window.CONTATECK_EMPRESA_PG.rfc) || "";
+    const iva = determinacionIVA(), dtTodo = diot(), rfc = (rfcEmpresa || getRfcEmisor()).toUpperCase(), per = getPeriodo(), b = balanza();
+    // Proveedores sin RFC válido (la DIOT se presenta por RFC): se avisan y se excluyen de la tabla y los totales.
+    const dt = dtTodo.filter((d) => RFC_SAT.test(String(d.rfc || "").toUpperCase().trim()));
+    const dtSinRfc = dtTodo.filter((d) => dt.indexOf(d) === -1);
+    const diotAviso = dtSinRfc.length
+      ? `<div class="cont-err" style="margin-bottom:.6rem">${dtSinRfc.reduce((s, d) => s + (d.ops || 0), 0)} operación(es) con proveedores sin RFC válido (base $${fmt(dtSinRfc.reduce((s, d) => s + num(d.base), 0))}, IVA $${fmt(dtSinRfc.reduce((s, d) => s + num(d.iva), 0))}) no se incluyen aquí. Corrige el RFC del proveedor en esas pólizas.</div>` : "";
+    const anioActual = new Date().getFullYear();
+    const mes = per ? per.mes : (new Date().getMonth() + 1), anio = per ? per.anio : anioActual;
+    const balanzaBloqueada = !b.cuadra || !per;
     const diotFilas = dt.length ? dt.map((d) => `<tr><td class="num">${esc(d.rfc)}</td><td>${esc(d.nombre)}</td>
       <td class="num" style="text-align:right">$${fmt(d.base)}</td><td class="num" style="text-align:right">$${fmt(d.iva)}</td></tr>`).join("")
       : '<tr><td colspan="4" style="text-align:center;color:var(--faint);padding:1.5rem">Importa CFDI de proveedores (en Pólizas) para poblar la DIOT.</td></tr>';
@@ -1322,27 +1371,33 @@ ${ctas}
         <h3 class="cont-ef-titulo">Contabilidad Electrónica · XML para el SAT</h3>
         <p style="color:var(--muted);font-size:.88rem;margin:.3rem 0 1rem">Genera los archivos que el SAT exige mensualmente: catálogo de cuentas y balanza de comprobación.</p>
         <div class="cont-sat-row">
-          <div class="field" style="margin:0"><label>RFC del emisor</label><input class="input" data-sat-rfc placeholder="XAXX010101000" value="${esc(rfc)}"></div>
+          <div class="field" style="margin:0"><label>RFC del emisor</label><input class="input" data-sat-rfc maxlength="13" placeholder="RFC del emisor (12 o 13 caracteres)" value="${esc(rfc)}"></div>
           <div class="field" style="margin:0;max-width:110px"><label>Mes</label><input class="input" data-sat-mes type="number" min="1" max="12" value="${mes}"></div>
-          <div class="field" style="margin:0;max-width:120px"><label>Año</label><input class="input" data-sat-anio type="number" min="2020" max="2035" value="${anio}"></div>
+          <div class="field" style="margin:0;max-width:120px"><label>Año</label><input class="input" data-sat-anio type="number" min="2015" max="${Math.max(anioActual, anio)}" value="${anio}"></div>
         </div>
+        <p style="color:var(--faint);font-size:.78rem;margin:.6rem 0 0">El Catálogo usa el mes y año que captures aquí. La Balanza se genera del periodo elegido en el selector de arriba, y el mes y año de aquí deben coincidir con él.</p>
         <div class="cont-foot" style="justify-content:flex-start;margin-top:.8rem">
           <button class="btn btn--primary" data-sat-xml-cat>Descargar XML Catálogo</button>
-          <button class="btn btn--primary" data-sat-xml-bal ${!b.cuadra ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Descargar XML Balanza</button>
+          <button class="btn btn--ghost" data-sat-csv-cat title="Hoja con tus cuentas y una columna vacía para que la contadora anote el código agrupador del SAT">Hoja de cuentas para la contadora (CSV)</button>
+          <button class="btn btn--primary" data-sat-xml-bal ${balanzaBloqueada ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Descargar XML Balanza</button>
         </div>
+        ${!per ? `<div class="cont-err" style="margin-top:.6rem">Elige un mes en el selector de periodo de arriba (hoy dice "Todo el ejercicio"): la Balanza del SAT es de un solo mes.</div>` : ""}
         ${!b.cuadra ? `<div class="cont-err" style="margin-top:.6rem">La Balanza de comprobación no cuadra ahorita mismo — el SAT rechaza el XML si los totales no coinciden. Corrige el descuadre en la pestaña Balanza antes de descargar.</div>` : ""}
       </div>
       <div class="cont-ef-grid">
         <div class="card">
           <h3 class="cont-ef-titulo">Determinación de IVA</h3>
+          <p style="color:var(--faint);font-size:.78rem;margin:0 0 .6rem">Cifra de referencia calculada con los saldos de las cuentas de IVA en tus pólizas. No es la declaración: no considera saldo a favor de meses anteriores, retenciones ni si el IVA ya se cobró o se pagó.</p>
           <table class="tbl"><tbody>
-            <tr><td>IVA trasladado (cobrado)</td><td class="num" style="text-align:right">$${fmt(iva.trasladado)}</td></tr>
-            <tr><td>IVA acreditable (pagado)</td><td class="num" style="text-align:right">$${fmt(iva.acreditable)}</td></tr>
+            <tr><td>IVA trasladado (según pólizas)</td><td class="num" style="text-align:right">$${fmt(iva.trasladado)}</td></tr>
+            <tr><td>IVA acreditable (según pólizas)</td><td class="num" style="text-align:right">$${fmt(iva.acreditable)}</td></tr>
           </tbody><tfoot><tr class="cont-ef-total"><td>${iva.aCargo > 0 ? "IVA a cargo del periodo" : "IVA a favor del periodo"}</td>
             <td class="num" style="text-align:right">$${fmt(iva.aCargo > 0 ? iva.aCargo : iva.aFavor)}</td></tr></tfoot></table>
         </div>
         <div class="card">
           <h3 class="cont-ef-titulo">DIOT · Operaciones con terceros</h3>
+          <p style="color:var(--faint);font-size:.78rem;margin:0 0 .6rem">Resumen de referencia por proveedor, a partir de pólizas de CFDI recibidos. No es el archivo de la DIOT: faltan tipo de tercero, tipo de operación y desglose por tasa.</p>
+          ${diotAviso}
           <div style="overflow-x:auto"><table class="tbl">
             <thead><tr><th>RFC</th><th>Proveedor</th><th style="text-align:right">Base</th><th style="text-align:right">IVA</th></tr></thead>
             <tbody>${diotFilas}</tbody>${diotFoot}</table></div>
@@ -2758,12 +2813,23 @@ ${ctas}
   function descargarXmlSAT(tipo) {
     const pane = document.querySelector('[data-pane="sat"]');
     if (!pane) return;
-    const rfc = (pane.querySelector("[data-sat-rfc]").value || "XAXX010101000").toUpperCase().trim();
-    const mes = parseInt(pane.querySelector("[data-sat-mes]").value, 10) || 1;
-    const anio = parseInt(pane.querySelector("[data-sat-anio]").value, 10) || new Date().getFullYear();
+    // OT-0031: ya no se rellenan en silencio RFC genérico, mes 1 ni año actual:
+    // si falta o está mal, se avisa y no se descarga un XML que el SAT rechazaría.
+    const rfc = (pane.querySelector("[data-sat-rfc]").value || "").toUpperCase().trim();
+    const mes = parseInt(pane.querySelector("[data-sat-mes]").value, 10);
+    const anio = parseInt(pane.querySelector("[data-sat-anio]").value, 10);
+    const errParam = validarParametrosSAT(rfc, mes, anio);
+    if (errParam) { toast(errParam, "error"); return; }
     setRfcEmisor(rfc);
     const suf = `${rfc}_${anio}${String(mes).padStart(2, "0")}.xml`;
     if (tipo === "catalogo") { descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml"); return; }
+    // La Balanza se arma con las pólizas del periodo activo: el mes/año del XML
+    // debe ser ese mismo, o el archivo diría un mes y traería los datos de otro.
+    const perAct = getPeriodo();
+    if (!perAct) { toast("Elige un mes en el selector de periodo: la Balanza del SAT es de un solo mes.", "error"); return; }
+    if (perAct.mes !== mes || perAct.anio !== anio) {
+      toast(`El mes y año (${String(mes).padStart(2, "0")}/${anio}) no coinciden con el periodo seleccionado (${String(perAct.mes).padStart(2, "0")}/${perAct.anio}).`, "error"); return;
+    }
     if (!balanza().cuadra) { toast("La Balanza no cuadra — el SAT rechaza el XML así. Corrige el descuadre primero.", "error"); return; }
     descargarTexto("Balanza_" + suf, xmlBalanzaSAT(rfc, mes, anio), "application/xml");
   }
@@ -3046,6 +3112,7 @@ ${ctas}
     }
     if (e.target.closest("[data-cont-contabilizar]")) { openContabilizarCfdi(); return; }
     if (e.target.closest("[data-cont-importar-xml]")) { openImportarXml(); return; }
+    if (e.target.closest("[data-sat-csv-cat]")) { descargarTexto("Cuentas_para_contadora.csv", csvCuentasContadora(), "text/csv;charset=utf-8"); return; }
     if (e.target.closest("[data-sat-xml-cat]")) { descargarXmlSAT("catalogo"); return; }
     if (e.target.closest("[data-sat-xml-bal]")) { descargarXmlSAT("balanza"); return; }
     const nav = e.target.closest('.nav-item[data-view="contabilidad"]');

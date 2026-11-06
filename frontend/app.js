@@ -241,7 +241,7 @@
     function alertHTML(a) {
       const accion = a.accion && a.accion.vista ? ' data-alert-goto="' + a.accion.vista + '" style="cursor:pointer"' : '';
       return '<div class="alert alert--' + a.tipo + '"' + accion + '><div class="alert__ico">' + ALERT_ICO[a.tipo] + '</div>' +
-        '<div class="alert__body"><b>' + a.titulo + '</b><p>' + a.texto + '</p></div></div>';
+        '<div class="alert__body"><b>' + esc(a.titulo) + '</b><p>' + esc(a.texto) + '</p></div></div>';
     }
     document.addEventListener("click", function (e) {
       const el = e.target.closest("[data-alert-goto]");
@@ -418,7 +418,8 @@
         oblHost.innerHTML = obls.length
           ? obls.map(function (o) {
               const vencida = o.diasRestantes < 0;
-              return '<tr><td>' + o.obligacion + '</td><td>' + o.periodo + '</td><td>' + o.fechaVencimiento +
+              // OT-0031: nombre y periodo los captura un usuario; se escapan.
+              return '<tr><td>' + esc(o.obligacion) + '</td><td>' + esc(o.periodo) + '</td><td>' + esc(o.fechaVencimiento) +
                 '</td><td>—</td><td><span class="pill ' + (vencida ? "pill--late" : "pill--pend") + '">' +
                 (vencida ? "Vencida" : "Pendiente") + '</span></td></tr>';
             }).join("")
