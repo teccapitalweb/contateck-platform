@@ -530,7 +530,10 @@
     let bloquePoliza = "";
     if (v.estado === "confirmado" && soportaLigaPoliza()) {
       if (v.poliza_id) {
-        bloquePoliza = `<div class="v-aviso v-aviso--ok">Póliza contable: <b>${esc(v.poliza_folio || "generada")}</b> (Contabilidad → Pólizas).</div>`;
+        const folioPol = v.poliza_folio
+          ? `<button type="button" class="v-mini v-mini--ok" data-v-verpol="${esc(v.poliza_id)}" data-v-verpol-folio="${esc(v.poliza_folio)}" title="Abrir esta póliza en Contabilidad → Pólizas"><b>${esc(v.poliza_folio)}</b> · Ver póliza →</button>`
+          : `<b>generada</b>`;
+        bloquePoliza = `<div class="v-aviso v-aviso--ok">Póliza contable: ${folioPol}</div>`;
       } else {
         bloquePoliza = `<div class="v-aviso v-aviso--warn"><b>Sin póliza contable.</b> El pago está confirmado pero su ingreso aún no está en Contabilidad.${esValidador() ? ` <button class="v-mini v-mini--ok" data-v-genpol="${esc(v.id)}">Generar póliza</button>` : ""}</div>`;
       }
@@ -543,7 +546,7 @@
       ${bloquePoliza}${bloqueMotivo}
       <div class="v-det">
         ${detRow("Cliente", v.cliente)}${detRow("Concepto", v.concepto)}
-        ${detRow("Importe", money(v.importe))}${detRow("IVA", v.incluye_iva === false ? "No (exento)" : "Sí (16%)")}${detRow("Fecha de pago", fmtFecha(v.fecha_pago))}${detRow("Método", v.metodo_pago)}
+        ${detRow(v.incluye_iva === false ? "Importe" : "Importe (con IVA incluido)", money(v.importe))}${detRow("IVA", v.incluye_iva === false ? "No (exento)" : "Sí (16%) — ya incluido en el importe, no se suma aparte")}${detRow("Fecha de pago", fmtFecha(v.fecha_pago))}${detRow("Método", v.metodo_pago)}
         ${detRow("Referencia", v.referencia)}${detRow("Banco", v.banco)}${detRow("Registrado por", nombreVendedor(v.vendedor_id))}
         ${v.notas ? detRow("Notas", v.notas) : ""}
       </div>
@@ -563,6 +566,29 @@
       const host = document.querySelector("[data-v-evi]");
       if (host) host.innerHTML = `<p class="v-noevi">Sin comprobante adjunto</p>`;
     }
+  }
+  // OT-0029: salto Ventas → Contabilidad → Pólizas con el detalle de la póliza abierto.
+  // Reutiliza window.CTCont (getPolizas / verPoliza). Si la póliza aún no está en
+  // memoria, pide a Contabilidad que se sincronice (evento ventas-cambio) y espera.
+  async function irAPoliza(polizaId, folio) {
+    closeModal();
+    const nav = document.querySelector('.nav-item[data-view="contabilidad"]');
+    if (nav) nav.click();
+    const tab = document.querySelector('[data-tabs="cont"] .tab[data-tab="polizas"]');
+    if (tab) tab.click();
+    const CT = window.CTCont;
+    if (!CT || !CT.getPolizas || !CT.verPoliza) { toast("Abre Contabilidad → Pólizas para ver " + folio, "warn"); return; }
+    const buscar = () => CT.getPolizas().find((p) => p.pgId === polizaId || p.folio === folio);
+    let pol = buscar();
+    if (!pol) {
+      document.dispatchEvent(new CustomEvent("contateck:ventas-cambio"));
+      for (let i = 0; i < 20 && !pol; i++) { await new Promise((r) => setTimeout(r, 250)); pol = buscar(); }
+    }
+    if (pol) { CT.verPoliza(pol.id); return; }
+    // Respaldo: filtra la lista por el folio.
+    const buscador = document.querySelector('[data-search="polizas"]');
+    if (buscador) { buscador.value = folio; buscador.dispatchEvent(new Event("input", { bubbles: true })); }
+    toast("La póliza " + folio + " aún no se sincroniza; filtré la lista por su folio.", "warn");
   }
   function detRow(k, v) { return `<div class="v-det__row"><span>${esc(k)}</span><b>${esc(v) || "—"}</b></div>`; }
 
@@ -635,6 +661,7 @@
     const rech = e.target.closest("[data-v-rech]"); if (rech) { rechazar(rech.getAttribute("data-v-rech")); return; }
     const rechOk = e.target.closest("[data-v-rech-ok]"); if (rechOk) { rechazarConfirmado(rechOk.getAttribute("data-v-rech-ok")); return; }
     const genPol = e.target.closest("[data-v-genpol]"); if (genPol) { generarPoliza(genPol.getAttribute("data-v-genpol")); return; }
+    const verPol = e.target.closest("[data-v-verpol]"); if (verPol) { irAPoliza(verPol.getAttribute("data-v-verpol"), verPol.getAttribute("data-v-verpol-folio")); return; }
     const chip = e.target.closest("[data-f]");
     if (chip) { aplicarFiltroEstado(chip.getAttribute("data-f")); return; }
     const linkF = e.target.closest("[data-f-link]");
