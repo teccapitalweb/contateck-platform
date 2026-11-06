@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
 import { listarPeriodos, cerrarPeriodo } from '../supabasePeriodos.js';
+import { validarPeriodo } from '../validacionesContables.js';
 
 export const periodosRouter = Router();
 periodosRouter.use(verifyAuth);
@@ -27,6 +28,8 @@ periodosRouter.post('/periodos/cerrar', async (req, res) => {
   if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
   const { anio, mes } = req.body || {};
   if (!anio || !mes) return res.status(400).json({ ok: false, error: 'Falta año o mes.' });
+  const errPeriodo = validarPeriodo(anio, mes);
+  if (errPeriodo) return res.status(400).json({ ok: false, error: errPeriodo });
   const resultado = await cerrarPeriodo(token, { anio: Number(anio), mes: Number(mes) });
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });

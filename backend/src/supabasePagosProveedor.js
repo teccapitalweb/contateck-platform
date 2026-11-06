@@ -37,6 +37,15 @@ export async function registrarPagoProveedor(accessToken, datos, log = console) 
 export async function confirmarPagoProveedor(accessToken, pagoId, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  // OT-0034: igual que en cobranza — el saldo se valida solo al registrar; se vuelve a
+  // comparar con el saldo actual justo antes de confirmar, para no pagar de más a un proveedor.
+  const { data: pago } = await supabase.from('pagos_proveedor').select('monto, cfdi_proveedor_id, estado').eq('id', pagoId).maybeSingle();
+  if (pago && pago.estado === 'registrado') {
+    const { data: s } = await supabase.from('cfdis_proveedor_saldo').select('saldo_pendiente').eq('cfdi_proveedor_id', pago.cfdi_proveedor_id).maybeSingle();
+    if (s && Number(pago.monto) > Number(s.saldo_pendiente) + 0.005) {
+      return { ok: false, error: `Confirmar este pago ($${Number(pago.monto).toFixed(2)}) dejaría la factura pagada de más: su saldo actual es $${Number(s.saldo_pendiente).toFixed(2)}. Revisa los demás pagos de esa factura antes de confirmar.` };
+    }
+  }
   const { data, error } = await supabase.rpc('confirmar_pago_proveedor', { p_pago_id: pagoId });
   if (error) {
     log.warn('[postgres] confirmar_pago_proveedor:', error.message);

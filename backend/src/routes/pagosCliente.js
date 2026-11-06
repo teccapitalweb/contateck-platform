@@ -10,6 +10,7 @@ import { verifyAuth } from '../supabaseAuth.js';
 import { obtenerRolUsuario } from '../supabaseCfdis.js';
 import { listarCfdisSaldo, registrarPagoCliente, confirmarPagoCliente, listarPagosCfdi, obtenerPagoParaComprobante } from '../supabasePagosCliente.js';
 import { generarPdfComprobantePago } from '../pdf-comprobante-pago.js';
+import { validarPago, esUuid } from '../validacionesContables.js';
 
 export const pagosClienteRouter = Router();
 pagosClienteRouter.use(verifyAuth);
@@ -43,12 +44,15 @@ pagosClienteRouter.post('/pagos-cliente', requireRolCobranza, async (req, res) =
   if (!cfdiId || !monto || !fechaPago || !cuentaDestinoId) {
     return res.status(400).json({ ok: false, error: 'Faltan datos del pago (factura, monto, fecha o cuenta destino).' });
   }
-  const resultado = await registrarPagoCliente(token, { cfdiId, monto, fechaPago, formaPago, cuentaDestinoId, referencia, notas, comprobanteUrl });
+  const errPago = validarPago({ facturaId: cfdiId, monto, fechaPago, cuentaId: cuentaDestinoId, referencia, notas, comprobanteUrl });
+  if (errPago) return res.status(400).json({ ok: false, error: errPago });
+  const resultado = await registrarPagoCliente(token, { cfdiId, monto: Number(monto), fechaPago, formaPago, cuentaDestinoId, referencia, notas, comprobanteUrl });
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });
 
 pagosClienteRouter.post('/pagos-cliente/:id/confirmar', requireRolCobranza, async (req, res) => {
   const token = obtenerToken(req);
+  if (!esUuid(req.params.id)) return res.status(400).json({ ok: false, error: 'El pago no es válido.' });
   const resultado = await confirmarPagoCliente(token, req.params.id);
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });
@@ -59,7 +63,7 @@ pagosClienteRouter.get('/pagos-cliente', async (req, res) => {
   const token = obtenerToken(req);
   if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
   const cfdiId = req.query.cfdiId;
-  if (!cfdiId) return res.status(400).json({ ok: false, error: 'Falta el parámetro cfdiId.' });
+  if (!esUuid(cfdiId)) return res.status(400).json({ ok: false, error: 'Falta el parámetro cfdiId (o no es válido).' });
   const resultado = await listarPagosCfdi(token, cfdiId);
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });

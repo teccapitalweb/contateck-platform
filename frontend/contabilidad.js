@@ -36,7 +36,14 @@
     };
     const el = document.createElement("div");
     el.className = "toast toast--" + type;
-    el.innerHTML = (iconos[type] || iconos.info) + "<span>" + msg + "</span>";
+    // OT-0034: el mensaje va como TEXTO, no como HTML. Varios avisos llevan datos ajenos
+    // (el nombre del emisor de un XML importado, el error crudo del servidor): un XML con un
+    // nombre como <img onerror=…> se ejecutaba en el navegador del contador. Ningún aviso
+    // de este archivo usa etiquetas, así que no cambia nada visible.
+    el.innerHTML = iconos[type] || iconos.info;
+    const span = document.createElement("span");
+    span.textContent = msg;
+    el.appendChild(span);
     wrap.appendChild(el);
     setTimeout(() => { el.classList.add("is-out"); setTimeout(() => el.remove(), 320); }, ms);
   }
@@ -337,7 +344,16 @@
 
   function balanza() {
     const hayPeriodo = !!periodoActivo;
-    const filas = getCuentasAfectables().map((c) => {
+    // OT-0034: getCuentasAfectables() omite las cuentas DESACTIVADAS. Una cuenta que se
+    // desactivó después de tener movimientos desaparecía de la Balanza (y de su XML para el
+    // SAT) y el chequeo "cuadra" comparaba contra totales incompletos. Ahora entran las
+    // desactivadas que tengan movimientos (del periodo o previos); sin movimientos siguen fuera.
+    const filas = getCuentas().filter((c) => {
+      if (c.nivel !== 2) return false;
+      if (c.activo !== false) return true;
+      const m = movimientosCuenta(c.codigo), p = movimientosPreviosCuenta(c.codigo);
+      return !!(m.debe || m.haber || p.debe || p.haber);
+    }).map((c) => {
       const { debe, haber } = movimientosCuenta(c.codigo);
       // Saldo inicial (neto según naturaleza) con lo previo al periodo.
       const prev = movimientosPreviosCuenta(c.codigo);

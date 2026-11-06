@@ -12,6 +12,7 @@ import { obtenerRolUsuario } from '../supabaseCfdis.js';
 import { listarCfdisProveedorSaldo, listarCfdisProveedorTodas, guardarCfdiProveedor } from '../supabaseCfdisProveedor.js';
 import { registrarPagoProveedor, confirmarPagoProveedor, listarPagosProveedor, obtenerPagoParaComprobante } from '../supabasePagosProveedor.js';
 import { generarPdfComprobantePagoProveedor } from '../pdf-comprobante-pago-proveedor.js';
+import { validarPago, esUuid } from '../validacionesContables.js';
 
 export const pagosProveedorRouter = Router();
 pagosProveedorRouter.use(verifyAuth);
@@ -52,11 +53,13 @@ pagosProveedorRouter.get('/cfdis-proveedor', async (req, res) => {
 // hacía (sin cambios ahí) — este endpoint aparte guarda la factura como
 // documento persistente, ligada a esa póliza, para que quede consultable
 // y con saldo por pagar de aquí en adelante.
-pagosProveedorRouter.post('/cfdis-proveedor', async (req, res) => {
+// OT-0034: antes cualquier rol con sesión podía llamarla (solo la base decidía); ahora el
+// backend exige el mismo rol que ya exige para registrar o confirmar pagos.
+pagosProveedorRouter.post('/cfdis-proveedor', requireRolCobranza, async (req, res) => {
   const token = obtenerToken(req);
-  if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
   const { datos, polizaId } = req.body || {};
-  if (!datos) return res.status(400).json({ ok: false, error: 'Faltan los datos de la factura.' });
+  if (!datos || typeof datos !== 'object') return res.status(400).json({ ok: false, error: 'Faltan los datos de la factura.' });
+  if (polizaId != null && !esUuid(polizaId)) return res.status(400).json({ ok: false, error: 'La póliza ligada no es válida.' });
   const resultado = await guardarCfdiProveedor(token, datos, polizaId);
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });
@@ -65,7 +68,7 @@ pagosProveedorRouter.get('/pagos-proveedor', async (req, res) => {
   const token = obtenerToken(req);
   if (!token) return res.status(401).json({ ok: false, error: 'Falta el token de autenticación.' });
   const cfdiProveedorId = req.query.cfdiProveedorId;
-  if (!cfdiProveedorId) return res.status(400).json({ ok: false, error: 'Falta el parámetro cfdiProveedorId.' });
+  if (!esUuid(cfdiProveedorId)) return res.status(400).json({ ok: false, error: 'Falta el parámetro cfdiProveedorId (o no es válido).' });
   const resultado = await listarPagosProveedor(token, cfdiProveedorId);
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });
@@ -76,12 +79,15 @@ pagosProveedorRouter.post('/pagos-proveedor', requireRolCobranza, async (req, re
   if (!cfdiProveedorId || !monto || !fechaPago || !cuentaOrigenId) {
     return res.status(400).json({ ok: false, error: 'Faltan datos del pago (factura, monto, fecha o cuenta de origen).' });
   }
-  const resultado = await registrarPagoProveedor(token, { cfdiProveedorId, monto, fechaPago, formaPago, cuentaOrigenId, referencia, notas, comprobanteUrl });
+  const errPago = validarPago({ facturaId: cfdiProveedorId, monto, fechaPago, cuentaId: cuentaOrigenId, referencia, notas, comprobanteUrl });
+  if (errPago) return res.status(400).json({ ok: false, error: errPago });
+  const resultado = await registrarPagoProveedor(token, { cfdiProveedorId, monto: Number(monto), fechaPago, formaPago, cuentaOrigenId, referencia, notas, comprobanteUrl });
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });
 
 pagosProveedorRouter.post('/pagos-proveedor/:id/confirmar', requireRolCobranza, async (req, res) => {
   const token = obtenerToken(req);
+  if (!esUuid(req.params.id)) return res.status(400).json({ ok: false, error: 'El pago no es válido.' });
   const resultado = await confirmarPagoProveedor(token, req.params.id);
   res.status(resultado.ok ? 200 : 400).json(resultado);
 });

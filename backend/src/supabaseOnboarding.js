@@ -64,17 +64,20 @@ export async function verificarEstadoOnboarding(accessToken, userEmail, log = co
   const { data: perfil, error: errPerfil } = await admin.from('perfiles').select('id, activo').eq('id', userId).maybeSingle();
   if (errPerfil) {
     log.warn('[onboarding] verificarEstadoOnboarding — error consultando perfiles:', errPerfil.message);
-    return { ok: false, error: errPerfil.message, _debugUserId: userId };
+    return { ok: false, error: 'No se pudo comprobar tu cuenta. Intenta de nuevo.' };
   }
   if (perfil) {
     if (perfil.activo === false) return { ok: true, tienePerfil: true, activo: false };
     return { ok: true, tienePerfil: true, activo: true };
   }
 
+  // OT-0034: las invitaciones se guardan en minúsculas (crearInvitacion); el correo del
+  // token puede traer mayúsculas ("Juan@Empresa.com") y entonces la invitación nunca
+  // coincidía y la persona caía en "crear empresa". Se compara en minúsculas.
   const { data: invitacion, error: errInv } = await admin
     .from('invitaciones')
     .select('*')
-    .eq('correo', userEmail)
+    .eq('correo', String(userEmail || '').trim().toLowerCase())
     .eq('estado', 'pendiente')
     .gt('expira_en', new Date().toISOString())
     .order('created_at', { ascending: false })
@@ -82,8 +85,8 @@ export async function verificarEstadoOnboarding(accessToken, userEmail, log = co
     .maybeSingle();
   if (errInv) log.warn('[onboarding] verificarEstadoOnboarding — error consultando invitaciones:', errInv.message);
 
-  // DEBUG TEMPORAL: quitar _debugUserId en cuanto confirmemos la causa.
-  return { ok: true, tienePerfil: false, invitacionPendiente: !!invitacion, _debugUserId: userId, _debugEmail: userEmail };
+  // OT-0034: se quitó el "DEBUG TEMPORAL" (_debugUserId/_debugEmail) que se devolvía al navegador.
+  return { ok: true, tienePerfil: false, invitacionPendiente: !!invitacion };
 }
 
 // ---------------- Crear empresa (director automático) ----------------
@@ -94,7 +97,11 @@ export async function crearEmpresaYDirector(accessToken, userEmail, nombreEmpres
 
   const userId = idDeToken(accessToken);
   if (!userId) return { ok: false, error: 'Token inválido.' };
-  if (!nombreEmpresa || !nombreEmpresa.trim()) return { ok: false, error: 'Captura el nombre de tu empresa.' };
+  if (typeof nombreEmpresa !== 'string' || !nombreEmpresa.trim()) return { ok: false, error: 'Captura el nombre de tu empresa.' };
+  if (nombreEmpresa.trim().length > 120) return { ok: false, error: 'El nombre de la empresa es demasiado largo (máximo 120 caracteres).' };
+  if (nombrePersona != null && (typeof nombrePersona !== 'string' || nombrePersona.trim().length > 120)) {
+    return { ok: false, error: 'Tu nombre es demasiado largo (máximo 120 caracteres).' };
+  }
 
   // Nunca dejar que alguien con perfil ya existente cree otra empresa por este camino.
   const { data: yaTienePerfil } = await admin.from('perfiles').select('id').eq('id', userId).maybeSingle();
@@ -119,7 +126,15 @@ export async function crearEmpresaYDirector(accessToken, userEmail, nombreEmpres
       email: userEmail,
     })
     .select().single();
-  if (errPerfil) { log.warn('[onboarding] crear perfil director:', errPerfil.message); return { ok: false, error: errPerfil.message }; }
+  if (errPerfil) {
+    log.warn('[onboarding] crear perfil director:', errPerfil.message);
+    // OT-0034: la empresa ya se había creado; si el perfil falla (por ejemplo, doble clic
+    // y la segunda petición choca con el perfil de la primera) quedaba una empresa
+    // huérfana sin dueño. Se borra la que acabamos de crear en esta misma llamada.
+    const { error: errBorrar } = await admin.from('empresas').delete().eq('id', empresa.id);
+    if (errBorrar) log.warn('[onboarding] no se pudo borrar la empresa huérfana', empresa.id, errBorrar.message);
+    return { ok: false, error: 'No se pudo crear tu empresa. Si ya la habías creado, recarga la página.' };
+  }
 
   // Plantilla base de cuentas — mismo catálogo (Código Agrupador SAT
   // simplificado) que ya usaba contabilidad.js. Punto de partida
@@ -178,7 +193,7 @@ export async function aceptarInvitacionPendiente(accessToken, userEmail, log = c
   const { data: invitacion } = await admin
     .from('invitaciones')
     .select('*')
-    .eq('correo', userEmail)
+    .eq('correo', String(userEmail || '').trim().toLowerCase())
     .eq('estado', 'pendiente')
     .gt('expira_en', new Date().toISOString())
     .order('created_at', { ascending: false })
@@ -200,11 +215,21 @@ export async function aceptarInvitacionPendiente(accessToken, userEmail, log = c
 
 // ---------------- Gestión normal de invitaciones (RLS, director/admin) ----------------
 
+const ROLES_INVITAN = ['rh', 'admin', 'director'];
+const ROLES_PROTEGIDOS = ['admin', 'director'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// OT-0034: antes cualquier rol podía pedir la lista (con correos y tokens) si la política
+// de la base lo permitía; el panel solo se la muestra a RH/Admin/Director, y ahora el
+// backend también lo exige.
 export async function listarInvitaciones(accessToken, log = console) {
+  const rol = await obtenerRolUsuario(accessToken, log);
+  if (!ROLES_INVITAN.includes(rol)) return { ok: false, error: 'No tienes permiso para ver las invitaciones (tu rol no lo permite).' };
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
   const { data, error } = await supabase.from('invitaciones').select('*').order('created_at', { ascending: false });
-  if (error) return { ok: false, error: error.message };
+  if (error) { log.warn('[postgres] listarInvitaciones:', error.message); return { ok: false, error: 'No se pudieron cargar las invitaciones.' }; }
   return { ok: true, invitaciones: data || [] };
 }
 
@@ -215,6 +240,19 @@ export async function crearInvitacion(accessToken, userId, datos, log = console)
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
   if (!datos.correo || !datos.rolId) return { ok: false, error: 'Faltan datos obligatorios (correo, rol).' };
+  if (typeof datos.correo !== 'string' || datos.correo.trim().length > 254 || !CORREO.test(datos.correo.trim())) {
+    return { ok: false, error: 'Captura un correo válido.' };
+  }
+  if (typeof datos.rolId !== 'string' || !UUID.test(datos.rolId)) return { ok: false, error: 'Rol no válido.' };
+
+  // OT-0034: escalada de privilegios. Antes RH podía invitar a su propio correo (u otro)
+  // con rol Director o Admin, y al aceptar tendría acceso total. Solo Admin/Director
+  // pueden invitar con rol Admin o Director; además el rol debe existir.
+  const { data: rolDestino } = await supabase.from('roles').select('id, nombre').eq('id', datos.rolId).maybeSingle();
+  if (!rolDestino) return { ok: false, error: 'Ese rol no existe.' };
+  if (rol === 'rh' && ROLES_PROTEGIDOS.includes(rolDestino.nombre)) {
+    return { ok: false, error: 'RH no puede invitar con rol Admin o Director; pídeselo a un Admin/Director.' };
+  }
 
   const empresaId = await obtenerEmpresaId(supabase, accessToken, log);
   if (!empresaId) return { ok: false, error: 'No se encontró tu perfil/empresa en Postgres.' };
@@ -242,7 +280,7 @@ export async function crearInvitacion(accessToken, userId, datos, log = console)
     if (error.code === '23505') { // violación de índice único = duplicado real, no error técnico
       return { ok: false, error: 'Ya existe una invitación pendiente para este correo. Usa "Reenviar" en vez de crear otra.' };
     }
-    return { ok: false, error: error.message };
+    return { ok: false, error: 'No se pudo crear la invitación.' };
   }
   return { ok: true, invitacion: data };
 }
@@ -277,7 +315,14 @@ export async function cancelarInvitacion(accessToken, invitacionId, log = consol
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
+  // OT-0034: una invitación ya aceptada no se cancela (la persona ya es parte del equipo;
+  // se le da de baja desde "Miembros del equipo"). Antes quedaba "cancelada" con la
+  // persona activa, un estado contradictorio.
+  const { data: actual } = await supabase.from('invitaciones').select('estado').eq('id', invitacionId).maybeSingle();
+  if (!actual) return { ok: false, error: 'Invitación no encontrada.' };
+  if (actual.estado === 'aceptada') return { ok: false, error: 'Esa invitación ya fue aceptada: para quitarle el acceso, dala de baja en "Miembros del equipo".' };
+
   const { data, error } = await supabase.from('invitaciones').update({ estado: 'cancelada' }).eq('id', invitacionId).select().single();
-  if (error) { log.warn('[postgres] cancelarInvitacion:', error.message); return { ok: false, error: error.message }; }
+  if (error) { log.warn('[postgres] cancelarInvitacion:', error.message); return { ok: false, error: 'No se pudo cancelar la invitación.' }; }
   return { ok: true, invitacion: data };
 }

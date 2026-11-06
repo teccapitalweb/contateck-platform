@@ -18,6 +18,17 @@
     expirada: { txt: "Expirada", cls: "v-badge--bad" },
   };
 
+  // OT-0034: todo texto que viene de la base (correo, nombre, rol) se escapa antes de
+  // pintarlo con innerHTML. Un nombre capturado como <img onerror=…> se ejecutaba en el
+  // navegador de quien abría "Equipo".
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  // Mientras corre una acción de un botón, queda deshabilitado (evita doble clic).
+  async function conBoton(btn, fn) {
+    if (btn) btn.disabled = true;
+    try { await fn(); } finally { if (btn) btn.disabled = false; }
+  }
   function backendUrl() { return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app"; }
   function authHeaders(json) { const h = json ? { "Content-Type": "application/json" } : {}; const t = window.CONTATECK_SUPABASE_TOKEN; if (t) h.Authorization = "Bearer " + t; return h; }
   function miPerfil() { return window.CONTATECK_PERFIL_PG || null; }
@@ -74,6 +85,15 @@
     } catch (e) { equipo = []; toast("Sin conexión con el backend.", "warn"); }
   }
   function nombreRol(rolId) { const r = roles.find((x) => x.id === rolId); return r ? r.nombre : "—"; }
+  // <option> de roles. `paraCambio`=true -> todos (lo usa Admin/Director en "Miembros");
+  // false -> los que puede asignar quien invita (RH no puede ofrecer Admin ni Director).
+  function opcionesRol(seleccionId, paraCambio) {
+    return ROLES_DISPONIBLES.filter((r) => paraCambio || miRol() !== "rh" || (r !== "admin" && r !== "director"))
+      .map((r) => {
+        const rr = roles.find((x) => x.nombre === r);
+        return rr ? `<option value="${esc(rr.id)}"${rr.id === seleccionId ? " selected" : ""}>${esc(r[0].toUpperCase() + r.slice(1))}</option>` : "";
+      }).join("");
+  }
 
   async function ocultarSegunRol() {
     await esperarPerfil();
@@ -143,12 +163,12 @@
       const e = ESTADOS_INV[vencida ? "expirada" : i.estado] || ESTADOS_INV.pendiente;
       let acciones = "";
       if (i.estado === "pendiente" || i.estado === "expirada" || vencida) {
-        acciones += `<button class="v-mini v-mini--ok" data-inv-reenviar="${i.id}">Reenviar</button>`;
+        acciones += `<button class="v-mini v-mini--ok" data-inv-reenviar="${esc(i.id)}">Reenviar</button>`;
       }
       if (i.estado === "pendiente" && !vencida) {
-        acciones += `<button class="v-mini v-mini--bad" data-inv-cancelar="${i.id}">Cancelar</button>`;
+        acciones += `<button class="v-mini v-mini--bad" data-inv-cancelar="${esc(i.id)}">Cancelar</button>`;
       }
-      return `<tr><td>${i.correo}</td><td>${nombreRol(i.rol_id)}</td><td>${fmtFecha(i.created_at)}</td><td>${fmtFecha(i.expira_en)}</td><td><span class="v-badge ${e.cls}">${e.txt}</span></td><td>${acciones}</td></tr>`;
+      return `<tr><td>${esc(i.correo)}</td><td>${esc(nombreRol(i.rol_id))}</td><td>${fmtFecha(i.created_at)}</td><td>${fmtFecha(i.expira_en)}</td><td><span class="v-badge ${e.cls}">${e.txt}</span></td><td>${acciones}</td></tr>`;
     }).join("");
   }
 
@@ -159,15 +179,23 @@
     tb.innerHTML = equipo.map((m) => {
       const rolNombre = m.roles ? m.roles.nombre : "—";
       const soyYo = m.id === miId();
+      // RH no gestiona a Admin/Director (el backend también lo rechaza; aquí solo no se ofrece el botón).
+      const protegido = miRol() === "rh" && (rolNombre === "admin" || rolNombre === "director");
       let acciones = "";
-      if (!soyYo) {
-        acciones = m.activo
-          ? `<button class="v-mini v-mini--bad" data-eq-baja="${m.id}">Dar de baja</button>`
-          : `<button class="v-mini v-mini--ok" data-eq-alta="${m.id}">Reactivar</button>`;
-      } else {
+      if (soyYo) {
         acciones = '<span style="color:var(--faint);font-size:.76rem">Tú</span>';
+      } else if (protegido) {
+        acciones = '<span style="color:var(--faint);font-size:.76rem">Solo Admin/Director</span>';
+      } else {
+        acciones = m.activo
+          ? `<button class="v-mini v-mini--bad" data-eq-baja="${esc(m.id)}">Dar de baja</button>`
+          : `<button class="v-mini v-mini--ok" data-eq-alta="${esc(m.id)}">Reactivar</button>`;
       }
-      return `<tr><td>${m.nombre || "—"}</td><td>${m.email || "—"}</td><td>${rolNombre}</td><td>${fmtFecha(m.created_at)}</td>` +
+      // Admin/Director pueden cambiar el rol de otra persona (nunca el propio).
+      const celdaRol = (puedeCambiarRol() && !soyYo && m.roles)
+        ? `<select class="v-inp" style="padding:.25rem .4rem;font-size:.82rem;min-width:7.5rem" data-eq-rol="${esc(m.id)}" data-rol-actual="${esc(m.roles.id)}">${opcionesRol(m.roles.id, true)}</select>`
+        : esc(rolNombre);
+      return `<tr><td>${esc(m.nombre || "—")}</td><td>${esc(m.email || "—")}</td><td>${celdaRol}</td><td>${fmtFecha(m.created_at)}</td>` +
         `<td><span class="v-badge ${m.activo ? "v-badge--ok" : "v-badge--bad"}">${m.activo ? "Activo" : "Dado de baja"}</span></td><td>${acciones}</td></tr>`;
     }).join("");
   }
@@ -187,14 +215,13 @@
   function closeModal() { if (modal) modal.classList.remove("show"); }
 
   function openNuevaInvitacion() {
-    const opciones = ROLES_DISPONIBLES.map((r) => {
-      const rr = roles.find((x) => x.nombre === r);
-      return rr ? `<option value="${rr.id}">${r[0].toUpperCase() + r.slice(1)}</option>` : "";
-    }).join("");
+    const opciones = opcionesRol(null, false);
+    const nota = miRol() === "rh"
+      ? '<p style="color:var(--faint);font-size:.78rem;margin:.3rem 0 0">Para invitar con rol Admin o Director pídeselo a un Admin/Director.</p>' : "";
     openModal(`
       <h2 class="v-h2">Nueva invitación</h2>
       <div class="v-field"><label>Correo de la persona</label><input class="v-inp" id="inv-correo" type="email" placeholder="nombre@correo.com"></div>
-      <div class="v-field"><label>Rol</label><select class="v-inp" id="inv-rol">${opciones}</select></div>
+      <div class="v-field"><label>Rol</label><select class="v-inp" id="inv-rol">${opciones}</select>${nota}</div>
       <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-inv-guardar>Enviar invitación</button></div>`);
   }
   let enviandoInvitacion = false;
@@ -230,11 +257,45 @@
     if (!data.ok) { toast(data.error || "No se pudo cancelar", "warn"); return; }
     toast("Invitación cancelada"); await render();
   }
+  // Confirmación con el modal del propio módulo (en vez del window.confirm del navegador).
+  function confirmar(titulo, texto, textoOk) {
+    return new Promise((resolve) => {
+      openModal(`<h2 class="v-h2">${esc(titulo)}</h2>
+        <p style="color:var(--muted);font-size:.92rem;line-height:1.5">${esc(texto)}</p>
+        <div class="v-modal__foot"><button class="btn btn--ghost" data-conf-no>Cancelar</button><button class="btn btn--primary" data-conf-si>${esc(textoOk || "Confirmar")}</button></div>`);
+      const m = modal;
+      function onClick(e) {
+        const si = e.target.closest("[data-conf-si]");
+        if (!si && !e.target.closest("[data-conf-no],[data-v-close]") && e.target !== m) return;
+        m.removeEventListener("click", onClick, true);
+        closeModal();
+        resolve(!!si);
+      }
+      m.addEventListener("click", onClick, true);
+    });
+  }
+  function nombreMiembro(id) { const m = equipo.find((x) => x.id === id); return m ? (m.nombre || m.email || "esta persona") : "esta persona"; }
   async function darDeBaja(id) {
+    const ok = await confirmar("Dar de baja", `${nombreMiembro(id)} perderá el acceso al panel. Su historial (facturas, pólizas, ventas) se conserva y podrás reactivarla después.`, "Dar de baja");
+    if (!ok) return;
     const resp = await fetch(backendUrl() + "/api/equipo/" + id + "/estado", { method: "PUT", headers: authHeaders(true), body: JSON.stringify({ activo: false }) });
     const data = await resp.json();
     if (!data.ok) { toast(data.error || "No se pudo dar de baja", "warn"); return; }
     toast("Persona dada de baja — su historial se conserva"); await render();
+  }
+  async function cambiarRol(sel) {
+    const id = sel.getAttribute("data-eq-rol"), anterior = sel.getAttribute("data-rol-actual"), nuevo = sel.value;
+    if (nuevo === anterior) return;
+    const ok = await confirmar("Cambiar rol", `¿Cambiar el rol de ${nombreMiembro(id)} a ${nombreRol(nuevo)}? Cambia lo que puede ver y hacer en el panel.`, "Cambiar rol");
+    if (!ok) { sel.value = anterior; return; }
+    sel.disabled = true;
+    try {
+      const resp = await fetch(backendUrl() + "/api/equipo/" + id + "/rol", { method: "PUT", headers: authHeaders(true), body: JSON.stringify({ rolId: nuevo }) });
+      const data = await resp.json();
+      if (!data.ok) { toast(data.error || "No se pudo cambiar el rol", "warn"); sel.value = anterior; return; }
+      toast("Rol actualizado"); await render();
+    } catch (e) { toast("Sin conexión con el backend.", "warn"); sel.value = anterior; }
+    finally { sel.disabled = false; }
   }
   async function reactivar(id) {
     const resp = await fetch(backendUrl() + "/api/equipo/" + id + "/estado", { method: "PUT", headers: authHeaders(true), body: JSON.stringify({ activo: true }) });
@@ -246,11 +307,15 @@
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-inv-nueva]")) { openNuevaInvitacion(); return; }
     if (e.target.closest("[data-inv-guardar]")) { guardarInvitacion(); return; }
-    const reenv = e.target.closest("[data-inv-reenviar]"); if (reenv) { reenviarInvitacion(reenv.getAttribute("data-inv-reenviar")); return; }
-    const canc = e.target.closest("[data-inv-cancelar]"); if (canc) { cancelarInvitacion(canc.getAttribute("data-inv-cancelar")); return; }
-    const baja = e.target.closest("[data-eq-baja]"); if (baja) { darDeBaja(baja.getAttribute("data-eq-baja")); return; }
-    const alta = e.target.closest("[data-eq-alta]"); if (alta) { reactivar(alta.getAttribute("data-eq-alta")); return; }
+    const reenv = e.target.closest("[data-inv-reenviar]"); if (reenv) { conBoton(reenv, () => reenviarInvitacion(reenv.getAttribute("data-inv-reenviar"))); return; }
+    const canc = e.target.closest("[data-inv-cancelar]"); if (canc) { conBoton(canc, () => cancelarInvitacion(canc.getAttribute("data-inv-cancelar"))); return; }
+    const baja = e.target.closest("[data-eq-baja]"); if (baja) { conBoton(baja, () => darDeBaja(baja.getAttribute("data-eq-baja"))); return; }
+    const alta = e.target.closest("[data-eq-alta]"); if (alta) { conBoton(alta, () => reactivar(alta.getAttribute("data-eq-alta"))); return; }
     const tab = e.target.closest("[data-inv-tab]"); if (tab) { tabActual = tab.getAttribute("data-inv-tab"); renderTab(); return; }
+  });
+  document.addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-eq-rol]");
+    if (sel) cambiarRol(sel);
   });
   document.addEventListener("click", (e) => {
     if (e.target.closest('.nav-item[data-view="invitaciones"]')) setTimeout(render, 30);

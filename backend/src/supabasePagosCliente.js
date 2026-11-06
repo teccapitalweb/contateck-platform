@@ -57,6 +57,14 @@ export async function listarCfdisSaldo(accessToken, log = console) {
 export async function registrarPagoCliente(accessToken, datos, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  // OT-0034: solo se cobran facturas de ingreso vigentes. La función de la base valida el
+  // saldo, pero no el tipo de comprobante: se podía registrar un "cobro" sobre una nota de
+  // crédito (tipo E) o un complemento de pago (tipo P), o sobre una factura cancelada.
+  const { data: cfdi, error: errCfdi } = await supabase.from('cfdis').select('tipo, estatus').eq('id', datos.cfdiId).maybeSingle();
+  if (errCfdi) { log.warn('[postgres] registrarPagoCliente (cfdi):', errCfdi.message); return { ok: false, error: 'No se pudo revisar la factura.' }; }
+  if (!cfdi) return { ok: false, error: 'Factura no encontrada o no pertenece a tu empresa.' };
+  if (cfdi.estatus === 'cancelado') return { ok: false, error: 'Esa factura está cancelada: ya no se le registran cobros.' };
+  if (cfdi.tipo && cfdi.tipo !== 'I') return { ok: false, error: 'Solo se registran cobros sobre facturas de ingreso (no notas de crédito ni complementos de pago).' };
   const { data, error } = await supabase.rpc('registrar_pago_cliente', {
     p_cfdi_id: datos.cfdiId,
     p_monto: datos.monto,
@@ -77,6 +85,16 @@ export async function registrarPagoCliente(accessToken, datos, log = console) {
 export async function confirmarPagoCliente(accessToken, pagoId, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  // OT-0034: el saldo solo se valida al REGISTRAR un pago. Dos pagos registrados por
+  // separado (cada uno cabía en el saldo de ese momento) y confirmados después dejaban la
+  // factura pagada de más. Se vuelve a comparar con el saldo ACTUAL justo antes de confirmar.
+  const { data: pago } = await supabase.from('pagos_cliente').select('monto, cfdi_id, estado').eq('id', pagoId).maybeSingle();
+  if (pago && pago.estado === 'registrado') {
+    const { data: s } = await supabase.from('cfdis_saldo').select('saldo_pendiente').eq('cfdi_id', pago.cfdi_id).maybeSingle();
+    if (s && Number(pago.monto) > Number(s.saldo_pendiente) + 0.005) {
+      return { ok: false, error: `Confirmar este pago ($${Number(pago.monto).toFixed(2)}) dejaría la factura pagada de más: su saldo actual es $${Number(s.saldo_pendiente).toFixed(2)}. Revisa los demás pagos de esa factura antes de confirmar.` };
+    }
+  }
   const { data, error } = await supabase.rpc('confirmar_pago_cliente', { p_pago_id: pagoId });
   if (error) {
     log.warn('[postgres] confirmar_pago_cliente:', error.message);
