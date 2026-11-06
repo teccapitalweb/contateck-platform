@@ -611,53 +611,23 @@
     /* ---------- Módulo 02 · SAT y Fiscal: ver fiscal.js ---------- */
 
     /* ---------- Módulo 15 · IA Contable ---------- */
+    // OT-0035: la IA Contable queda MARCADA como "en desarrollo". Antes era una demo: mostraba
+    // una conversación de ejemplo con cifras inventadas ($205,140 de IVA trasladado, "14 CFDI
+    // por validar") junto a los datos reales de la empresa y contestaba siempre el mismo
+    // texto fijo, lo que daba la impresión de ser una IA funcionando. Ahora no finge nada:
+    // no hay conversación de ejemplo, ni sugerencias, ni envío. Cuando exista la IA real
+    // (decisión pendiente: llave de API, costo, alcance y privacidad), se reconecta aquí.
     const chatLog = document.querySelector("[data-ia-chat]");
-    if (chatLog && window.IA_CHAT_INICIAL) {
-      const avAi = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4l1.4 4L17 9.5l-3.6 1.5L12 15l-1.4-4L7 9.5 10.6 8z"/></svg>';
-      const avMe = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>';
-      const empresaTxt = (document.querySelector("[data-empresa-label]") || {}).textContent || "tu empresa";
-
-      const appendMsg = function (de, texto) {
-        const ai = de === "ai";
-        const html = '<div class="msg msg--' + (ai ? "ai" : "me") + '"><span class="msg__av">' + (ai ? avAi : avMe) +
-          '</span><div class="msg__bubble">' + texto + "</div></div>";
-        chatLog.insertAdjacentHTML("beforeend", html);
-        chatLog.scrollTop = chatLog.scrollHeight;
-      };
-      IA_CHAT_INICIAL.forEach(function (m) { appendMsg(m.de, m.texto); });
-
-      const input = document.querySelector("[data-ia-input]");
-      const send = function () {
-        const txt = (input.value || "").trim();
-        if (!txt) return;
-        appendMsg("me", txt);
-        input.value = "";
-        setTimeout(function () {
-          appendMsg("ai", "Anotado. En esta demo todavía no estoy conectado al backend, pero en producción aquí te respondo con los datos reales de <b>" + empresaTxt + "</b> (XML, bancos y declaraciones).");
-        }, 650);
-      };
-      document.querySelector("[data-ia-send]").addEventListener("click", send);
-      input.addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });
-
-      const chipIco = {
-        file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>',
-        flow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11a4 4 0 0 1 0 8H7"/><polyline points="7 11 4 7 7 3"/></svg>',
-        shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 7.6 7 8.7 4-1.1 7-4.3 7-8.7V6z"/><path d="m9 12 2 2 4-4"/></svg>',
-        doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M9 13h6M9 17h4"/></svg>',
-      };
+    if (chatLog) {
+      chatLog.innerHTML = '<div class="msg msg--ai"><span class="msg__av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4l1.4 4L17 9.5l-3.6 1.5L12 15l-1.4-4L7 9.5 10.6 8z"/></svg></span>' +
+        '<div class="msg__bubble"><b>La IA Contable está en desarrollo.</b><br>Todavía no responde preguntas ni consulta tus datos. ' +
+        'Mientras tanto, tu información la ves en el Dashboard, en Contabilidad y en SAT y Fiscal.</div></div>';
       const chipHost = document.querySelector("[data-ia-acciones]");
-      if (chipHost && window.IA_ACCIONES) {
-        chipHost.innerHTML = IA_ACCIONES.map(function (a) {
-          return '<button class="chip" data-chip="' + a.label + '">' + (chipIco[a.ico] || "") + a.label + "</button>";
-        }).join("");
-        chipHost.querySelectorAll(".chip").forEach(function (c) {
-          c.addEventListener("click", function () {
-            // ir a la pestaña IA ya estamos en ella; mandar el texto
-            input.value = c.getAttribute("data-chip");
-            send();
-          });
-        });
-      }
+      if (chipHost) chipHost.style.display = "none";
+      const input = document.querySelector("[data-ia-input]");
+      if (input) { input.disabled = true; input.placeholder = "Disponible próximamente"; }
+      const enviar = document.querySelector("[data-ia-send]");
+      if (enviar) { enviar.disabled = true; enviar.style.opacity = ".4"; enviar.style.cursor = "not-allowed"; }
     }
   }
 
