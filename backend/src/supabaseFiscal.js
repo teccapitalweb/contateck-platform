@@ -32,6 +32,7 @@ import { obtenerRolUsuario } from './supabaseCfdis.js';
 import {
   esUuid, hoyMexico, diasEntre, validarObligacion, validarDeclaracionNueva,
   validarActualizacionDeclaracion, validarDocumentoNuevo, rutaDocumentoValida, alertasVigencia,
+  esComplementaria, similaresDePeriodo, esDuplicadaDePresentada,
 } from './validacionesFiscal.js';
 
 const ROLES_VEN = ['contador', 'admin', 'director', 'auditor'];
@@ -175,6 +176,31 @@ export async function crearDeclaracion(accessToken, userId, datos, log = console
   if (!obl) return { ok: false, error: 'La obligación no existe o no es de tu empresa.' };
   if (obl.activa === false) return { ok: false, error: 'La obligación está inactiva; actívala antes de registrar declaraciones.' };
 
+  // Aviso de duplicado: si ya hay una declaración de esta obligación y periodo
+  // (presentada o no) se devuelve el detalle y NO se guarda hasta que el
+  // usuario confirme (`confirmarDuplicada: true`). Una complementaria no pide
+  // confirmación: es justo el caso en que conviven dos.
+  if (!esComplementaria(v.valores.notas) && datos.confirmarDuplicada !== true) {
+    const { data: previas, error: errPrev } = await supabase
+      .from('declaraciones')
+      .select('id, obligacion_id, periodo, estado, fecha_vencimiento, fecha_presentacion, notas')
+      .eq('obligacion_id', v.valores.obligacion_id);
+    if (errPrev) return errorAmigable(errPrev, 'verificar declaraciones existentes', log);
+    const similares = similaresDePeriodo(v.valores, previas || []);
+    if (similares.length) {
+      return {
+        ok: false,
+        codigo: 'DUPLICADA',
+        error: 'Ya existe una declaración de esta obligación para ese periodo.',
+        existentes: similares.map((s) => ({
+          estado: s.estado,
+          fechaVencimiento: s.fecha_vencimiento ? String(s.fecha_vencimiento).slice(0, 10) : null,
+          fechaPresentacion: s.fecha_presentacion ? String(s.fecha_presentacion).slice(0, 10) : null,
+        })),
+      };
+    }
+  }
+
   const { data, error } = await supabase
     .from('declaraciones')
     .insert({ empresa_id: empresaId, ...v.valores, estado: 'pendiente', created_by: userId })
@@ -297,7 +323,9 @@ export async function obtenerCalendario(accessToken, log = console, clienteExist
   // nombre a cualquier declaración y omitir las de obligaciones dadas de baja.
   const [obl, decl] = await Promise.all([
     supabase.from('obligaciones_fiscales').select('id, nombre, activa'),
-    supabase.from('declaraciones').select('id, obligacion_id, periodo, fecha_vencimiento, estado').neq('estado', 'presentada'),
+    // Se leen también las presentadas: sirven para no alertar por una declaración
+    // "de más" del mismo periodo (ver esDuplicadaDePresentada).
+    supabase.from('declaraciones').select('id, obligacion_id, periodo, fecha_vencimiento, estado, notas'),
   ]);
   if (obl.error) return errorAmigable(obl.error, 'cargar el calendario', log);
   if (decl.error) return errorAmigable(decl.error, 'cargar el calendario', log);
@@ -307,7 +335,9 @@ export async function obtenerCalendario(accessToken, log = console, clienteExist
   // vencimiento (a partir de las 18:00) ya salía como "vencida".
   const hoy = hoyMexico();
   const obligaciones = obl.data || [];
-  const proximas = (decl.data || [])
+  const todas = decl.data || [];
+  const proximas = todas
+    .filter((d) => d.estado !== 'presentada' && !esDuplicadaDePresentada(d, todas))
     .map((d) => ({ d, obligacion: obligaciones.find((o) => o.id === d.obligacion_id) }))
     .filter(({ obligacion }) => !obligacion || obligacion.activa !== false)
     .map(({ d, obligacion }) => {
