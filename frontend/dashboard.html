@@ -375,10 +375,13 @@
 <script src="postgres-crud.js?v=2"></script>
 <script src="dashboardService.js?v=1"></script>
 <script src="app.js?v=7"></script>
-<script src="firebase-config.js"></script>
-<!-- OT-0004: supabase-config.js se agrega para auth-guard.js. firebase-config.js
-     se mantiene porque data-firestore.js sigue usando Firestore (objetivo 5:
-     no migrar datos ni tocar Firestore todavía). Ambos coexisten en esta fase. -->
+<!-- OT-0032: firebase-config.js YA NO se carga. Sin él, data-firestore.js se salta
+     el arranque de Firestore (su interruptor `configured` queda en false). Ese
+     arranque siempre fallaba con permission-denied (pedía un token a
+     /api/firebase-token, ruta que ya no existe), mostraba el aviso "Firestore no
+     disponible… datos demo" y descargaba las librerías de Google para nada: clientes,
+     productos y pólizas ya vienen de Postgres. Para reactivarlo: volver a agregar
+     <script src="firebase-config.js"></script> antes de supabase-config.js. -->
 <script src="supabase-config.js?v=2"></script>
 <script type="module" src="auth-guard.js?v=4"></script>
 <script type="module" src="data-firestore.js?v=13"></script>
