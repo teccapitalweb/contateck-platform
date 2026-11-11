@@ -254,3 +254,14 @@ con el login de una persona y solo datos de prueba.
 | V2 | Venta con IVA | El detalle dice "con IVA incluido… no se suma aparte"; póliza desglosada |
 | V3 | Confirmar una venta no mueve saldos de Cobranza | Los saldos de facturas no cambian (ver riesgo de ingreso duplicado Ventas vs Cobranza, ya anotado) |
 | A1 | Con el SQL atómico aplicado: `node test-confirmacion-concurrente.js cliente` | Uno confirma, el otro rechazado, saldo ≥ 0 |
+
+**Paso 0 ejecutado en DEV (2026-11-11, solo lectura).** Las definiciones reales
+de `confirmar_pago_cliente` y `confirmar_pago_proveedor` coinciden con las del
+repo (OT-0020 fix2 y OT-0023; solo difiere el espaciado), así que
+`OT-0029-confirmacion-atomica.sql` no pisa ningún cambio hecho a mano. Las dos
+vistas de saldo son `security_invoker=true`; `cfdis`, `cfdis_proveedor`,
+`pagos_cliente` y `pagos_proveedor` tienen `empresa_id` y estado/estatus. Hay un
+solo pago "registrado" que ya no cabe (cliente, $100 contra saldo $42.68: el pago
+2 de la prueba de OT-0034); con la regla nueva no se podrá confirmar y no hay
+función para cancelarlo, así que queda como registrado. El SQL de cambio sigue
+sin aplicarse: lo revisa Jorge.
