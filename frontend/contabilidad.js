@@ -3290,10 +3290,36 @@ ${ctas}
     guardarPolizas(arr);
   }
 
+  // Trae las partidas de las pólizas de Postgres que están en este navegador sin asientos.
+  async function hidratarPartidasFaltantes() {
+    if (!window.CTPostgres || !window.CTPostgres.polizasConPartidas || !window.CONTATECK_SUPABASE_TOKEN) return false;
+    const faltan = leerPolizas().filter((p) => p.pgId && !(p.asientos && p.asientos.length)).map((p) => p.pgId);
+    if (!faltan.length) return false;
+    let r;
+    for (let i = 0; i < faltan.length; i += 50) { // por tandas, para no hacer una petición enorme
+      try { r = await window.CTPostgres.polizasConPartidas(faltan.slice(i, i + 50)); } catch (e) { return false; }
+      if (!r || !r.ok) return false;
+      const arr = leerPolizas();
+      (r.polizas || []).forEach((p) => {
+        const local = arr.find((x) => x.pgId === p.id);
+        if (local && p.asientos && p.asientos.length) local.asientos = p.asientos;
+      });
+      guardarPolizas(arr);
+    }
+    return true;
+  }
+
   function init() {
     renderTodo();
     cargarCatalogoReal().then((cambio) => { if (cambio) renderTodo(); });
-    sincronizarPolizasDesdePostgres().then((cambiado) => { if (cambiado) renderTodo(); });
+    // OT-0036: las pólizas de Postgres que llegan a un navegador nuevo vienen SIN partidas y
+    // solo se pedían al abrir cada póliza; mientras tanto el Libro Mayor, la Balanza, el Estado
+    // de resultados y el IVA calculaban con asientos vacíos ($0). Se piden todas de una vez.
+    sincronizarPolizasDesdePostgres().then(async (cambiado) => {
+      let hidratado = false;
+      try { hidratado = await hidratarPartidasFaltantes(); } catch (e) { /* se verán al abrir la póliza */ }
+      if (cambiado || hidratado) renderTodo();
+    });
     cargarConfigContable().then((cambio) => { if (cambio) renderTodo(); });
   }
   init();
