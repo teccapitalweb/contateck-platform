@@ -75,6 +75,44 @@ Si fuera un dato real habría que decidir con la contadora cuál de los dos vale
 
 Versiones de caché: `fiscal.js` v4.
 
+### 1d. OT-0031b · Prueba de DIOT e IVA con partidas y carga del Código Agrupador
+
+Rama `feature/OT-0031b-sat-diot-agrupador`, creada sobre `integracion-local` (7d81a6b, ya con OT-0036: Contabilidad trae las partidas).
+
+**Hallazgo al probar DIOT e IVA con datos tipo Empresa Demo C.** Con las partidas ya cargadas el **IVA sí calcula** (cuentas de
+IVA y partidas llegan bien). La **DIOT no**: las pólizas que vienen de Postgres traen el UUID del CFDI (`cfdiUuid`) pero no el RFC ni
+el nombre del proveedor (solo la póliza importada en ese mismo navegador los guardaba), así que en un navegador limpio todos los
+proveedores caían en "—" y, con el aviso de proveedores sin RFC (S23), la DIOT habría salido vacía.
+
+| # | Cambio | Dónde |
+|---|---|---|
+| S30 | La DIOT identifica al proveedor por el UUID del CFDI contra `cfdis_proveedor` (RFC en mayúsculas y nombre). Endpoint nuevo de solo lectura `GET /api/fiscal/proveedores-diot` (mismos roles de lectura del módulo). Se pide una vez al abrir la pestaña SAT; si falla no se reintenta en bucle y el aviso de "sin RFC" se muestra | `backend/src/supabaseFiscal.js`, `routes/fiscal.js`, `frontend/contabilidad.js` |
+| S31 | Código Agrupador SAT por cuenta, **listo para cargar**: `desdePostgres` lee `codigo_agrupador`; el XML del catálogo usa ese código en `CodAgrup` (si falta, el interno y un aviso con cuántas cuentas faltan); la hoja CSV sale con lo ya asignado | `frontend/contabilidad.js` |
+| S32 | Botón "Cargar códigos agrupador (CSV)" (contador, admin, director): lee la hoja (comas o punto y coma, BOM, comillas), corrige el cero final que Excel quita (101.1 → 101.10), muestra un resumen (por actualizar, sin cambio, sin llenar, formato inválido, códigos que no existen) y **no guarda nada hasta confirmar**. Las celdas vacías no borran | `frontend/contabilidad.js` (`planCargaAgrupador`) |
+| S33 | `PUT /api/fiscal/codigos-agrupador`: valida formato (NNN o NNN.NN) y máximo 500 por carga; actualiza con el cliente del usuario, así que la RLS decide qué cuentas son de su empresa (las demás se reportan como "no encontradas"). Si la columna aún no existe, responde un mensaje claro que apunta al script | `backend/src/supabaseFiscal.js`, `routes/fiscal.js`, `validacionesFiscal.js` |
+| S34 | `database/OT-0031b-codigo-agrupador.sql` (**no ejecutado**): `alter table cuentas_contables add column if not exists codigo_agrupador text`. Es repetible y no toca datos ni políticas | `database/` |
+
+**Qué falta para que funcione de punta a punta:** correr `database/OT-0031b-codigo-agrupador.sql` en Supabase DEV. Sin eso, el
+panel funciona igual (usa el código interno) y la carga del CSV responde "falta correr el SQL".
+
+Versión de caché: `contabilidad.js` v18 (el resto de scripts no cambió).
+
+**Pruebas (sin servidor ni pantalla):** `contabilidad.js` completo cargado en un navegador simulado con datos tipo Empresa Demo C
+(1 venta con IVA trasladado, 3 gastos de CFDI recibido con y sin RFC, 1 póliza anulada, pólizas sin RFC de proveedor como llegan de
+Postgres): IVA trasladado 160 y acreditable por cuenta configurada; DIOT con el proveedor A identificado por UUID (2 operaciones, base
+1,500, IVA 240), proveedor B sin RFC avisado y fuera de los totales, anulada ignorada; pantalla SAT con el aviso y el total; botón de
+carga visible para contador y oculto para auditor; la carga de proveedores se intenta una sola vez aunque falle; XML del catálogo con y
+sin código agrupador; lectura del CSV (comillas, `;`, LF, cero final de Excel, formato inválido, código inexistente, archivo
+equivocado). Backend con cliente falso: validación del lote, actualización con una cuenta "de otra empresa", columna inexistente,
+proveedores de la DIOT, y que todo lo que importa el router exista en `supabaseFiscal.js`.
+
+**NO verificado:** ninguna pantalla real ni la base real (los datos de Empresa Demo C son simulados con su misma forma, no los
+reales); el formato NNN / NNN.NN del Código Agrupador es el que conozco del anexo del SAT, no lo validé contra el catálogo
+oficial; que la política de UPDATE de `cuentas_contables` permita escribir la columna nueva (se asume por la política vigente).
+
+**Dato a tener presente:** en la prueba el IVA acreditable sumó también la póliza anulada porque en los datos simulados no había
+su reversa; en el sistema real una anulación genera la reversa y el saldo queda neto (la DIOT sí excluye las anuladas).
+
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
 | Sev. | Hallazgo | Estado |
@@ -164,6 +202,6 @@ Si la contadora indica otra cosa, es un cambio pequeño.
 
 ## 7. Preguntas para la contadora (solo lo que de verdad depende de ella)
 
-1. **Código Agrupador SAT por cuenta (bloquea el XML del catálogo).** Hoy `CodAgrup` lleva el código interno de la cuenta y el SAT puede rechazarlo. Se descarga desde Contabilidad → SAT / Declaraciones el botón **"Hoja de cuentas para la contadora (CSV)"**: ella solo escribe el código del SAT en la última columna. Cargarlo al sistema requiere una columna nueva en `cuentas_contables` (cambio de SQL, pendiente de otra OT). *Por defecto:* mientras no esté, el XML usa el código interno.
+1. **Código Agrupador SAT por cuenta (bloquea el XML del catálogo).** Hoy `CodAgrup` lleva el código interno de la cuenta y el SAT puede rechazarlo. Se descarga desde Contabilidad → SAT / Declaraciones el botón **"Hoja de cuentas para la contadora (CSV)"**: ella solo escribe el código del SAT en la última columna. Cargarlo al sistema ya está listo (botón "Cargar códigos agrupador (CSV)", sección 1d); solo falta correr `database/OT-0031b-codigo-agrupador.sql` en Supabase. *Por defecto:* mientras no esté, el XML usa el código interno.
 2. **Revisar la plantilla y las fechas (sí/no).** Las 6 obligaciones de "Cargar comunes" (IVA, ISR provisional, DIOT, retenciones de ISR por sueldos, cuotas IMSS: mensuales día 17; RCV e INFONAVIT: bimestral día 17) y la regla "día límite del mes siguiente, al lunes si cae en fin de semana". Faltan, por depender del régimen: Contabilidad Electrónica y la declaración anual. *Por defecto:* se queda como está, editable en el panel.
 3. **Cálculo de IVA, DIOT e ISR provisional.** Qué cuentas entran a la DIOT (hoy 601/602/603/501 fijas), si va por flujo de efectivo o por factura, tipo de tercero/operación y desglose por tasa; IVA cobrado/pagado, saldo a favor anterior, retenciones, acreditamiento proporcional; fórmula del ISR provisional y deducciones autorizadas. *Por defecto:* todo sigue rotulado "cifra de referencia, no es la declaración" y el ISR provisional sigue oculto. Puede esperar: nadie presenta con estas cifras.

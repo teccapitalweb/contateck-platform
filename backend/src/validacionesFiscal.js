@@ -216,3 +216,26 @@ export function esDuplicadaDePresentada(d, todas) {
   if (!d || d.estado === 'presentada' || esComplementaria(d.notas)) return false;
   return similaresDePeriodo(d, todas).some((o) => o.estado === 'presentada');
 }
+
+// ---------------- Código Agrupador SAT por cuenta ----------------
+// Formato del Código Agrupador: "NNN" (cuenta de mayor) o "NNN.NN" (subcuenta),
+// p. ej. 102.01. Aquí solo se revisa el FORMATO, no que el código exista en el catálogo del SAT.
+const CODIGO_AGRUPADOR = /^\d{3}(\.\d{2})?$/;
+export function codigoAgrupadorValido(c) { return CODIGO_AGRUPADOR.test(String(c || '')); }
+
+// Valida el lote que manda el panel: [{ id, codigoAgrupador }]; '' o null = quitar el código.
+export function validarCodigosAgrupador(filas) {
+  if (!Array.isArray(filas) || !filas.length) return { error: 'No hay códigos que guardar.' };
+  if (filas.length > 500) return { error: 'Máximo 500 cuentas por carga.' };
+  const valores = [];
+  const vistos = new Set();
+  for (const f of filas) {
+    if (!f || !esUuid(f.id)) return { error: 'Una de las cuentas no tiene un identificador válido.' };
+    if (vistos.has(f.id)) return { error: 'Una cuenta viene repetida en la carga.' };
+    vistos.add(f.id);
+    const c = f.codigoAgrupador == null ? '' : String(f.codigoAgrupador).trim();
+    if (c && !codigoAgrupadorValido(c)) return { error: `El código "${c.slice(0, 20)}" no tiene el formato del Código Agrupador (NNN o NNN.NN, por ejemplo 102.01).` };
+    valores.push({ id: f.id, codigo_agrupador: c || null });
+  }
+  return { valores };
+}

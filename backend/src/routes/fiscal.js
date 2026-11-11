@@ -9,6 +9,8 @@
 //    GET  /api/fiscal/documentos
 //    POST /api/fiscal/documentos
 //    GET  /api/fiscal/calendario
+//    GET  /api/fiscal/proveedores-diot     (RFC y nombre por UUID, para la DIOT)
+//    PUT  /api/fiscal/codigos-agrupador    (lote: { cuentas: [{ id, codigoAgrupador }] })
 // ============================================================
 import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
@@ -16,7 +18,7 @@ import {
   listarObligaciones, crearObligacion, actualizarObligacion,
   listarDeclaraciones, crearDeclaracion, actualizarDeclaracion,
   listarDocumentosFiscales, crearDocumentoFiscal,
-  obtenerCalendario,
+  obtenerCalendario, listarProveedoresDiot, guardarCodigosAgrupador,
 } from '../supabaseFiscal.js';
 
 export const fiscalRouter = Router();
@@ -74,4 +76,16 @@ fiscalRouter.get('/fiscal/calendario', async (req, res) => {
   if (!requireAuth(req, res)) return;
   const r = await obtenerCalendario(req.token);
   res.status(r.ok ? 200 : 403).json(r);
+});
+
+fiscalRouter.get('/fiscal/proveedores-diot', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await listarProveedoresDiot(req.token);
+  res.status(r.ok ? 200 : 403).json(r);
+});
+
+fiscalRouter.put('/fiscal/codigos-agrupador', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await guardarCodigosAgrupador(req.token, (req.body || {}).cuentas);
+  res.status(r.ok ? 200 : 400).json(r);
 });
