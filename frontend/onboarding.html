@@ -97,6 +97,15 @@
     if (!data || !data.session) { window.location.replace("login.html"); return; }
     const token = data.session.access_token;
 
+    // OT-0037: ¿es administrador de la plataforma (dueño de CONTATECK)? Lo decide el
+    // backend, no el navegador. Si falla cualquier cosa se sigue con el flujo normal:
+    // esta comprobación nunca debe impedir que una persona entre a su empresa.
+    try {
+      const rp = await fetch(BACKEND + "/api/plataforma/yo", { headers: { Authorization: "Bearer " + token } });
+      const yo = await rp.json();
+      if (yo && yo.ok && yo.esAdmin) { window.location.replace("admin.html"); return; }
+    } catch (e) { /* sin dato: flujo normal */ }
+
     // Hasta 3 intentos (con una pequeña pausa) antes de rendirse — un
     // backend recién reiniciado puede tardar unos segundos en responder,
     // y eso no significa que la persona no tenga perfil.
