@@ -28,7 +28,9 @@ import { pathToFileURL } from 'url';
 // tipo: 'empresa' (columna empresa_id) | 'propia' (la tabla es la empresa) | 'hija' (se llega por su padre)
 //       | 'cerrada' (ningún usuario debe ver nada) | 'catalogo' (compartida por diseño: no se compara)
 export const TABLAS = [
-  { t: 'empresas', tipo: 'propia', col: 'id' },
+  // cols: columnas que se piden con la sesión del usuario. `empresas` tiene las llaves del CSD protegidas por columna
+  // (OT-0038): un `select *` con sesión da "acceso denegado" por diseño, así que se piden solo columnas no secretas.
+  { t: 'empresas', tipo: 'propia', col: 'id', cols: 'id' },
   { t: 'perfiles' }, { t: 'invitaciones' }, { t: 'cuentas_contables' }, { t: 'configuracion_contable' },
   { t: 'clientes' }, { t: 'productos' }, { t: 'empleados' },
   { t: 'polizas' }, { t: 'poliza_partidas', tipo: 'hija', fk: 'poliza_id', padre: 'polizas' },
@@ -102,8 +104,9 @@ export async function revisarTabla(spec, { admin, usuario, empresaId }) {
     const total = await contar(admin.from(t).select('*', { count: 'exact', head: true }));
     const propias = await contar(admin.from(t).select('*', { count: 'exact', head: true }).eq(col, empresaId));
     const existen = total - propias;
-    const ajenas = await contar(usuario.from(t).select('*', { count: 'exact', head: true }).neq(col, empresaId));
-    const sinEmpresa = await contar(usuario.from(t).select('*', { count: 'exact', head: true }).is(col, null));
+    const cols = spec.cols || '*';
+    const ajenas = await contar(usuario.from(t).select(cols, { count: 'exact', head: true }).neq(col, empresaId));
+    const sinEmpresa = await contar(usuario.from(t).select(cols, { count: 'exact', head: true }).is(col, null));
     const ve = ajenas + sinEmpresa;
     return { ...base, existen, ve, propias, veredicto: ve > 0 ? 'FUGA' : existen > 0 ? 'OK' : 'SIN PRUEBA',
       nota: sinEmpresa > 0 ? `${sinEmpresa} filas sin ${col} visibles` : '' };
