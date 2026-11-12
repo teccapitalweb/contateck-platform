@@ -138,7 +138,15 @@ confirmado contra DEV que la tabla cerrada se comporta como se diseñó en OT-00
 - Storage: bucket `documentos` privado, políticas por carpeta de empresa y carpeta `sat` restringida por rol.
 - No hay políticas de `DELETE` sobre pólizas, CFDI, cuentas ni declaraciones.
 
-**Hallazgos (por orden de gravedad). Los dos primeros se deducen de las políticas y del código y NO se han comprobado con un intento real: falta la consulta de triggers y permisos por columna.**
+**Confirmación (segunda introspección en DEV, 2026-11-12, solo lectura):** no hay triggers en `perfiles`, `empresas` ni
+`invitaciones`; `authenticated` puede actualizar TODAS las columnas de `perfiles` (`rol_id`, `empresa_id`, `activo`,
+`is_active`, `email`...) y puede leer `csd_cer_base64`, `csd_key_base64` y `csd_password` de `empresas`; y los cuerpos de
+`siguiente_folio_pago`, `siguiente_folio_pago_proveedor` y `periodo_esta_cerrado` no comprueban la empresa. Es una
+confirmación por lectura de políticas, permisos y código: **no se hizo ningún intento real de explotarlo** (el intento lo hace
+`test-endurecimiento-seguridad.js`, que restaura lo que cambie). Un hallazgo más: como `perfiles_update_propio` no depende
+de `auth_empresa_id()`, una persona dada de baja (`activo = false`) podría reactivarse a sí misma.
+
+**Hallazgos (por orden de gravedad).**
 1. **Escalada de privilegios en `perfiles` (alta).** `perfiles_update_propio` permite actualizar la propia fila con
    `with check (id = auth.uid())` y sin limitar columnas: con la API directa, cualquier usuario podría cambiarse `rol_id` (a
    director) o `empresa_id` (a otra empresa, cuyo UUID es adivinable). Además `perfiles_update_gestion_equipo` deja a RH
@@ -156,6 +164,20 @@ confirmado contra DEV que la tabla cerrada se comporta como se diseñó en OT-00
 4. **Menores.** Todas las políticas son para el rol `public` en vez de `authenticated` (no abre nada porque `auth_empresa_id()` es
    nulo sin sesión). `anon` ejecuta todas las funciones. `crear_nomina` y `periodo_esta_cerrado` existen en DEV y ya se pueden documentar.
 
+**Arreglo PREPARADO, NO APLICADO** (SQL de escritura: requiere aprobación; va en una transacción, es idempotente y tiene rollback):
+`database/OT-0038-endurecimiento-seguridad.sql` y `database/OT-0038-endurecimiento-seguridad-rollback.sql`. Contenido:
+trigger en `perfiles` (la empresa y el correo no cambian; nadie cambia su propio rol ni estado; solo Admin/Director cambian roles;
+RH no toca a Admin/Director; siempre queda un director activo; la llave de servicio y el SQL Editor no se restringen);
+trigger en `invitaciones` (RH no invita con rol Admin/Director); `revoke select` de `empresas` a `anon`/`authenticated` y `grant`
+de las 13 columnas no secretas; las funciones de folio y `periodo_esta_cerrado` solo aceptan la empresa del usuario (o la llave
+de servicio); `anon` y PUBLIC pierden `execute` en las 14 funciones de escritura (`authenticated` y `service_role` lo conservan
+explícito; `auth_empresa_id()` y `auth_rol()` no se tocan porque las usan las políticas). **Pendiente:** el cuerpo real de
+`siguiente_folio(uuid, text)` (folio de pólizas) no se ha exportado, así que solo se le quita `execute` a `anon`.
+Verificación: `backend/test-endurecimiento-seguridad.js` (11 comprobaciones con una sesión real; antes del SQL debe dar FALLA,
+después TODO OK) y su prueba de lógica `backend/test-endurecimiento-logica.js` (3 pruebas con base falsa, protegida y sin proteger, que
+comprueban también que el perfil se restaura si un intento se llega a aplicar).
+
+Esto sigue siendo la propuesta original; lo anterior es lo que quedó escrito:
 **Arreglos propuestos (SQL de escritura: requieren aprobación y no se aplicaron).** Un `BEFORE UPDATE` en `perfiles` que, para
 quien no sea el servicio, impida cambiar `empresa_id`, impida que alguien cambie su propio `rol_id` o `activo`, impida que RH
 toque a Admin/Director y que quede una empresa sin director activo; revocar `select` de las columnas `csd_*` a `authenticated`
