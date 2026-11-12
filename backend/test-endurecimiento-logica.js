@@ -72,7 +72,7 @@ await ok('con la base protegida: todo OK y el perfil queda intacto', async () =>
   const { admin, usuario, anon, estado } = baseFalsa({ protegida: true });
   const r = await ejecutar({ admin, usuario, anon, uid: UID });
   assert.equal(r.pasa, true, JSON.stringify(r.filas.filter((f) => f.veredicto !== 'OK')));
-  assert.equal(r.filas.length, 11); // 1a 1b · 2a 2b 2c · 3a 3b 3c 3d · 4a · 5
+  assert.equal(r.filas.length, 12); // 1a 1b · 2a 2b 2c · 3a 3b 3e 3c 3d · 4a · 5
   assert.deepEqual({ ...estado.perfil }, { id: UID, empresa_id: EMP_A, rol_id: 'r-vend', activo: true });
   assert.equal(estado.restauraciones, 0);
 });
@@ -81,7 +81,7 @@ await ok('con la base SIN proteger: detecta cada hueco y restaura el perfil que 
   const { admin, usuario, anon, estado } = baseFalsa({ protegida: false });
   const r = await ejecutar({ admin, usuario, anon, uid: UID });
   const falla = (id) => r.filas.find((f) => f.id === id).veredicto === 'FALLA';
-  for (const id of ['1a', '2a', '2b', '2c', '3a', '3b', '3c', '4a']) assert.equal(falla(id), true, 'debía fallar ' + id);
+  for (const id of ['1a', '2a', '2b', '2c', '3a', '3b', '3e', '3c', '4a']) assert.equal(falla(id), true, 'debía fallar ' + id);
   for (const id of ['1b', '3d', '5']) assert.equal(falla(id), false, 'no debía fallar ' + id);
   assert.equal(r.pasa, false);
   assert.deepEqual({ ...estado.perfil }, { id: UID, empresa_id: EMP_A, rol_id: 'r-vend', activo: true }, 'el perfil NO quedó restaurado');

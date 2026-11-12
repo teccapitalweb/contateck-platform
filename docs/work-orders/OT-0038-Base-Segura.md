@@ -188,6 +188,23 @@ solo porque la prueba usaba `.select()` (RETURNING), que exige que la fila nueva
 atacaría una persona, el cambio sí se aplicaría. La prueba ahora no usa `.select()`, y su prueba de lógica reproduce el caso
 (con la versión anterior del script la misma prueba falla: "debía fallar 2b"). Ese intento todavía no se ha repetido contra DEV.
 
+**APLICADO en Supabase DEV el 2026-11-12** (`OT-0038-endurecimiento-seguridad.sql`, ejecutado por una persona en el SQL Editor; "Success").
+Verificación de solo lectura: 2 triggers presentes, `authenticated` ya no lee `csd_password` pero sí `nombre`, `anon` ya no ejecuta
+`confirmar_pago_cliente` y `authenticated` sí. **Repetición de la prueba con la misma cuenta: `✔ TODO OK` (11 de 11)**: el CSD ya no
+se lee ("acceso denegado a las columnas csd_*"); cambiarse el rol, el estado o la empresa se rechaza con los mensajes del trigger
+("No puedes cambiar tu propio rol ni tu estado…", "No se puede cambiar la empresa de un perfil."); los folios y el periodo de una
+empresa ajena responden "Empresa no válida."; sin sesión sale "permission denied for function confirmar_pago_cliente"; el perfil
+quedó intacto. El panel de la app siguió cargando con el SQL aplicado (sesión de Empresa Demo C, director): `/api/perfil`,
+`/api/catalogo`, `/api/operacion`, `/api/cfdis`, `/api/equipo`, `/api/periodos` y demás respondieron 200, el backend no registró
+errores, y la pestaña "Miembros del equipo" lista a las dos personas con el selector de rol y "Dar de baja" para el contador.
+Un aviso de la consola (dos "400") no viene de Supabase ni del backend: la única petición con estado cero es la hoja de fuentes de Google.
+**No verificado:** cambiar el rol o dar de baja a otra persona desde la app (lo hará una persona), la regla de RH (no hay usuario RH)
+y crear una póliza tras el cambio (usa `siguiente_folio`, que aún no lleva la comprobación).
+
+**Siguiente_folio (pólizas):** el cuerpo real de DEV es idéntico al del repo. Parche preparado, NO aplicado:
+`database/OT-0038-endurecimiento-folio-polizas.sql` (misma comprobación de empresa; incluye cómo deshacerlo). La prueba suma la
+comprobación `3e` (ahora 12 en total; antes de este parche `3e` dará FALLA).
+
 Esto sigue siendo la propuesta original; lo anterior es lo que quedó escrito:
 **Arreglos propuestos (SQL de escritura: requieren aprobación y no se aplicaron).** Un `BEFORE UPDATE` en `perfiles` que, para
 quien no sea el servicio, impida cambiar `empresa_id`, impida que alguien cambie su propio `rol_id` o `activo`, impida que RH

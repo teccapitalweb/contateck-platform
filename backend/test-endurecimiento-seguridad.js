@@ -75,6 +75,9 @@ export async function ejecutar({ admin, usuario, anon, uid }) {
   const folioP = await usuario.rpc('siguiente_folio_pago_proveedor', { p_empresa_id: inventada });
   await admin.from('folios_contador').delete().eq('empresa_id', inventada);
   anota('3b', 'siguiente_folio_pago_proveedor rechaza una empresa que no es la tuya', !!folioP.error && /Empresa no válida/i.test(folioP.error.message || ''), folioP.error ? texto(folioP.error) : 'NO la rechazó');
+  const folioPol = await usuario.rpc('siguiente_folio', { p_empresa_id: inventada, p_tipo_poliza: 'Ingreso' });
+  await admin.from('folios_contador').delete().eq('empresa_id', inventada);
+  anota('3e', 'siguiente_folio (pólizas) rechaza una empresa que no es la tuya', !!folioPol.error && /Empresa no válida/i.test(folioPol.error.message || ''), folioPol.error ? texto(folioPol.error) : 'NO la rechazó');
   const per = await usuario.rpc('periodo_esta_cerrado', { p_empresa_id: inventada, p_fecha: '2026-11-01' });
   anota('3c', 'periodo_esta_cerrado rechaza una empresa que no es la tuya', !!per.error && /Empresa no válida/i.test(per.error.message || ''), per.error ? texto(per.error) : 'NO la rechazó');
   const perPropio = await usuario.rpc('periodo_esta_cerrado', { p_empresa_id: original.empresa_id, p_fecha: '2026-11-01' });
