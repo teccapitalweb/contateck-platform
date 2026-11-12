@@ -33,8 +33,11 @@ function baseFalsa({ protegida }) {
     }
     if (q.tabla === 'perfiles' && q.op === 'update') {
       if (protegida) return { data: null, error: { code: 'P0001', message: 'No puedes cambiar tu propio rol ni tu estado' } };
-      Object.assign(estado.perfil, q.payload); // base sin proteger: el cambio se aplica
-      return { data: [{ id: UID }], error: null };
+      // Base sin proteger. Con RETURNING (.select) PostgREST exige que la fila nueva siga visible: al pasarse a otra
+      // empresa deja de serlo y el cambio se rechaza; SIN RETURNING sí se aplica (como lo haría quien ataca).
+      if (q.devuelve && q.payload.empresa_id) return { data: null, error: { code: '42501', message: 'new row violates row-level security policy for table "perfiles"' } };
+      Object.assign(estado.perfil, q.payload);
+      return { data: q.devuelve ? [{ id: UID }] : null, error: null };
     }
     return { data: null, error: null };
   };
@@ -82,7 +85,8 @@ await ok('con la base SIN proteger: detecta cada hueco y restaura el perfil que 
   for (const id of ['1b', '3d', '5']) assert.equal(falla(id), false, 'no debía fallar ' + id);
   assert.equal(r.pasa, false);
   assert.deepEqual({ ...estado.perfil }, { id: UID, empresa_id: EMP_A, rol_id: 'r-vend', activo: true }, 'el perfil NO quedó restaurado');
-  assert.equal(estado.restauraciones, 3); // un cambio por cada intento que sí se aplicó
+  assert.equal(estado.restauraciones, 3); // un cambio por cada intento que sí se aplicó (rol, empresa y estado)
+  assert.match(r.filas.find((f) => f.id === '2b').nota, /restauró/, 'el pase a otra empresa debe contarse como aplicado');
   assert.match(r.filas.find((f) => f.id === '2a').nota, /restauró/);
 });
 

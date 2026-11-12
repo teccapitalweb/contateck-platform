@@ -46,8 +46,11 @@ export async function ejecutar({ admin, usuario, anon, uid }) {
 
   // --- 2. Cambiarse a uno mismo ---
   // Cada intento se verifica por el VALOR final en la base; si cambió, se restaura.
+  // OJO: el UPDATE va SIN .select(). Con RETURNING, PostgREST exige que la fila NUEVA siga siendo visible para quien la
+  // actualiza; al pasarse a otra empresa ya no lo es y el cambio sale "rechazado" aunque sin RETURNING SÍ se aplicaría
+  // (así lo haría quien ataca). En la primera corrida real (2026-11-12) esto hizo que 2b saliera OK sin serlo.
   const intento = async (id, nombre, campos) => {
-    const r = await usuario.from('perfiles').update(campos).eq('id', uid).select('id');
+    const r = await usuario.from('perfiles').update(campos).eq('id', uid);
     const { data: despues } = await admin.from('perfiles').select('id, empresa_id, rol_id, activo').eq('id', uid).maybeSingle();
     const cambio = !despues || Object.keys(campos).some((k) => despues[k] !== original[k]);
     if (cambio) {

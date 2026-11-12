@@ -177,6 +177,17 @@ Verificación: `backend/test-endurecimiento-seguridad.js` (11 comprobaciones con
 después TODO OK) y su prueba de lógica `backend/test-endurecimiento-logica.js` (3 pruebas con base falsa, protegida y sin proteger, que
 comprueban también que el perfil se restaura si un intento se llega a aplicar).
 
+**Prueba ANTES del SQL (2026-11-12, cuenta de Empresa Demo C, rol director, DEV): 7 FALLAS, que es lo esperado sin el arreglo.**
+Se aplicaron de verdad (y la prueba los restauró en el acto; el perfil quedó igual que al empezar): cambiarse el propio rol
+(`2a`) y cambiarse el propio estado `activo` (`2c`). Las llaves del CSD se leyeron con la API directa (`1a`). Sin sesión
+(`anon`) se ejecutó `confirmar_pago_cliente` y respondió desde dentro de la función (`4a`). `periodo_esta_cerrado` aceptó una
+empresa inventada (`3c`). `siguiente_folio_pago` y `siguiente_folio_pago_proveedor` fallaron solo por la llave foránea de
+`folios_contador` porque el id de empresa era inventado (`3a`, `3b`); con el id de una empresa real habrían avanzado su contador.
+**Error de la prueba, corregido:** el intento de pasarse a otra empresa (`2b`) salió "rechazado" por la política de RLS, pero
+solo porque la prueba usaba `.select()` (RETURNING), que exige que la fila nueva siga visible. Sin RETURNING, que es como
+atacaría una persona, el cambio sí se aplicaría. La prueba ahora no usa `.select()`, y su prueba de lógica reproduce el caso
+(con la versión anterior del script la misma prueba falla: "debía fallar 2b"). Ese intento todavía no se ha repetido contra DEV.
+
 Esto sigue siendo la propuesta original; lo anterior es lo que quedó escrito:
 **Arreglos propuestos (SQL de escritura: requieren aprobación y no se aplicaron).** Un `BEFORE UPDATE` en `perfiles` que, para
 quien no sea el servicio, impida cambiar `empresa_id`, impida que alguien cambie su propio `rol_id` o `activo`, impida que RH
