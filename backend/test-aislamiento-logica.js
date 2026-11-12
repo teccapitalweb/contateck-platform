@@ -12,7 +12,7 @@ import { ejecutar, revisarTabla, TABLAS } from './test-aislamiento-empresas.js';
 // visible(tabla, fila) decide qué ve el usuario; el cliente "admin" ve todo (como la llave de servicio).
 class Consulta {
   constructor(db, tabla, esAdmin) { this.db = db; this.tabla = tabla; this.esAdmin = esAdmin; this.filtros = []; this.soloContar = false; this.tope = Infinity; this.conConteo = false; }
-  select(_cols, opc = {}) { this.soloContar = !!opc.head; this.conConteo = opc.count === 'exact'; return this; }
+  select(cols, opc = {}) { this.cols = cols || '*'; this.soloContar = !!opc.head; this.conConteo = opc.count === 'exact'; return this; }
   eq(c, v) { this.filtros.push((f) => f[c] === v); return this; }
   neq(c, v) { this.filtros.push((f) => f[c] !== undefined && f[c] !== null && f[c] !== v); return this; } // como SQL: null no cuenta
   is(c, v) { this.filtros.push((f) => (f[c] === undefined ? null : f[c]) === v); return this; }
@@ -22,6 +22,10 @@ class Consulta {
   _ejecutar() {
     const tabla = this.db.tablas[this.tabla];
     if (!tabla) return { data: null, count: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${this.tabla}'` } };
+    // Columnas protegidas (como las csd_* de empresas): con sesión, pedir "*" da acceso denegado y, con HEAD, el mensaje viene vacío.
+    if (!this.esAdmin && this.db.columnasProtegidas && this.db.columnasProtegidas[this.tabla] && this.cols === '*') {
+      return { data: null, count: null, status: 403, error: { message: '', details: '', hint: '', code: '' } };
+    }
     if (!this.esAdmin && this.db.denegadas && this.db.denegadas[this.tabla]) {
       // como PostgREST: con head no hay cuerpo y el mensaje llega vacío; sin head trae el código 42501
       return this.soloContar
@@ -58,6 +62,7 @@ function baseFalsa({ empresaUsuario, fugas = {}, fugaStorage = false }) {
   };
   const db = {
     tablas, empresaUsuario, fugaStorage, archivos: [`${A}/a.pdf`, `${B}/b.pdf`],
+    columnasProtegidas: { empresas: true }, // como en DEV tras OT-0038
     visible(tabla, f) {
       if (tabla === 'administradores_plataforma') return !!fugas[tabla];
       if (fugas[tabla]) return true; // hueco: esta tabla se ve completa
@@ -69,7 +74,7 @@ function baseFalsa({ empresaUsuario, fugas = {}, fugaStorage = false }) {
   return { db, admin: cliente(db, true), usuario: cliente(db, false) };
 }
 
-const CHICAS = [{ t: 'empresas', tipo: 'propia', col: 'id' }, { t: 'perfiles' }, { t: 'polizas' }, { t: 'poliza_partidas', tipo: 'hija', fk: 'poliza_id', padre: 'polizas' },
+const CHICAS = [{ t: 'empresas', tipo: 'propia', col: 'id', cols: 'id' }, { t: 'perfiles' }, { t: 'polizas' }, { t: 'poliza_partidas', tipo: 'hija', fk: 'poliza_id', padre: 'polizas' },
   { t: 'cfdis' }, { t: 'clientes' }, { t: 'administradores_plataforma', tipo: 'cerrada' }, { t: 'roles', tipo: 'catalogo' }, { t: 'nominas' }];
 const veredictos = (r) => Object.fromEntries(r.filas.map((f) => [f.tabla, f.veredicto]));
 let n = 0; const ok = async (nombre, fn) => { await fn(); n++; console.log('  ✔ ' + nombre); };
@@ -137,6 +142,17 @@ await ok('un error de consulta se reporta como ERROR y hace fallar la prueba (no
   db.tablas.perfiles = [{ id: 'u1' }]; // sin columna empresa_id
   const r = await ejecutar({ admin, usuario, empresaId: 'emp-A', tablas: [{ t: 'perfiles' }], conStorage: false });
   assert.equal(r.filas[0].veredicto, 'ERROR'); assert.equal(r.pasa, false);
+});
+
+await ok('empresas (con columnas protegidas): pedir "*" con sesión es ERROR, y la lista real pide columnas explícitas', async () => {
+  const { admin, usuario } = baseFalsa({ empresaUsuario: 'emp-A' });
+  const malo = await revisarTabla({ t: 'empresas', tipo: 'propia', col: 'id' }, { admin, usuario, empresaId: 'emp-A' });
+  assert.equal(malo.veredicto, 'ERROR'); // así falló la corrida real tras proteger las llaves del CSD
+  assert.ok(!malo.nota.includes('[object Object]'));
+  const spec = TABLAS.find((t) => t.t === 'empresas');
+  assert.ok(spec.cols && spec.cols !== '*', 'la tabla empresas debe pedir columnas explícitas');
+  const bueno = await revisarTabla(spec, { admin, usuario, empresaId: 'emp-A' });
+  assert.equal(bueno.veredicto, 'OK'); assert.equal(bueno.ve, 0); assert.equal(bueno.existen, 1);
 });
 
 await ok('la lista real de tablas incluye las del backend, las fiscales y la tabla cerrada', async () => {

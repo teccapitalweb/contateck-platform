@@ -201,9 +201,18 @@ Un aviso de la consola (dos "400") no viene de Supabase ni del backend: la únic
 **No verificado:** cambiar el rol o dar de baja a otra persona desde la app (lo hará una persona), la regla de RH (no hay usuario RH)
 y crear una póliza tras el cambio (usa `siguiente_folio`, que aún no lleva la comprobación).
 
-**Siguiente_folio (pólizas):** el cuerpo real de DEV es idéntico al del repo. Parche preparado, NO aplicado:
-`database/OT-0038-endurecimiento-folio-polizas.sql` (misma comprobación de empresa; incluye cómo deshacerlo). La prueba suma la
-comprobación `3e` (ahora 12 en total; antes de este parche `3e` dará FALLA).
+**Siguiente_folio (pólizas): APLICADO en DEV el 2026-11-12** (`database/OT-0038-endurecimiento-folio-polizas.sql`, mismo cuerpo de DEV
+más la comprobación de empresa; incluye cómo deshacerlo). Repetición de la prueba: **`✔ TODO OK` (12 de 12)**, con `3e`
+"siguiente_folio (pólizas) rechaza una empresa que no es la tuya → Empresa no válida.". **Camino legítimo verificado:** con la
+sesión de Demo C (director) se creó una póliza desde Contabilidad ("Nueva póliza", Egreso, $1,000, 2 partidas); en la base quedó
+`E-00013`, estado `ok`, creada después del parche, con debe = haber = 1000 (cuadra), 14 pólizas de la empresa y el contador de
+folios en E=13. No hubo error ni folio `LOCAL-`.
+
+**Segunda corrida de la prueba de aislamiento (tras el endurecimiento), con Demo C:** `empresas` salió `ERROR · {"message":""}` y
+las demás tablas igual que antes (0 fugas). Causa: es un fallo de la prueba, no de la base. Con las llaves del CSD protegidas por
+columna, un `select *` con sesión sobre `empresas` da "acceso denegado" por diseño (con HEAD, el mensaje llega vacío). Ahora la
+prueba pide solo columnas no secretas (`cols: 'id'`) en esa tabla; su prueba de lógica (10 casos) reproduce el error con la
+configuración anterior. La corrida de `empresas` ya corregida todavía no se ha repetido contra DEV.
 
 Esto sigue siendo la propuesta original; lo anterior es lo que quedó escrito:
 **Arreglos propuestos (SQL de escritura: requieren aprobación y no se aplicaron).** Un `BEFORE UPDATE` en `perfiles` que, para
@@ -216,7 +225,10 @@ toque a Admin/Director y que quede una empresa sin director activo; revocar `sel
 - `node --check` de los dos scripts.
 
 ### NO verificado
-- La prueba con una cuenta de otra empresa (TEC CAPITAL): cubriría `obligaciones_fiscales` y `declaraciones`.
+- `obligaciones_fiscales` y `declaraciones` en vivo con una cuenta de otra empresa: no hay una cuenta de TEC CAPITAL con contraseña
+  disponible para pruebas. Quedan cubiertas **solo por lectura de sus políticas** (`empresa_id = auth_empresa_id()` y rol fiscal,
+  el mismo patrón que pasó la prueba en las demás tablas). Para probarlas en vivo: ponerle contraseña a un usuario de otra empresa
+  en Supabase (Authentication → Users) o sembrar una fila de prueba en otra empresa (necesita el esquema de la Fase 3).
 - Triggers y permisos por columna de `perfiles` y `empresas`, y el cuerpo de las funciones de folio: de eso depende que los hallazgos 1 a 3 sean reales.
 - Escrituras entre empresas (insertar, actualizar o borrar filas ajenas): la prueba no escribe; se audita con las políticas
   (insert y update de todas las tablas comprueban `empresa_id = auth_empresa_id()`, salvo `perfiles` y las funciones de folio).
