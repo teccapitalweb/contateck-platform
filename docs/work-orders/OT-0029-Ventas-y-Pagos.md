@@ -197,3 +197,71 @@ No se probó: periodo cerrado, y rechazo de una venta por quien la registró
    peticiones en serie a la base. Mejora posible, no urgente.
 5. **`/api/firebase-token` responde 404** y por eso el panel muestra
    "Firestore no disponible" (fuera de Ventas).
+
+---
+
+## 7. Confirmación de pagos atómica (Cobranza y Cuentas por pagar)
+
+**Problema.** Confirmar un pago bloquea la fila de *ese* pago, pero el saldo de la
+factura se compara en el backend (OT-0034) con una consulta aparte, antes de
+llamar a la función de la base. Si dos personas confirman a la vez **dos pagos
+distintos de la misma factura** (cada uno cabía en el saldo), las dos lecturas
+ven el saldo completo, las dos pasan y la factura queda pagada de más, con dos
+pólizas. Bloquear cada pago no lo evita: son filas distintas.
+
+**Cambio preparado (no aplicado en ninguna base).**
+
+| Archivo | Para qué |
+|---|---|
+| `database/OT-0029-confirmacion-atomica-introspeccion.sql` | Paso 0, solo lectura: exporta las definiciones reales de `confirmar_pago_*`, revisa las vistas de saldo y lista pagos "registrados" que ya no cabrían. |
+| `database/OT-0029-confirmacion-atomica.sql` | Reemplaza `confirmar_pago_cliente` y `confirmar_pago_proveedor`: tras bloquear el pago, bloquea la **factura** (`for no key update`), lee el saldo actual con el bloqueo ya en mano y, si el pago no cabe, aborta todo (sin póliza ni cambio de estado). |
+| `backend/test-confirmacion-concurrente.js` | Prueba de carrera hecha por una persona con su login: registra dos pagos que no caben juntos y los confirma en paralelo. |
+
+Decisiones de diseño:
+- `for no key update` y no `for update`: este último choca con el bloqueo de
+  llave foránea que toma cualquier INSERT de pago y frenaría los registros
+  mientras alguien confirma. Así solo se estorban dos confirmaciones de la misma
+  factura.
+- Orden de bloqueos fijo pago → factura: sin interbloqueos.
+- El mensaje de error es el mismo que ya da el backend, así que la pantalla no
+  cambia; el chequeo del backend queda como aviso rápido y la función es la
+  autoridad. **No hay cambio de código de backend ni de frontend.**
+- El archivo reemplaza las funciones completas con las versiones del repo
+  (OT-0020 fix2, OT-0023): **correr primero el paso 0** y comparar con DEV.
+- Fuera de alcance: `registrar_pago_*` sigue validando contra pagos confirmados
+  (dos registros simultáneos pueden dejar dos "registrados" que no caben juntos;
+  el primero en confirmar gana). Tampoco valida factura cancelada al confirmar.
+  Decisiones de la contadora si se quiere que "registrado" reserve saldo.
+
+Orden para aplicarlo (DEV): paso 0 → pegar el resultado de la consulta 1 para
+comparar → `OT-0029-confirmacion-atomica.sql` → validación del propio archivo →
+prueba de carrera. Para producción, mismo orden.
+
+### Pruebas para repetir contra la regla de saldo al confirmar (árbol integrado)
+
+Se prueban con el código que trae la regla (OT-0034, rama `integracion-local`),
+con el login de una persona y solo datos de prueba.
+
+| # | Caso | Esperado |
+|---|---|---|
+| C1 | Factura con saldo S. Registrar pago A y pago B de ~60% de S cada uno | Los dos se registran (cada uno cabe solo) |
+| C2 | Confirmar A, luego B | A confirma con póliza; B: "dejaría la factura pagada de más: su saldo actual es $…"; B sigue "registrado", sin póliza nueva |
+| C3 | Pago que cubre justo el saldo restante | Confirma (borde exacto) |
+| C4 | Doble clic en Confirmar sobre el mismo pago | Una sola póliza |
+| C5 | Nota de crédito / REP / factura cancelada | No aparecen para cobrar |
+| C6 | Lo mismo en Cuentas por pagar (C1–C3 con factura de proveedor) | Mismo comportamiento |
+| V1 | Ventas: registrar → tomar → confirmar | Póliza `I-…`; en el detalle, el folio es un botón que abre la póliza en Contabilidad |
+| V2 | Venta con IVA | El detalle dice "con IVA incluido… no se suma aparte"; póliza desglosada |
+| V3 | Confirmar una venta no mueve saldos de Cobranza | Los saldos de facturas no cambian (ver riesgo de ingreso duplicado Ventas vs Cobranza, ya anotado) |
+| A1 | Con el SQL atómico aplicado: `node test-confirmacion-concurrente.js cliente` | Uno confirma, el otro rechazado, saldo ≥ 0 |
+
+**Paso 0 ejecutado en DEV (2026-11-11, solo lectura).** Las definiciones reales
+de `confirmar_pago_cliente` y `confirmar_pago_proveedor` coinciden con las del
+repo (OT-0020 fix2 y OT-0023; solo difiere el espaciado), así que
+`OT-0029-confirmacion-atomica.sql` no pisa ningún cambio hecho a mano. Las dos
+vistas de saldo son `security_invoker=true`; `cfdis`, `cfdis_proveedor`,
+`pagos_cliente` y `pagos_proveedor` tienen `empresa_id` y estado/estatus. Hay un
+solo pago "registrado" que ya no cabe (cliente, $100 contra saldo $42.68: el pago
+2 de la prueba de OT-0034); con la regla nueva no se podrá confirmar y no hay
+función para cancelarlo, así que queda como registrado. El SQL de cambio sigue
+sin aplicarse: lo revisa Jorge.
