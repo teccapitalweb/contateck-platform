@@ -47,6 +47,13 @@
   .adm__sal{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:.86rem}
   .adm__sal:last-child{border-bottom:0}
   .adm__nota{font-size:.78rem;color:var(--faint);margin-top:10px}
+  .adm__login{max-width:420px;margin:48px auto 0;background:var(--glass);border:1px solid var(--glass-brd);border-radius:var(--radius);padding:26px}
+  .adm__login h2{font-family:var(--display);margin:0 0 6px;font-size:1.25rem}
+  .adm__login label{display:block;font-size:.82rem;color:var(--muted);margin:14px 0 6px}
+  .adm__input{width:100%;box-sizing:border-box;background:var(--ink-700);color:var(--text);border:1px solid var(--line-strong);border-radius:var(--radius-sm);padding:11px 12px;font:inherit}
+  .adm__input:focus{outline:2px solid var(--brand);outline-offset:1px}
+  .adm__login .adm__btn{width:100%;margin-top:18px;background:var(--brand-2);border-color:var(--brand-2);color:#fff;padding:11px}
+  .adm__err{color:var(--down);font-size:.84rem;margin:12px 0 0;min-height:1.1em}
   [hidden]{display:none!important}
 </style>
 </head>
@@ -60,6 +67,17 @@
       <button class="adm__btn" id="admSalir" type="button">Cerrar sesión</button>
     </div>
   </div>
+
+  <form id="admLogin" class="adm__login" hidden autocomplete="on">
+    <h2>Administración de plataforma</h2>
+    <p class="muted" style="margin:0">Acceso solo para el dueño de CONTATECK. Si eres parte de un despacho, entra por el <a class="link" href="login.html">acceso normal</a>.</p>
+    <label for="admEmail">Correo</label>
+    <input class="adm__input" id="admEmail" type="email" autocomplete="username" required>
+    <label for="admPwd">Contraseña</label>
+    <input class="adm__input" id="admPwd" type="password" autocomplete="current-password" required>
+    <p class="adm__err" id="admLoginErr" role="alert"></p>
+    <button class="adm__btn" id="admEntrar" type="submit">Entrar</button>
+  </form>
 
   <div id="admEstado" class="adm__aviso"><h2>Un momento…</h2><p class="muted">Comprobando tu acceso.</p></div>
 
@@ -95,6 +113,6 @@
 
 <script src="supabase-config.js?v=2"></script>
 <script src="app-config.js?v=1"></script>
-<script type="module" src="admin.js?v=1"></script>
+<script type="module" src="admin.js?v=2"></script>
 </body>
 </html>

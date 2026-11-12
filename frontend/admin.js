@@ -21,8 +21,20 @@ const fecha = (iso) => {
   return isNaN(d) ? "—" : d.toLocaleString("es-MX", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
+// Puerta propia: aquí NO se manda a nadie al login de los despachos.
+function mostrarLogin(msg) {
+  $("admEstado").hidden = true;
+  $("admContenido").hidden = true;
+  $("admLogin").hidden = false;
+  $("admCorreo").textContent = "";
+  $("admIrPanel").hidden = true;
+  $("admSalir").hidden = true;
+  $("admLoginErr").textContent = msg || "";
+}
+
 function aviso(titulo, texto, extraHtml) {
   const el = $("admEstado");
+  $("admLogin").hidden = true;
   el.hidden = false;
   $("admContenido").hidden = true;
   el.innerHTML = "<h2>" + esc(titulo) + "</h2><p class=\"muted\">" + texto + "</p>" + (extraHtml || "");
@@ -30,11 +42,11 @@ function aviso(titulo, texto, extraHtml) {
 
 async function api(ruta) {
   const { data } = await supabase.auth.getSession();
-  if (!data || !data.session) { window.location.replace("login.html"); throw new Error("sin sesión"); }
+  if (!data || !data.session) { mostrarLogin(); throw new Error("sin sesión"); }
   const r = await fetch(BACKEND + "/api/plataforma" + ruta, { headers: { Authorization: "Bearer " + data.session.access_token } });
   let j = null;
   try { j = await r.json(); } catch (e) { /* respuesta sin JSON */ }
-  if (r.status === 401) { window.location.replace("login.html"); throw new Error("sesión vencida"); }
+  if (r.status === 401) { mostrarLogin("Tu sesión venció. Entra de nuevo."); throw new Error("sesión vencida"); }
   if (!r.ok || !j || !j.ok) throw Object.assign(new Error((j && j.error) || "Error del servidor"), { status: r.status });
   return j;
 }
@@ -125,7 +137,10 @@ async function cargarTodo() {
 
 async function iniciar() {
   const { data } = await supabase.auth.getSession();
-  if (!data || !data.session) { window.location.replace("login.html"); return; }
+  if (!data || !data.session) { mostrarLogin(); return; }
+  $("admLogin").hidden = true;
+  $("admEstado").hidden = false;
+  $("admSalir").hidden = false;
   $("admCorreo").textContent = data.session.user.email || "";
 
   let yo;
@@ -139,7 +154,10 @@ async function iniciar() {
     if (yo.tablaFaltante) {
       aviso("Falta un paso de instalación", "La tabla <code>administradores_plataforma</code> todavía no existe en la base. Corre <code>database/OT-0037-administradores-plataforma.sql</code> en el SQL Editor de Supabase y recarga.");
     } else {
-      aviso("Sin acceso", "Esta cuenta no es administradora de la plataforma.", "<p><a class=\"adm__btn\" href=\"dashboard.html\">Ir al panel de mi empresa</a></p>");
+      aviso("Sin acceso", "Esta cuenta no es administradora de la plataforma.",
+        "<p><a class=\"adm__btn\" href=\"dashboard.html\">Ir al panel de mi empresa</a> <button class=\"adm__btn\" id=\"admOtraCuenta\" type=\"button\">Entrar con otra cuenta</button></p>");
+      const otra = $("admOtraCuenta");
+      if (otra) otra.addEventListener("click", salir);
     }
     return;
   }
@@ -154,5 +172,34 @@ async function iniciar() {
 
 $("admRecargar").addEventListener("click", cargarTodo);
 $("admCerrarUsuarios").addEventListener("click", () => { $("admUsuariosCard").hidden = true; });
-$("admSalir").addEventListener("click", async () => { try { await supabase.auth.signOut(); } catch (e) { /* ya sin sesión */ } window.location.replace("login.html"); });
+async function salir() {
+  try { await supabase.auth.signOut(); } catch (e) { /* ya sin sesión */ }
+  mostrarLogin();
+}
+$("admSalir").addEventListener("click", salir);
+
+// Acceso propio de administración (correo y contraseña).
+$("admLogin").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const correo = ($("admEmail").value || "").trim();
+  const pwd = $("admPwd").value || "";
+  const btn = $("admEntrar");
+  if (!correo || !pwd) { $("admLoginErr").textContent = "Escribe tu correo y contraseña."; return; }
+  $("admLoginErr").textContent = "";
+  btn.disabled = true; btn.textContent = "Entrando…";
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email: correo, password: pwd });
+    if (error) throw error;
+    $("admPwd").value = "";
+    await iniciar();
+  } catch (e) {
+    const m = String((e && e.message) || "");
+    $("admLoginErr").textContent = /invalid login/i.test(m) ? "Correo o contraseña incorrectos."
+      : /not confirmed/i.test(m) ? "Confirma tu correo antes de entrar."
+      : /too many/i.test(m) ? "Demasiados intentos. Espera un momento."
+      : "No se pudo iniciar sesión. Inténtalo de nuevo.";
+  } finally {
+    btn.disabled = false; btn.textContent = "Entrar";
+  }
+});
 iniciar();
