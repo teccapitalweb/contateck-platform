@@ -124,13 +124,50 @@ usuario vio 0 filas de otras empresas.
   acceso denegado cuenta como OK (con nota), un error real sigue siendo ERROR y nunca se imprime "[object Object]".
   La causa exacta del error no se vio en pantalla; se dedujo del diseño de esa tabla (OT-0037) y se cubrió con pruebas.
 
+**Segunda corrida (misma sesión, con la corrección):** OK 24 · sin prueba 3 · FUGA 0 · error 0.
+`administradores_plataforma` ahora sale `OK · acceso denegado a usuarios con sesión (correcto)` con 2 filas existentes: queda
+confirmado contra DEV que la tabla cerrada se comporta como se diseñó en OT-0037.
+
+### Introspección de RLS ejecutada en DEV (2026-11-12, solo lectura)
+**Lo que está bien**
+- Las 28 tablas de `public` tienen RLS activo; las dos vistas de saldo son `security_invoker=true`.
+- Todas las políticas por empresa comparan `empresa_id = auth_empresa_id()` (o pasan por la tabla padre:
+  `poliza_partidas` por `polizas`); 0 tablas con `empresa_id` sin RLS.
+- `administradores_plataforma`: RLS sin políticas y sin permisos para `anon` ni `authenticated`. `folios_contador`, `pagos_*` y
+  `auditoria_log` solo se escriben a través de funciones `SECURITY DEFINER`.
+- Storage: bucket `documentos` privado, políticas por carpeta de empresa y carpeta `sat` restringida por rol.
+- No hay políticas de `DELETE` sobre pólizas, CFDI, cuentas ni declaraciones.
+
+**Hallazgos (por orden de gravedad). Los dos primeros se deducen de las políticas y del código y NO se han comprobado con un intento real: falta la consulta de triggers y permisos por columna.**
+1. **Escalada de privilegios en `perfiles` (alta).** `perfiles_update_propio` permite actualizar la propia fila con
+   `with check (id = auth.uid())` y sin limitar columnas: con la API directa, cualquier usuario podría cambiarse `rol_id` (a
+   director) o `empresa_id` (a otra empresa, cuyo UUID es adivinable). Además `perfiles_update_gestion_equipo` deja a RH
+   actualizar el `rol_id` de cualquiera de su empresa. Las reglas de Equipo (OT-0034: RH no promueve a Director, no se
+   cambia el propio rol, queda un director activo) están solo en `backend/src/supabaseEquipo.js`, que usa el token del usuario
+   bajo esas mismas políticas. Lo mismo para `invitaciones_insert_gestion_equipo` (RH podría invitar con rol Director).
+2. **CSD legible por cualquier usuario de la empresa (alta para producción).** `empresas_select_propia` es por fila y no por columna:
+   `csd_cer_base64`, `csd_key_base64` y `csd_password` serían legibles con la API directa por cualquier rol de esa empresa
+   (el backend sí elige columnas, pero eso no protege la API). Queda para la OT de emisor y CSD por empresa, junto con cifrarlos.
+3. **`siguiente_folio`, `siguiente_folio_pago` y `siguiente_folio_pago_proveedor` (media).** Son `SECURITY DEFINER`, reciben
+   `p_empresa_id` como parámetro, no comprueban que sea la empresa del usuario (código en el repo) y `anon` puede ejecutarlas
+   (permiso por defecto): cualquiera puede adelantar el contador de folios de otra empresa. No filtra datos, pero rompe la
+   continuidad de folios. `periodo_esta_cerrado(p_empresa_id, p_fecha)` tiene la misma forma y revela si un periodo de otra
+   empresa está cerrado.
+4. **Menores.** Todas las políticas son para el rol `public` en vez de `authenticated` (no abre nada porque `auth_empresa_id()` es
+   nulo sin sesión). `anon` ejecuta todas las funciones. `crear_nomina` y `periodo_esta_cerrado` existen en DEV y ya se pueden documentar.
+
+**Arreglos propuestos (SQL de escritura: requieren aprobación y no se aplicaron).** Un `BEFORE UPDATE` en `perfiles` que, para
+quien no sea el servicio, impida cambiar `empresa_id`, impida que alguien cambie su propio `rol_id` o `activo`, impida que RH
+toque a Admin/Director y que quede una empresa sin director activo; revocar `select` de las columnas `csd_*` a `authenticated`
+(o moverlas a una tabla aparte); validar `p_empresa_id = auth_empresa_id()` dentro de las funciones de folio; revocar `execute` a `anon`.
+
 ### Pruebas ejecutadas
 - `node backend/test-aislamiento-logica.js` → 9 pruebas, todas pasan (incluye las dos de tabla cerrada).
 - `node --check` de los dos scripts.
 
 ### NO verificado
-- La prueba con una cuenta de otra empresa (TEC CAPITAL): cubriría `obligaciones_fiscales` y `declaraciones`, y comprobaría que
-  `administradores_plataforma` ahora sale OK contra DEV.
-- La consulta de introspección: no se ha ejecutado; su sintaxis solo se revisó a mano.
-- Escrituras entre empresas (insertar, actualizar o borrar filas ajenas): la prueba no escribe; eso se audita leyendo las políticas.
+- La prueba con una cuenta de otra empresa (TEC CAPITAL): cubriría `obligaciones_fiscales` y `declaraciones`.
+- Triggers y permisos por columna de `perfiles` y `empresas`, y el cuerpo de las funciones de folio: de eso depende que los hallazgos 1 a 3 sean reales.
+- Escrituras entre empresas (insertar, actualizar o borrar filas ajenas): la prueba no escribe; se audita con las políticas
+  (insert y update de todas las tablas comprueban `empresa_id = auth_empresa_id()`, salvo `perfiles` y las funciones de folio).
 - `documentos_fiscales`, sin filas en DEV.
