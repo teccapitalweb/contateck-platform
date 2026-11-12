@@ -32,7 +32,7 @@ import { obtenerRolUsuario } from './supabaseCfdis.js';
 import {
   esUuid, hoyMexico, diasEntre, validarObligacion, validarDeclaracionNueva,
   validarActualizacionDeclaracion, validarDocumentoNuevo, rutaDocumentoValida, alertasVigencia,
-  esComplementaria, similaresDePeriodo, esDuplicadaDePresentada,
+  esComplementaria, similaresDePeriodo, esDuplicadaDePresentada, validarCodigosAgrupador,
 } from './validacionesFiscal.js';
 
 const ROLES_VEN = ['contador', 'admin', 'director', 'auditor'];
@@ -67,6 +67,9 @@ function errorAmigable(error, accion, log = console) {
     case '23503': return { ok: false, error: 'El registro relacionado no existe.' };
     case '23514': case '22P02': case '22007': case '22008':
       return { ok: false, error: 'Algún dato tiene un formato o valor no válido.' };
+    // Columna que aún no existe: falta correr el script de database/ de la OT.
+    case '42703': case 'PGRST204':
+      return { ok: false, error: 'La base de datos todavía no tiene la columna codigo_agrupador: hay que correr database/OT-0031b-codigo-agrupador.sql en Supabase.' };
     case 'PGRST116': return { ok: false, error: 'No se encontró el registro (o no pertenece a tu empresa).' };
     default: return { ok: false, error: `No se pudo ${accion}. Inténtalo de nuevo; si persiste, avisa al administrador.` };
   }
@@ -292,6 +295,46 @@ export async function crearDocumentoFiscal(accessToken, userId, datos, log = con
     .select().single();
   if (error) return errorAmigable(error, 'guardar el documento', log);
   return { ok: true, documento: data };
+}
+
+// ---------------- Proveedores de la DIOT ----------------
+// Las pólizas de Postgres traen el UUID del CFDI pero no el RFC/nombre del
+// proveedor (eso vive en cfdis_proveedor). La DIOT del panel los une por UUID.
+export async function listarProveedoresDiot(accessToken, log = console) {
+  const chk = await verificarAcceso(accessToken, ROLES_VEN, log);
+  if (!chk.ok) return chk;
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { data, error } = await supabase
+    .from('cfdis_proveedor').select('uuid_sat, emisor_rfc, emisor_nombre').not('uuid_sat', 'is', null).limit(5000);
+  if (error) return errorAmigable(error, 'cargar los proveedores de la DIOT', log);
+  return { ok: true, proveedores: (data || []).map((p) => ({ uuid: p.uuid_sat, rfc: p.emisor_rfc || '', nombre: p.emisor_nombre || '' })) };
+}
+
+// ---------------- Código Agrupador SAT por cuenta ----------------
+// Guarda el lote de la hoja que llena la contadora. Las cuentas se actualizan
+// con el cliente del usuario: la RLS decide qué cuentas son de su empresa
+// (las demás no se tocan y se reportan como "no encontradas").
+export async function guardarCodigosAgrupador(accessToken, filas, log = console) {
+  const chk = await verificarAcceso(accessToken, ROLES_ESCRIBEN_DECLARACIONES, log);
+  if (!chk.ok) return chk;
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const v = validarCodigosAgrupador(filas);
+  if (v.error) return { ok: false, error: v.error };
+
+  let actualizadas = 0;
+  const noEncontradas = [];
+  for (let i = 0; i < v.valores.length; i += 10) {
+    const tanda = v.valores.slice(i, i + 10);
+    const res = await Promise.all(tanda.map((f) =>
+      supabase.from('cuentas_contables').update({ codigo_agrupador: f.codigo_agrupador }).eq('id', f.id).select('id')));
+    for (let j = 0; j < res.length; j++) {
+      if (res[j].error) return errorAmigable(res[j].error, 'guardar los códigos agrupador', log);
+      if (res[j].data && res[j].data.length) actualizadas++; else noEncontradas.push(tanda[j].id);
+    }
+  }
+  return { ok: true, actualizadas, noEncontradas };
 }
 
 // ---------------- Alertas de vigencia de documentos (para el Dashboard) ----------------

@@ -83,7 +83,7 @@
     const mayores = filas.filter((c) => c.nivel === 1);
     return filas.map((c) => {
       const padre = c.nivel === 1 ? null : (mayores.find((m) => m.codigo[0] === c.codigo[0]) || {}).codigo || null;
-      return { id: c.id, codigo: c.codigo, nombre: c.nombre, nat: c.naturaleza === "deudora" ? "Deudora" : "Acreedora", nivel: c.nivel, padre, activo: c.activo !== false };
+      return { id: c.id, codigo: c.codigo, nombre: c.nombre, nat: c.naturaleza === "deudora" ? "Deudora" : "Acreedora", nivel: c.nivel, padre, activo: c.activo !== false, codigoAgrupador: c.codigo_agrupador || "" };
     }).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "es", { numeric: true }));
   }
 
@@ -636,16 +636,65 @@
       return '"' + s.replace(/"/g, '""') + '"';
     };
     const filas = [["Código", "Nombre", "Nivel", "Naturaleza", "Cuenta de mayor", "Código agrupador SAT (llenar)"]]
-      .concat(getCuentas().map((c) => [c.codigo, c.nombre, c.nivel, c.nat, c.padre || "", ""]));
+      .concat(getCuentas().map((c) => [c.codigo, c.nombre, c.nivel, c.nat, c.padre || "", c.codigoAgrupador || ""]));
     return "﻿" + filas.map((f) => f.map(celda).join(",")).join("\r\n");
   }
 
+  // ---- Carga de la hoja con el Código Agrupador SAT (la llena la contadora) ----
+  // Lee un CSV: BOM, separador "," o ";", comillas y saltos de línea dentro de comillas.
+  function parsearCsv(texto) {
+    const t = String(texto || "").replace(/^﻿/, "");
+    const primera = t.split(/\r?\n/, 1)[0] || "";
+    const sep = (primera.match(/;/g) || []).length > (primera.match(/,/g) || []).length ? ";" : ",";
+    const filas = []; let fila = [], cel = "", q = false;
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (q) { if (ch === '"') { if (t[i + 1] === '"') { cel += '"'; i++; } else q = false; } else cel += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === sep) { fila.push(cel); cel = ""; }
+      else if (ch === "\n" || ch === "\r") { if (ch === "\r" && t[i + 1] === "\n") i++; fila.push(cel); cel = ""; filas.push(fila); fila = []; }
+      else cel += ch;
+    }
+    if (cel !== "" || fila.length) { fila.push(cel); filas.push(fila); }
+    return filas.filter((f) => f.some((c) => String(c).trim() !== ""));
+  }
+  const AGRUPADOR_SAT = /^\d{3}(\.\d{2})?$/; // NNN (mayor) o NNN.NN (subcuenta); mismo criterio que el backend
+  function normalizarAgrupador(v) {
+    let s = String(v == null ? "" : v).trim().replace(/^'/, "").replace(/,/g, ".");
+    if (/^\d{3}\.\d$/.test(s)) s += "0"; // Excel quita el cero final: 101.1 era 101.10
+    return s;
+  }
+  // Compara el CSV con el catálogo SIN guardar nada. Las celdas vacías no borran: significan "aún sin llenar".
+  function planCargaAgrupador(filas, cuentas) {
+    const plan = { aplicar: [], sinCambio: 0, vacias: 0, invalidas: [], noEncontradas: [] };
+    if (!filas || filas.length < 2) { plan.error = "El archivo está vacío o solo trae el encabezado."; return plan; }
+    const enc = filas[0].map((h) => String(h).trim().toLowerCase());
+    const iCod = enc.findIndex((h) => h === "código" || h === "codigo");
+    const iAgr = enc.findIndex((h) => h.indexOf("agrupador") !== -1);
+    if (iCod < 0 || iAgr < 0) { plan.error = 'No encuentro las columnas "Código" y "Código agrupador SAT". Usa la hoja que descarga el botón "Hoja de cuentas para la contadora".'; return plan; }
+    const vistos = {};
+    filas.slice(1).forEach((f) => {
+      const codigo = String(f[iCod] == null ? "" : f[iCod]).trim().replace(/^'/, "");
+      if (!codigo || vistos[codigo]) return;
+      vistos[codigo] = true;
+      const valor = normalizarAgrupador(f[iAgr]);
+      const cuenta = cuentas.find((c) => c.codigo === codigo);
+      if (!cuenta) { plan.noEncontradas.push(codigo); return; }
+      if (!valor) { plan.vacias++; return; }
+      if (!AGRUPADOR_SAT.test(valor)) { plan.invalidas.push({ codigo, valor }); return; }
+      if (valor === (cuenta.codigoAgrupador || "")) { plan.sinCambio++; return; }
+      plan.aplicar.push({ id: cuenta.id, codigo, codigoAgrupador: valor });
+    });
+    return plan;
+  }
+
   // XML Catálogo de cuentas (esquema SAT catalogocuentas 1.3)
-  // OJO: CodAgrup se llena con el mismo código de la cuenta; solo es correcto
-  // si ese código existe en el Código Agrupador del SAT (ver OT-0031, pendiente contadora).
+  // CodAgrup lleva el Código Agrupador SAT que la contadora asignó a la cuenta (columna
+  // codigo_agrupador). Si la cuenta aún no lo tiene se manda su código interno, que solo
+  // sirve si coincide con uno del SAT: por eso el panel avisa cuántas cuentas faltan.
   function xmlCatalogoSAT(rfc, mes, anio) {
     const ctas = getCuentas().map((c) =>
-      `    <catalogocuentas:Ctas CodAgrup="${attrSAT(c.codigo, 20)}" NumCta="${attrSAT(c.codigo, 100)}" Desc="${attrSAT(c.nombre || c.codigo, 400)}" Nivel="${parseInt(c.nivel, 10) || 1}" Natur="${c.nat === "Deudora" ? "D" : "A"}"${c.padre ? ` SubCtaDe="${attrSAT(c.padre, 100)}"` : ""}/>`
+      `    <catalogocuentas:Ctas CodAgrup="${attrSAT(c.codigoAgrupador || c.codigo, 20)}" NumCta="${attrSAT(c.codigo, 100)}" Desc="${attrSAT(c.nombre || c.codigo, 400)}" Nivel="${parseInt(c.nivel, 10) || 1}" Natur="${c.nat === "Deudora" ? "D" : "A"}"${c.padre ? ` SubCtaDe="${attrSAT(c.padre, 100)}"` : ""}/>`
     ).join("\n");
     const ns = "http://www.sat.gob.mx/esquemas/ContabilidadE/1_3/CatalogoCuentas";
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -680,6 +729,30 @@ ${ctas}
       configurado: !!(cT && cA) };
   }
 
+  // OT-0031b: RFC y nombre del proveedor por UUID del CFDI (tabla cfdis_proveedor). Las pólizas
+  // que llegan de Postgres a un navegador limpio traen el UUID pero NO el RFC (solo la póliza
+  // que se importó en este mismo navegador lo guardaba): sin esto la DIOT las agrupaba en "—".
+  let proveedoresDiot = null;      // null = aún sin cargar; si no, { uuid en minúsculas: { rfc, nombre } }
+  let intentoProveedoresDiot = false; // se intenta una vez por carga de página (si falla, no se reintenta en bucle)
+  let cargandoProveedoresDiot = false;
+  function proveedorDiot(uuid) {
+    return (proveedoresDiot && uuid && proveedoresDiot[String(uuid).toLowerCase()]) || null;
+  }
+  async function cargarProveedoresDiot() {
+    try {
+      const t = window.CONTATECK_SUPABASE_TOKEN;
+      if (!t) return false;
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const r = await fetch(BACKEND + "/api/fiscal/proveedores-diot", { headers: { Authorization: "Bearer " + t } });
+      const j = await r.json();
+      if (!j || !j.ok) return false;
+      const m = {};
+      (j.proveedores || []).forEach((p) => { if (p.uuid) m[String(p.uuid).toLowerCase()] = p; });
+      proveedoresDiot = m;
+      return true;
+    } catch (e) { return false; }
+  }
+
   // DIOT: operaciones con proveedores (de pólizas de gasto contabilizadas desde CFDI recibido)
   function diot() {
     const provs = {};
@@ -692,8 +765,9 @@ ${ctas}
       // persiste correctamente en Postgres, una póliza anulada volvería
       // a aparecer en DIOT con su monto original, ya sin efecto real.
       if (p.estado && p.estado !== "ok") return;
-      const rfc = p.proveedorRfc || "—";
-      const nom = p.proveedorNombre || (p.concepto || "").split("·").pop().trim();
+      const prov = proveedorDiot(p.cfdiUuid);
+      const rfc = String(p.proveedorRfc || (prov && prov.rfc) || "—").toUpperCase().trim();
+      const nom = p.proveedorNombre || (prov && prov.nombre) || (p.concepto || "").split("·").pop().trim();
       const ivaA = (p.asientos || []).filter((a) => a.codigo === (cuentaRol("ivaAcreditable") || {}).codigo).reduce((s, a) => s + num(a.debe), 0);
       // OT-0020: "base" clasifica gasto por 4 códigos distintos (601, 602,
       // 603, 501) — no es un solo rol de configuracion_contable, es una
@@ -1360,6 +1434,13 @@ ${ctas}
   function renderSAT() {
     const pane = document.querySelector('[data-pane="sat"]');
     if (!pane) return;
+    if (!intentoProveedoresDiot && window.CONTATECK_SUPABASE_TOKEN) {
+      intentoProveedoresDiot = true;
+      cargandoProveedoresDiot = true;
+      cargarProveedoresDiot().then(() => { cargandoProveedoresDiot = false; renderSAT(); });
+    }
+    // Mientras se identifican los proveedores no se muestra el aviso de "sin RFC" (saldría un instante de más).
+    const proveedoresListos = !cargandoProveedoresDiot;
     // OT-0031: el RFC sale primero de la empresa (base de datos), no de lo que
     // quedó guardado en este navegador; si no hay, se usa el último capturado.
     const rfcEmpresa = (window.CONTATECK_EMPRESA_PG && window.CONTATECK_EMPRESA_PG.rfc) || "";
@@ -1367,11 +1448,14 @@ ${ctas}
     // Proveedores sin RFC válido (la DIOT se presenta por RFC): se avisan y se excluyen de la tabla y los totales.
     const dt = dtTodo.filter((d) => RFC_SAT.test(String(d.rfc || "").toUpperCase().trim()));
     const dtSinRfc = dtTodo.filter((d) => dt.indexOf(d) === -1);
-    const diotAviso = dtSinRfc.length
+    const diotAviso = (dtSinRfc.length && proveedoresListos)
       ? `<div class="cont-err" style="margin-bottom:.6rem">${dtSinRfc.reduce((s, d) => s + (d.ops || 0), 0)} operación(es) con proveedores sin RFC válido (base $${fmt(dtSinRfc.reduce((s, d) => s + num(d.base), 0))}, IVA $${fmt(dtSinRfc.reduce((s, d) => s + num(d.iva), 0))}) no se incluyen aquí. Corrige el RFC del proveedor en esas pólizas.</div>` : "";
     const anioActual = new Date().getFullYear();
     const mes = per ? per.mes : (new Date().getMonth() + 1), anio = per ? per.anio : anioActual;
     const balanzaBloqueada = !b.cuadra || !per;
+    const cuentasSat = getCuentas();
+    const conAgrupador = cuentasSat.filter((c) => c.codigoAgrupador).length;
+    const puedeCargarAgrupador = ["contador", "admin", "director"].indexOf((window.CONTATECK_PERFIL_PG || {}).rol) !== -1;
     const diotFilas = dt.length ? dt.map((d) => `<tr><td class="num">${esc(d.rfc)}</td><td>${esc(d.nombre)}</td>
       <td class="num" style="text-align:right">$${fmt(d.base)}</td><td class="num" style="text-align:right">$${fmt(d.iva)}</td></tr>`).join("")
       : '<tr><td colspan="4" style="text-align:center;color:var(--faint);padding:1.5rem">Importa CFDI de proveedores (en Pólizas) para poblar la DIOT.</td></tr>';
@@ -1392,9 +1476,11 @@ ${ctas}
           <div class="field" style="margin:0;max-width:120px"><label>Año</label><input class="input" data-sat-anio type="number" min="2015" max="${Math.max(anioActual, anio)}" value="${anio}"></div>
         </div>
         <p style="color:var(--faint);font-size:.78rem;margin:.6rem 0 0">El Catálogo usa el mes y año que captures aquí. La Balanza se genera del periodo elegido en el selector de arriba, y el mes y año de aquí deben coincidir con él.</p>
+        <p style="color:var(--faint);font-size:.78rem;margin:.4rem 0 0">Código Agrupador SAT: <b>${conAgrupador} de ${cuentasSat.length}</b> cuentas con código asignado.${conAgrupador < cuentasSat.length ? " A las que faltan se les manda su código interno, y el SAT puede rechazar el catálogo. Descarga la hoja, que la contadora anote el código de cada cuenta (si Excel pide formato, que la columna sea Texto) y súbela con el botón de al lado." : ""}</p>
         <div class="cont-foot" style="justify-content:flex-start;margin-top:.8rem">
           <button class="btn btn--primary" data-sat-xml-cat>Descargar XML Catálogo</button>
           <button class="btn btn--ghost" data-sat-csv-cat title="Hoja con tus cuentas y una columna vacía para que la contadora anote el código agrupador del SAT">Hoja de cuentas para la contadora (CSV)</button>
+          ${puedeCargarAgrupador ? `<button class="btn btn--ghost" data-sat-agr-cargar title="Sube la hoja que llenó la contadora">Cargar códigos agrupador (CSV)</button><input type="file" data-sat-agr-file accept=".csv,text/csv" hidden>` : ""}
           <button class="btn btn--primary" data-sat-xml-bal ${balanzaBloqueada ? 'disabled style="opacity:.4;filter:grayscale(1)"' : ""}>Descargar XML Balanza</button>
         </div>
         ${!per ? `<div class="cont-err" style="margin-top:.6rem">Elige un mes en el selector de periodo de arriba (hoy dice "Todo el ejercicio"): la Balanza del SAT es de un solo mes.</div>` : ""}
@@ -2885,7 +2971,12 @@ ${ctas}
     if (errParam) { toast(errParam, "error"); return; }
     setRfcEmisor(rfc);
     const suf = `${rfc}_${anio}${String(mes).padStart(2, "0")}.xml`;
-    if (tipo === "catalogo") { descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml"); return; }
+    if (tipo === "catalogo") {
+      descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml");
+      const sinAgr = getCuentas().filter((c) => !c.codigoAgrupador).length;
+      if (sinAgr) toast(`${sinAgr} cuenta(s) sin Código Agrupador SAT: se usó su código interno y el SAT puede rechazar el archivo.`, "warn", 6000);
+      return;
+    }
     // La Balanza se arma con las pólizas del periodo activo: el mes/año del XML
     // debe ser ese mismo, o el archivo diría un mes y traería los datos de otro.
     const perAct = getPeriodo();
@@ -2895,6 +2986,58 @@ ${ctas}
     }
     if (!balanza().cuadra) { toast("La Balanza no cuadra — el SAT rechaza el XML así. Corrige el descuadre primero.", "error"); return; }
     descargarTexto("Balanza_" + suf, xmlBalanzaSAT(rfc, mes, anio), "application/xml");
+  }
+
+  // Sube la hoja de Código Agrupador: se lee y se muestra un resumen; NO se guarda nada hasta confirmar.
+  let planAgrupadorPendiente = null;
+  async function leerHojaAgrupador(input) {
+    const f = input.files && input.files[0];
+    input.value = "";
+    if (!f) return;
+    if (f.size > 1024 * 1024) { toast("La hoja pesa más de 1 MB; revisa que sea la de cuentas.", "error"); return; }
+    let texto;
+    try { texto = await f.text(); } catch (e) { toast("No se pudo leer el archivo.", "error"); return; }
+    const plan = planCargaAgrupador(parsearCsv(texto), getCuentas());
+    if (plan.error) { toast(plan.error, "error", 6000); return; }
+    planAgrupadorPendiente = plan;
+    const lista = (arr, fmtFila) => arr.slice(0, 8).map((x) => `<li>${fmtFila(x)}</li>`).join("") + (arr.length > 8 ? `<li>… y ${arr.length - 8} más</li>` : "");
+    openModal("Cargar códigos agrupador SAT");
+    cbody.innerHTML = `
+      <p style="margin:0 0 .6rem;font-size:.9rem"><b>${plan.aplicar.length}</b> cuenta(s) por actualizar · ${plan.sinCambio} sin cambio · ${plan.vacias} sin llenar (no se tocan)</p>
+      ${plan.invalidas.length ? `<div class="cont-err" style="margin-bottom:.6rem"><b>${plan.invalidas.length} con formato inválido (no se cargarán):</b>
+        <ul style="margin:.3rem 0 0 1.1rem">${lista(plan.invalidas, (x) => `${esc(x.codigo)} → «${esc(x.valor)}» (debe ser NNN o NNN.NN, ej. 102.01)`)}</ul></div>` : ""}
+      ${plan.noEncontradas.length ? `<div class="cont-err" style="margin-bottom:.6rem"><b>${plan.noEncontradas.length} código(s) de la hoja que no existen en tu catálogo (se ignoran):</b>
+        <ul style="margin:.3rem 0 0 1.1rem">${lista(plan.noEncontradas, (x) => esc(x))}</ul></div>` : ""}
+      ${plan.aplicar.length ? `<ul style="margin:0 0 .8rem 1.1rem;font-size:.85rem">${lista(plan.aplicar, (x) => `${esc(x.codigo)} → <b>${esc(x.codigoAgrupador)}</b>`)}</ul>` : '<p style="color:var(--muted);font-size:.88rem">No hay cambios que guardar.</p>'}
+      <p style="color:var(--faint);font-size:.78rem;margin:0 0 .6rem">Solo se revisa el formato; que el código exista en el catálogo del SAT lo confirma la contadora.</p>
+      <div data-cont-msg></div>
+      <div class="cont-foot"><button class="btn btn--ghost" data-cont-close>Cancelar</button>
+        ${plan.aplicar.length ? `<button class="btn btn--primary" data-sat-agr-aplicar>Guardar ${plan.aplicar.length} código(s)</button>` : ""}</div>`;
+  }
+  async function aplicarCargaAgrupador() {
+    const plan = planAgrupadorPendiente;
+    if (!plan || !plan.aplicar.length) return;
+    const msg = cbody.querySelector("[data-cont-msg]");
+    const btn = cbody.querySelector("[data-sat-agr-aplicar]"); if (btn) btn.disabled = true;
+    try {
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const t = window.CONTATECK_SUPABASE_TOKEN;
+      if (!t) throw new Error("Sin sesión todavía; espera unos segundos e inténtalo de nuevo.");
+      const resp = await fetch(BACKEND + "/api/fiscal/codigos-agrupador", {
+        method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
+        body: JSON.stringify({ cuentas: plan.aplicar.map((a) => ({ id: a.id, codigoAgrupador: a.codigoAgrupador })) }),
+      });
+      const data = await resp.json().catch(() => null);
+      if (!data || !data.ok) throw new Error((data && data.error) || "No se pudieron guardar los códigos.");
+      planAgrupadorPendiente = null;
+      await cargarCatalogoReal();
+      closeModal();
+      toast(`${data.actualizadas} código(s) agrupador guardados` + ((data.noEncontradas || []).length ? `; ${data.noEncontradas.length} cuenta(s) no se pudieron actualizar` : ""), (data.noEncontradas || []).length ? "warn" : "ok", 5000);
+      renderTodo();
+    } catch (e) {
+      if (msg) msg.innerHTML = `<div class="cont-err">${esc(e.message)}</div>`;
+      if (btn) btn.disabled = false;
+    }
   }
   cbody.addEventListener("input", (e) => {
     if (e.target.classList.contains("cont-as-debe") || e.target.classList.contains("cont-as-haber")) {
@@ -3106,6 +3249,7 @@ ${ctas}
       renderTodo(); return;
     }
     if (e.target.matches("[data-sat-rfc]")) { setRfcEmisor(e.target.value); return; }
+    if (e.target.matches("[data-sat-agr-file]")) { leerHojaAgrupador(e.target); return; }
   });
 
   document.addEventListener("click", (e) => {
@@ -3176,6 +3320,8 @@ ${ctas}
     if (e.target.closest("[data-cont-contabilizar]")) { openContabilizarCfdi(); return; }
     if (e.target.closest("[data-cont-importar-xml]")) { openImportarXml(); return; }
     if (e.target.closest("[data-sat-csv-cat]")) { descargarTexto("Cuentas_para_contadora.csv", csvCuentasContadora(), "text/csv;charset=utf-8"); return; }
+    if (e.target.closest("[data-sat-agr-cargar]")) { const inp = document.querySelector("[data-sat-agr-file]"); if (inp) inp.click(); return; }
+    if (e.target.closest("[data-sat-agr-aplicar]")) { aplicarCargaAgrupador(); return; }
     if (e.target.closest("[data-sat-xml-cat]")) { descargarXmlSAT("catalogo"); return; }
     if (e.target.closest("[data-sat-xml-bal]")) { descargarXmlSAT("balanza"); return; }
     const nav = e.target.closest('.nav-item[data-view="contabilidad"]');
