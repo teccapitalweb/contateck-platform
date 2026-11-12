@@ -705,11 +705,18 @@ window.CTData.updateCfdiSaldo = updateCfdiSaldoLocal;
 
 const PERFILES_KEY = "contateck_perfiles";
 
+// OT-0038: los perfiles de marca (logo y color) se guardan por empresa (storage-empresa.js).
+// Sin ese archivo no se guarda nada, antes que mezclar la marca de una empresa con otra.
+const _ST = window.CTStorage || { getItem: () => null, setItem: () => false, scope: () => null };
+
 function _leerPerfiles() {
   try {
-    const raw = JSON.parse(localStorage.getItem(PERFILES_KEY) || "null");
+    const raw = JSON.parse(_ST.getItem(PERFILES_KEY) || "null");
     if (raw && Array.isArray(raw.perfiles)) return raw;
   } catch (e) { /* sigue a migración */ }
+  // Migración del prototipo antiguo (una sola marca guardada en "contateck_empresa"): solo en modo
+  // local puro. Con empresas reales no se sabe a cuál pertenecía y no debe heredarla cualquiera.
+  if (_ST.scope() !== "local") return { perfiles: [], activoId: "" };
   try {
     const viejo = JSON.parse(localStorage.getItem("contateck_empresa") || "null");
     if (viejo && (viejo.logo || viejo.color)) {
@@ -722,7 +729,7 @@ function _leerPerfiles() {
   return { perfiles: [], activoId: "" };
 }
 function _guardarPerfiles(data) {
-  try { localStorage.setItem(PERFILES_KEY, JSON.stringify(data)); return true; }
+  try { return _ST.setItem(PERFILES_KEY, JSON.stringify(data)) !== false; }
   catch (e) { return false; }
 }
 function getPerfiles() { return _leerPerfiles().perfiles.slice(); }
