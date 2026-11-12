@@ -44,7 +44,14 @@ const LOTE = 100; // ids por consulta (la URL tiene límite de largo)
 const MAX_PADRES = 1000;
 
 const esTablaFaltante = (e) => !!e && (e.code === 'PGRST205' || e.code === '42P01' || /could not find the table|does not exist/i.test(e.message || ''));
-const motivo = (e) => String((e && (e.message || e.code)) || e || 'error').slice(0, 90);
+// Un error de PostgREST en una consulta HEAD puede venir con el mensaje vacío: no mostrar "[object Object]".
+const motivo = (e) => {
+  const m = e && (e.message || e.code || e.details || e.hint);
+  if (m) return String(m).slice(0, 90);
+  try { return JSON.stringify(e).slice(0, 90); } catch (x) { return 'error sin detalle'; }
+};
+// "Acceso denegado": lo que se espera de una tabla cerrada para quien tiene sesión.
+const esDenegado = (r) => !!r.error && (r.error.code === '42501' || r.status === 401 || r.status === 403 || /permission denied|not authorized/i.test(r.error.message || ''));
 
 async function contar(consulta) {
   const { count, error } = await consulta;
@@ -64,10 +71,13 @@ export async function revisarTabla(spec, { admin, usuario, empresaId }) {
     }
     if (tipo === 'catalogo') return { ...base, veredicto: 'OMITIDA', nota: 'catálogo compartido por diseño' };
 
-    if (tipo === 'cerrada') { // nadie con sesión debe ver nada
+    if (tipo === 'cerrada') { // nadie con sesión debe ver nada: lo normal es "acceso denegado"
       const total = await contar(admin.from(t).select('*', { count: 'exact', head: true }));
-      const ve = await contar(usuario.from(t).select('*', { count: 'exact', head: true }));
-      return { ...base, existen: total, ve, veredicto: ve > 0 ? 'FUGA' : 'OK', nota: ve > 0 ? 'una tabla cerrada se puede leer' : 'cerrada para usuarios con sesión' };
+      const r = await usuario.from(t).select('*').limit(1); // sin head: así el error trae su mensaje
+      if (esDenegado(r)) return { ...base, existen: total, ve: 0, veredicto: 'OK', nota: 'acceso denegado a usuarios con sesión (correcto)' };
+      if (r.error) throw r.error;
+      const ve = (r.data || []).length;
+      return { ...base, existen: total, ve, veredicto: ve > 0 ? 'FUGA' : 'OK', nota: ve > 0 ? 'una tabla cerrada se puede leer' : 'cerrada: no devuelve filas' };
     }
 
     if (tipo === 'hija') {

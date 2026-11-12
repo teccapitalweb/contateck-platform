@@ -109,11 +109,28 @@ segunda veía las pólizas de la primera, y su logo en los PDF.
 los datos actuales**. `administradores_plataforma` tiene 2 filas. Storage `documentos` tiene 2 carpetas de empresa.
 Con una cuenta de TEC CAPITAL (o de Demo C) casi todas las tablas tienen filas ajenas con qué comparar.
 
+### Resultado en DEV (2026-11-12, sesión de un usuario de Empresa Demo C, solo lectura)
+**FUGA 0.** OK en 23 de 27 revisiones: `empresas`, `perfiles`, `invitaciones`, `cuentas_contables`, `configuracion_contable`,
+`clientes`, `productos`, `empleados`, `polizas`, `poliza_partidas` (96 filas ajenas, 0 visibles), `cfdis`, `cfdis_saldo`,
+`cfdis_proveedor`, `cfdis_proveedor_saldo`, `pagos_cliente`, `pagos_proveedor`, `ventas`, `nominas`, `nomina_detalle`,
+`periodos_contables`, `folios_contador`, `auditoria_log` y el bucket `documentos` (1 carpeta ajena, 0 visible). En todas, el
+usuario vio 0 filas de otras empresas.
+- **SIN PRUEBA (3):** `obligaciones_fiscales`, `declaraciones` y `documentos_fiscales`. Demo C es la única empresa con
+  `obligaciones_fiscales` y `declaraciones`, así que no hay filas ajenas con qué comparar: hay que correr la prueba con
+  una cuenta de otra empresa (TEC CAPITAL). `documentos_fiscales` no tiene filas en DEV.
+- **Un ERROR que era un fallo de la prueba:** `administradores_plataforma` salió "ERROR · [object Object]". La tabla está
+  cerrada a propósito (RLS sin políticas y `revoke`), el usuario con sesión recibe "acceso denegado" y la consulta con
+  `head` trae el mensaje vacío. La prueba lo tomaba por error y no imprimía el motivo. Ahora una tabla cerrada con
+  acceso denegado cuenta como OK (con nota), un error real sigue siendo ERROR y nunca se imprime "[object Object]".
+  La causa exacta del error no se vio en pantalla; se dedujo del diseño de esa tabla (OT-0037) y se cubrió con pruebas.
+
 ### Pruebas ejecutadas
-- `node backend/test-aislamiento-logica.js` → 7 pruebas, todas pasan. `node --check` de los dos scripts.
+- `node backend/test-aislamiento-logica.js` → 9 pruebas, todas pasan (incluye las dos de tabla cerrada).
+- `node --check` de los dos scripts.
 
 ### NO verificado
-- La prueba contra DEV con una sesión real: falta que la persona corra `node test-aislamiento-empresas.js` (pide correo y contraseña).
+- La prueba con una cuenta de otra empresa (TEC CAPITAL): cubriría `obligaciones_fiscales` y `declaraciones`, y comprobaría que
+  `administradores_plataforma` ahora sale OK contra DEV.
 - La consulta de introspección: no se ha ejecutado; su sintaxis solo se revisó a mano.
 - Escrituras entre empresas (insertar, actualizar o borrar filas ajenas): la prueba no escribe; eso se audita leyendo las políticas.
 - `documentos_fiscales`, sin filas en DEV.

@@ -22,6 +22,12 @@ class Consulta {
   _ejecutar() {
     const tabla = this.db.tablas[this.tabla];
     if (!tabla) return { data: null, count: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${this.tabla}'` } };
+    if (!this.esAdmin && this.db.denegadas && this.db.denegadas[this.tabla]) {
+      // como PostgREST: con head no hay cuerpo y el mensaje llega vacío; sin head trae el código 42501
+      return this.soloContar
+        ? { data: null, count: null, status: 403, error: { message: '', details: '', hint: '', code: '' } }
+        : { data: null, count: null, status: 403, error: { code: '42501', message: `permission denied for table ${this.tabla}` } };
+    }
     let filas = tabla.filter((f) => this.esAdmin || this.db.visible(this.tabla, f));
     filas = filas.filter((f) => this.filtros.every((fn) => fn(f)));
     const count = this.conConteo ? filas.length : null;
@@ -104,6 +110,20 @@ await ok('cuenta como fuga las filas SIN empresa que el usuario puede ver', asyn
   db.visible = (tabla, f) => (tabla === 'clientes' ? f.empresa_id === 'emp-A' || f.empresa_id === null : f.empresa_id === 'emp-A' || f.id === 'emp-A');
   const r = await revisarTabla({ t: 'clientes' }, { admin, usuario, empresaId: 'emp-A' });
   assert.equal(r.veredicto, 'FUGA'); assert.match(r.nota, /sin empresa_id/);
+});
+
+await ok('una tabla cerrada con "acceso denegado" es OK (no un error), con o sin cuerpo en la respuesta', async () => {
+  const { admin, usuario, db } = baseFalsa({ empresaUsuario: 'emp-A' });
+  db.denegadas = { administradores_plataforma: true };
+  const r = await revisarTabla({ t: 'administradores_plataforma', tipo: 'cerrada' }, { admin, usuario, empresaId: 'emp-A' });
+  assert.equal(r.veredicto, 'OK'); assert.match(r.nota, /denegado/); assert.equal(r.existen, 1);
+});
+
+await ok('un error de verdad en una tabla cerrada sigue siendo ERROR, y nunca se muestra "[object Object]"', async () => {
+  const { admin, usuario, db } = baseFalsa({ empresaUsuario: 'emp-A' });
+  const roto = { ...usuario, from: () => ({ select: () => ({ limit: async () => ({ data: null, status: 500, error: { message: '', details: '', hint: '', code: '' } }) }) }) };
+  const r = await revisarTabla({ t: 'administradores_plataforma', tipo: 'cerrada' }, { admin, usuario: roto, empresaId: 'emp-A' });
+  assert.equal(r.veredicto, 'ERROR'); assert.ok(!r.nota.includes('[object Object]'), r.nota);
 });
 
 await ok('detecta una fuga en Storage', async () => {
