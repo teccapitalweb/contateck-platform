@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Administración · CONTATECK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<style>
+  body{background:var(--ink-900);color:var(--text);font-family:var(--body);margin:0}
+  .adm{max-width:1180px;margin:0 auto;padding:20px 16px 56px}
+  .adm__top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+  .adm__brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:1.15rem}
+  .adm__tag{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);background:var(--gold-soft);padding:3px 9px;border-radius:99px;font-family:var(--body);font-weight:600}
+  .adm__who{display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:.86rem}
+  .adm h1{font-family:var(--display);font-size:1.6rem;margin:0 0 4px}
+  .adm .sub{color:var(--muted);margin:0 0 22px;font-size:.92rem}
+  .adm__kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+  .adm__kpi,.adm__card{background:var(--glass);border:1px solid var(--glass-brd);border-radius:var(--radius);padding:16px}
+  .adm__kpi small{display:block;color:var(--muted);font-size:.78rem;margin-bottom:6px}
+  .adm__kpi b{font-family:var(--display);font-size:1.7rem;font-weight:600}
+  .adm__card{margin-bottom:18px}
+  .adm__card h2{font-family:var(--display);font-size:1.05rem;margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .adm__wrap{overflow-x:auto}
+  .adm table{width:100%;border-collapse:collapse;font-size:.86rem}
+  .adm th{color:var(--muted);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+  .adm td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .adm tr.is-click{cursor:pointer}
+  .adm tr.is-click:hover td{background:var(--brand-soft)}
+  .adm .num{text-align:right;font-family:var(--mono)}
+  .adm .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.74rem;font-weight:600}
+  .adm .pill--ok{background:var(--up-soft);color:var(--up)}
+  .adm .pill--off{background:var(--down-soft);color:var(--down)}
+  .adm .pill--gris{background:var(--brand-soft);color:var(--brand)}
+  .adm .muted{color:var(--muted)}
+  .adm__btn{background:transparent;color:var(--text);border:1px solid var(--line-strong);border-radius:var(--radius-sm);padding:7px 13px;font:inherit;font-size:.84rem;cursor:pointer}
+  .adm__btn:hover{border-color:var(--brand);color:var(--brand)}
+  .adm__btn:disabled{opacity:.55;cursor:default}
+  .adm__aviso{border:1px solid var(--line-strong);border-radius:var(--radius);padding:22px;text-align:center;background:var(--glass)}
+  .adm__aviso h2{font-family:var(--display);margin:0 0 8px}
+  .adm__aviso code{font-family:var(--mono);background:var(--ink-700);padding:2px 6px;border-radius:6px}
+  .adm__grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+  .adm__sal{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:.86rem}
+  .adm__sal:last-child{border-bottom:0}
+  .adm__nota{font-size:.78rem;color:var(--faint);margin-top:10px}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main class="adm">
+  <div class="adm__top">
+    <div class="adm__brand">Conta<span style="color:var(--brand)">teck</span><span class="adm__tag">Administración</span></div>
+    <div class="adm__who">
+      <span id="admCorreo"></span>
+      <a id="admIrPanel" class="adm__btn" href="dashboard.html" hidden>Ir al panel de empresa</a>
+      <button class="adm__btn" id="admSalir" type="button">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <div id="admEstado" class="adm__aviso"><h2>Un momento…</h2><p class="muted">Comprobando tu acceso.</p></div>
+
+  <div id="admContenido" hidden>
+    <h1>Administración de plataforma</h1>
+    <p class="sub">Vista de solo lectura de todas las empresas. Aquí no se modifica nada.</p>
+
+    <div class="adm__kpis" id="admKpis"></div>
+
+    <section class="adm__card">
+      <h2>Empresas <button class="adm__btn" id="admRecargar" type="button">Actualizar</button></h2>
+      <div class="adm__wrap"><table id="admEmpresas"></table></div>
+      <p class="adm__nota">Haz clic en una empresa para ver sus usuarios. Las llaves y contraseñas del CSD nunca se muestran aquí.</p>
+    </section>
+
+    <section class="adm__card" id="admUsuariosCard" hidden>
+      <h2><span id="admUsuariosTitulo">Usuarios</span> <button class="adm__btn" id="admCerrarUsuarios" type="button">Cerrar</button></h2>
+      <div class="adm__wrap"><table id="admUsuarios"></table></div>
+    </section>
+
+    <div class="adm__grid2">
+      <section class="adm__card">
+        <h2>Estado del sistema</h2>
+        <div id="admSalud"></div>
+      </section>
+      <section class="adm__card">
+        <h2>Actividad reciente</h2>
+        <div class="adm__wrap"><table id="admActividad"></table></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="supabase-config.js?v=2"></script>
+<script src="app-config.js?v=1"></script>
+<script type="module" src="admin.js?v=1"></script>
+</body>
+</html>

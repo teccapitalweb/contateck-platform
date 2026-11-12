@@ -26,6 +26,7 @@ import { fiscalRouter } from './src/routes/fiscal.js';
 import { onboardingRouter } from './src/routes/onboarding.js';
 import { equipoRouter } from './src/routes/equipo.js';
 import { nominasRouter } from './src/routes/nominas.js';
+import { plataformaRouter } from './src/routes/plataforma.js';
 const app = express();
 // ---- CORS ----
 const corsOptions = {
@@ -66,6 +67,7 @@ app.use('/api', fiscalRouter);
 app.use('/api', onboardingRouter);
 app.use('/api', equipoRouter);
 app.use('/api', nominasRouter);
+app.use('/api', plataformaRouter);
 app.use('/api/demo', demoRouter);
 // ---- 404 ----
 app.use((_req, res) => res.status(404).json({ ok: false, error: 'Ruta no encontrada.' }));
