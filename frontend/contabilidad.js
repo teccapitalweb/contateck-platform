@@ -59,19 +59,28 @@
   const K_FOLIOS  = "contateck_folios";
   const K_CUENTAS_CACHE = "contateck_cuentas_cache"; // solo respaldo de lectura, nunca la fuente de verdad
 
+  // OT-0038: todo lo que se guarda en el navegador lleva el id de la empresa (storage-empresa.js),
+  // para que dos empresas en el mismo navegador no vean las pólizas una de la otra. Si ese archivo
+  // no cargó, NO se cae a localStorage sin empresa: no se guarda nada (más seguro que mezclar).
+  const ST = window.CTStorage || {
+    getItem: function () { return null }, setItem: function () { return false }, removeItem: function () {},
+    scope: function () { return null },
+  };
+  if (!window.CTStorage) console.warn("[contabilidad] Falta storage-empresa.js: no se guardan pólizas en el navegador.");
+
   let _cuentasCache = null; // null = todavía no ha cargado de Postgres
 
   function leerCuentas() {
     if (_cuentasCache) return _cuentasCache;
     try {
-      const raw = JSON.parse(localStorage.getItem(K_CUENTAS_CACHE) || "null");
+      const raw = JSON.parse(ST.getItem(K_CUENTAS_CACHE) || "null");
       if (Array.isArray(raw) && raw.length) return raw;
     } catch (e) {}
     return [];
   }
   function guardarCuentas(arr) {
     _cuentasCache = arr || [];
-    try { localStorage.setItem(K_CUENTAS_CACHE, JSON.stringify(_cuentasCache)); } catch (e) {}
+    try { ST.setItem(K_CUENTAS_CACHE, JSON.stringify(_cuentasCache)); } catch (e) {}
     return true;
   }
 
@@ -130,13 +139,13 @@
   }
   function leerPolizas() {
     try {
-      const raw = JSON.parse(localStorage.getItem(K_POLIZAS) || "null");
+      const raw = JSON.parse(ST.getItem(K_POLIZAS) || "null");
       if (Array.isArray(raw)) return raw;
     } catch (e) {}
     return [];
   }
   function guardarPolizas(arr) {
-    try { localStorage.setItem(K_POLIZAS, JSON.stringify(arr || [])); return true; }
+    try { return ST.setItem(K_POLIZAS, JSON.stringify(arr || [])) !== false; }
     catch (e) { return false; }
   }
   // OT-0012: el folio "de verdad" ahora lo genera Postgres de forma atómica
@@ -147,11 +156,11 @@
   // folio no es definitivo y no debe usarse para reportes fiscales.
   function siguienteFolioLocal(tipo) {
     let folios = {};
-    try { folios = JSON.parse(localStorage.getItem(K_FOLIOS) || "{}") || {}; } catch (e) {}
+    try { folios = JSON.parse(ST.getItem(K_FOLIOS) || "{}") || {}; } catch (e) {}
     const letra = tipo === "Ingreso" ? "I" : tipo === "Egreso" ? "E" : "D";
     const n = (folios[letra] || 0) + 1;
     folios[letra] = n;
-    try { localStorage.setItem(K_FOLIOS, JSON.stringify(folios)); } catch (e) {}
+    try { ST.setItem(K_FOLIOS, JSON.stringify(folios)); } catch (e) {}
     return `LOCAL-${letra}-${String(n).padStart(5, "0")}`;
   }
 
@@ -450,12 +459,12 @@
   }
 
   function getContabilizados() {
-    try { const a = JSON.parse(localStorage.getItem(K_CONTAB) || "[]"); return Array.isArray(a) ? a : []; }
+    try { const a = JSON.parse(ST.getItem(K_CONTAB) || "[]"); return Array.isArray(a) ? a : []; }
     catch (e) { return []; }
   }
   function marcarContabilizado(key) {
     const arr = getContabilizados();
-    if (key && arr.indexOf(key) < 0) { arr.push(key); try { localStorage.setItem(K_CONTAB, JSON.stringify(arr)); } catch (e) {} }
+    if (key && arr.indexOf(key) < 0) { arr.push(key); try { ST.setItem(K_CONTAB, JSON.stringify(arr)); } catch (e) {} }
   }
   function leerCfdis() {
     try { return (window.CTData && window.CTData.getCfdis) ? window.CTData.getCfdis() : []; }
@@ -604,8 +613,8 @@
      BLOQUE 3 · Contabilidad Electrónica SAT · IVA · DIOT
      ============================================================ */
   const K_RFC = "contateck_rfc_emisor";
-  function getRfcEmisor() { try { return localStorage.getItem(K_RFC) || ""; } catch (e) { return ""; } }
-  function setRfcEmisor(v) { try { localStorage.setItem(K_RFC, String(v || "")); } catch (e) {} }
+  function getRfcEmisor() { try { return ST.getItem(K_RFC) || ""; } catch (e) { return ""; } }
+  function setRfcEmisor(v) { try { ST.setItem(K_RFC, String(v || "")); } catch (e) {} }
 
   // OT-0031 · Contabilidad Electrónica 1.3. Estructura verificada contra los
   // XSD oficiales del SAT (CatalogoCuentas_1_3.xsd y BalanzaComprobacion_1_3.xsd).
@@ -3456,6 +3465,10 @@ ${ctas}
   }
 
   function init() {
+    // OT-0038: al arrancar puede que todavía no se sepa la empresa (auth-guard.js la lee de forma
+    // asíncrona) y entonces la primera pantalla sale vacía a propósito. Cuando ya se sabe, hay que
+    // volver a pintar aunque nada haya cambiado: lo guardado de esta empresa ya se puede leer.
+    const empresaAlInicio = ST.scope();
     renderTodo();
     cargarCatalogoReal().then((cambio) => { if (cambio) renderTodo(); });
     // OT-0036: las pólizas de Postgres que llegan a un navegador nuevo vienen SIN partidas y
@@ -3464,7 +3477,7 @@ ${ctas}
     sincronizarPolizasDesdePostgres().then(async (cambiado) => {
       let hidratado = false;
       try { hidratado = await hidratarPartidasFaltantes(); } catch (e) { /* se verán al abrir la póliza */ }
-      if (cambiado || hidratado) renderTodo();
+      if (cambiado || hidratado || ST.scope() !== empresaAlInicio) renderTodo();
     });
     cargarConfigContable().then((cambio) => { if (cambio) renderTodo(); });
   }

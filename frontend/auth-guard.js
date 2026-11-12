@@ -67,6 +67,7 @@ if (!configured) {
           fallo = !!(r && r.error) || !nuevo;
         } catch (e) { fallo = true; }
         if (fallo) {
+          try { window.CTStorage && window.CTStorage.limpiarCaches(); } catch (e) { /* solo es un respaldo */ }
           try { await supabase.auth.signOut(); } catch (e) { /* sigue al login */ }
           window.location.replace("login.html");
           return resp;
@@ -198,6 +199,8 @@ if (!configured) {
 
     logoutEls.forEach((el) =>
       el.addEventListener("click", async () => {
+        // OT-0038: el respaldo del catálogo de cuentas no debe quedarse en un equipo compartido.
+        try { window.CTStorage && window.CTStorage.limpiarCaches(); } catch (e) { /* solo es un respaldo */ }
         try { await supabase.auth.signOut(); } catch (e) {}
         window.location.replace("login.html");
       })
