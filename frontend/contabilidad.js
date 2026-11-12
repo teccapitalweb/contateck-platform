@@ -3351,7 +3351,10 @@ ${ctas}
   // Reutiliza window.CONTATECK_POLIZAS_PG, ya traído por auth-guard.js vía
   // /api/operacion (mismo mecanismo que ya usa Nómina).
   async function esperarPolizasPostgres(maxMs) {
-    maxMs = maxMs || 4000;
+    // OT-0038: eran 4 s. En la primera carga tras iniciar sesión el backend llegó a tardar más
+    // (auth-guard.js espera a que respondan las 9 llamadas) y Contabilidad dejaba de esperar:
+    // se veía vacía hasta recargar. Con Postgres caído solo cuesta un temporizador más largo.
+    maxMs = maxMs || 20000;
     const start = Date.now();
     while (window.CONTATECK_POLIZAS_PG === undefined && Date.now() - start < maxMs) {
       await new Promise((r) => setTimeout(r, 150));

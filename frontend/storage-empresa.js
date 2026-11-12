@@ -72,7 +72,19 @@
     });
   }
 
+  // El barrido de claves viejas se hace en el PRIMER uso y no al cargar el archivo: decide según
+  // haya o no configuración de Supabase, y esa configuración puede cargarse después de este
+  // archivo (en dashboard.html pasó: se creyó "modo local" y los datos viejos de una empresa
+  // real acabaron en la clave de "local").
+  var barrido = false;
+  function barrerUnaVez() {
+    if (barrido) return;
+    barrido = true;
+    apartarLegacy();
+  }
+
   function getItem(base) {
+    barrerUnaVez();
     var s = scope();
     if (!s) return Object.prototype.hasOwnProperty.call(memoria, base) ? memoria[base] : null;
     var k = clave(base, s), v = leerCrudo(k);
@@ -80,18 +92,18 @@
     return v;
   }
   function setItem(base, valor) {
+    barrerUnaVez();
     var s = scope();
     if (!s) { memoria[base] = String(valor); return true; }
     return escribirCrudo(clave(base, s), String(valor));
   }
   function removeItem(base) {
+    barrerUnaVez();
     var s = scope();
     if (!s) { delete memoria[base]; return; }
     borrarCrudo(clave(base, s));
   }
   function limpiarCaches() { CACHES.forEach(removeItem); }
-
-  apartarLegacy();
 
   window.CTStorage = {
     scope: scope,
@@ -99,6 +111,5 @@
     setItem: setItem,
     removeItem: removeItem,
     limpiarCaches: limpiarCaches,
-    _apartarLegacy: apartarLegacy, // expuesto para pruebas
   };
 })();

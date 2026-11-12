@@ -76,6 +76,7 @@ ok('datos viejos sin empresa se apartan: ninguna empresa los ve y no se borran',
   ls.setItem('contateck_rfc_emisor', 'AAA010101AAA');
   const w = navegador({ ls, empresa: 'A' });
   cargar(w, 'storage-empresa.js');
+  w.CTStorage.getItem('contateck_polizas'); // el barrido de claves viejas ocurre en el primer uso
   for (const k of ['contateck_polizas', 'contateck_folios', 'contateck_cuentas_cache', 'contateck_rfc_emisor']) {
     assert.equal(ls.getItem(k), null, 'sigue sin empresa: ' + k);
     assert.equal(w.CTStorage.getItem(k), null, 'A ve datos viejos: ' + k);
@@ -91,8 +92,20 @@ ok('si no hay espacio para apartar, el dato original NO se borra', () => {
   ls.setItem('contateck_polizas', '["viejas"]');
   const w = navegador({ ls, empresa: 'A' });
   cargar(w, 'storage-empresa.js');
-  assert.equal(ls.getItem('contateck_polizas'), '["viejas"]');
-  assert.equal(w.CTStorage.getItem('contateck_polizas'), null); // y de todos modos A no lo ve
+  assert.equal(w.CTStorage.getItem('contateck_polizas'), null); // A no lo ve
+  assert.equal(ls.getItem('contateck_polizas'), '["viejas"]'); // y sigue ahí: no se perdió
+});
+
+ok('la configuración de Supabase puede cargar DESPUÉS del módulo (orden de scripts en dashboard.html)', () => {
+  const ls = crearLocalStorage();
+  ls.setItem('contateck_polizas', '["viejas de una empresa real"]');
+  const w = navegador({ ls, supabase: null }); // al cargar el módulo todavía no hay configuración
+  cargar(w, 'storage-empresa.js');
+  w.SUPABASE_CONFIG = CONFIG_SUPABASE; // ...y llega después
+  w.CONTATECK_EMPRESA_PG = { id: 'A' };
+  assert.equal(w.CTStorage.getItem('contateck_polizas'), null);
+  assert.equal(ls.getItem('contateck_legacy_contateck_polizas'), '["viejas de una empresa real"]', 'debía apartarse como dato viejo');
+  assert.equal(ls.getItem('contateck_polizas:local'), null, 'no debía ir a la clave del modo local');
 });
 
 ok('modo local puro (sin Supabase): los datos viejos pasan a "local" y se conservan', () => {
@@ -160,10 +173,11 @@ function falso() {
   return p;
 }
 
-function conContabilidad(ls, empresa) {
+function conContabilidad(ls, empresa, { temporizadoresReales = false } = {}) {
   const win = navegador({ ls, empresa });
   win.document = falso();
-  win.setTimeout = () => 0; // sin temporizadores: lo asíncrono se queda esperando y no estorba
+  // Por omisión sin temporizadores: lo asíncrono se queda esperando y no estorba.
+  win.setTimeout = temporizadoresReales ? setTimeout : () => 0;
   win.clearTimeout = () => {};
   win.requestAnimationFrame = () => 0;
   win.addEventListener = () => {};
@@ -208,6 +222,22 @@ ok('sin saber la empresa, Contabilidad no muestra pólizas de nadie', () => {
   const w = conContabilidad(ls, null);
   assert.equal(w.CTCont.getPolizas().length, 0);
 });
+
+// Prueba con tiempo real (~6 s): en la primera carga de una empresa el backend llegó a tardar más
+// de 4 s y Contabilidad dejó de esperar sus pólizas, así que se veía vacía hasta recargar.
+console.log('\n3) carga lenta del backend (tarda unos segundos)');
+{
+  const w = conContabilidad(crearLocalStorage(), null, { temporizadoresReales: true });
+  setTimeout(() => {
+    w.CONTATECK_EMPRESA_PG = { id: 'A' };
+    w.CONTATECK_POLIZAS_PG = [{ id: 'pg1', folio: 'I-LENTA', tipo: 'Ingreso', fecha: '2026-11-01', concepto: 'x', estado: 'ok', monto: 5 }];
+  }, 5000); // llega 5 s después de abrir la página
+  await new Promise((r) => setTimeout(r, 6500));
+  ok('las pólizas que llegan a los 5 s sí se sincronizan (antes se dejaban de esperar a los 4 s)', () => {
+    assert.equal(JSON.stringify(w.CTCont.getPolizas().map((p) => p.folio)), '["I-LENTA"]');
+    assert.notEqual(w.localStorage.getItem('contateck_polizas:A'), null);
+  });
+}
 
 console.log(`\nOK: ${pruebas} pruebas pasaron.`);
 process.exit(0);
