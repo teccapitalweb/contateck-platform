@@ -9,7 +9,7 @@ esquema de DEV documentado en el repo y la autenticación endurecida. Producció
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Datos del navegador por empresa (`localStorage`) | **Hecha** (esta entrega) |
-| 2 | Prueba de aislamiento entre empresas en todas las tablas + consulta de introspección RLS (solo lectura) | Pendiente |
+| 2 | Prueba de aislamiento entre empresas en todas las tablas + consulta de introspección RLS (solo lectura) | **Preparada y probada con base falsa; falta ejecutarla contra DEV** (ver "Fase 2") |
 | 3 | Exportar al repo lo que existe en DEV y no está en `database/` (tablas, políticas, funciones). Es documentación, no migración | Pendiente |
 | 4 | Backend rechaza correos sin confirmar; "Confirm email" en Supabase; revocar `anon` en las funciones de confirmación (SQL, con aprobación) | Pendiente |
 
@@ -84,3 +84,36 @@ segunda veía las pólizas de la primera, y su logo en los PDF.
 - El primero en abrir tras la actualización hereda los perfiles de marca y los CFDI contabilizados viejos del navegador.
 - `contabilidad.js` también lo edita la sesión de SAT y Fiscal: las funciones de almacenamiento (líneas ~58 a 160) no deben tocarse en paralelo.
 - Pendiente de decisión: el borrado de claves `contateck_legacy_*` tras unas semanas.
+
+## Fase 2 · Aislamiento entre empresas en todas las tablas (solo lectura)
+
+### Qué se hizo
+- **`backend/test-aislamiento-empresas.js`:** con un solo inicio de sesión (una persona de DEV), compara por tabla lo que
+  EXISTE de otras empresas (leído con la llave de servicio, sin RLS) contra lo que ESE usuario ve de otras empresas (con su
+  sesión, bajo RLS). Debe ser 0 en todas. Cubre 27 tablas y vistas (incluye `poliza_partidas` y `nomina_detalle` por su
+  tabla padre, `administradores_plataforma` como tabla cerrada, `cfdis_saldo` y `cfdis_proveedor_saldo`) y el bucket
+  `documentos` de Storage. Resultado por tabla: `OK`, `SIN PRUEBA` (no hay filas de otras empresas: no concluye),
+  `FUGA` o `ERROR`. Cuenta como fuga las filas sin `empresa_id` que el usuario pueda ver. **No escribe nada.**
+- **`backend/test-aislamiento-logica.js`:** prueba esa lógica con una base falsa en memoria (7 pruebas): da OK con
+  aislamiento correcto, y FUGA ante un hueco en una tabla con `empresa_id`, en una tabla hija, en la tabla cerrada,
+  en filas sin empresa y en Storage; un error de consulta no se esconde.
+- **`database/OT-0038-introspeccion-rls.sql`:** una consulta de solo lectura que devuelve en una celda de JSON las
+  tablas con su RLS y permisos de `anon`, todas las políticas (también las de Storage), las funciones con
+  `SECURITY DEFINER` y quién las ejecuta, los buckets y cuántos usuarios hay por empresa. Es lo que permite auditar
+  las tablas cuyo SQL no está en el repo y alimenta la Fase 3. **No se ha ejecutado**: solo se revisó a mano.
+
+### Censo de DEV (llave de servicio, solo lectura, 2026-11-12)
+4 empresas. Filas por empresa (Empresa de Prueba 2 / Demo C / SA de CV / TEC CAPITAL): `polizas` 1/13/36/1,
+`cfdis` 0/2/7/3, `pagos_proveedor` 0/12/3/0, `nominas` 0/0/7/0, `obligaciones_fiscales` 0/1/0/0, `declaraciones` 0/2/0/0,
+`periodos_contables` 0/0/1/0. `documentos_fiscales` tiene 0 filas en total: **no se puede probar su aislamiento con
+los datos actuales**. `administradores_plataforma` tiene 2 filas. Storage `documentos` tiene 2 carpetas de empresa.
+Con una cuenta de TEC CAPITAL (o de Demo C) casi todas las tablas tienen filas ajenas con qué comparar.
+
+### Pruebas ejecutadas
+- `node backend/test-aislamiento-logica.js` → 7 pruebas, todas pasan. `node --check` de los dos scripts.
+
+### NO verificado
+- La prueba contra DEV con una sesión real: falta que la persona corra `node test-aislamiento-empresas.js` (pide correo y contraseña).
+- La consulta de introspección: no se ha ejecutado; su sintaxis solo se revisó a mano.
+- Escrituras entre empresas (insertar, actualizar o borrar filas ajenas): la prueba no escribe; eso se audita leyendo las políticas.
+- `documentos_fiscales`, sin filas en DEV.
