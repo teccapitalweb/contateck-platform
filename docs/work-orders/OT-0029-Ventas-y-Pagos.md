@@ -209,13 +209,15 @@ distintos de la misma factura** (cada uno cabía en el saldo), las dos lecturas
 ven el saldo completo, las dos pasan y la factura queda pagada de más, con dos
 pólizas. Bloquear cada pago no lo evita: son filas distintas.
 
-**Cambio preparado (no aplicado en ninguna base).**
+**Cambio aplicado en Supabase DEV y validado el 2026-11-12** (resultado en "Validación de cierre", abajo).
+**Producción: sin aplicar.**
 
 | Archivo | Para qué |
 |---|---|
 | `database/OT-0029-confirmacion-atomica-introspeccion.sql` | Paso 0, solo lectura: exporta las definiciones reales de `confirmar_pago_*`, revisa las vistas de saldo y lista pagos "registrados" que ya no cabrían. |
 | `database/OT-0029-confirmacion-atomica.sql` | Reemplaza `confirmar_pago_cliente` y `confirmar_pago_proveedor`: tras bloquear el pago, bloquea la **factura** (`for no key update`), lee el saldo actual con el bloqueo ya en mano y, si el pago no cabe, aborta todo (sin póliza ni cambio de estado). |
 | `backend/test-confirmacion-concurrente.js` | Prueba de carrera hecha por una persona con su login: registra dos pagos que no caben juntos y los confirma en paralelo. |
+| `backend/test-bloqueo-concurrente.js` | Prueba de bloqueo bajo carga (proveedor): 8 pagos de la misma factura, de los que solo caben 4, confirmados a la vez; registra 2 pagos de $1 durante la espera. Solo corre sobre una factura marcada `raw.prueba = 'OT-0029'`; no borra nada. |
 
 Decisiones de diseño:
 - `for no key update` y no `for update`: este último choca con el bloqueo de
@@ -263,5 +265,56 @@ vistas de saldo son `security_invoker=true`; `cfdis`, `cfdis_proveedor`,
 `pagos_cliente` y `pagos_proveedor` tienen `empresa_id` y estado/estatus. Hay un
 solo pago "registrado" que ya no cabe (cliente, $100 contra saldo $42.68: el pago
 2 de la prueba de OT-0034); con la regla nueva no se podrá confirmar y no hay
-función para cancelarlo, así que queda como registrado. El SQL de cambio sigue
-sin aplicarse: lo revisa Jorge.
+función para cancelarlo, así que queda como registrado. (Después de este paso 0,
+Jorge aplicó el SQL de cambio en DEV: ver la validación de cierre.)
+
+### Validación de cierre (Supabase DEV, 2026-11-12)
+
+Todo con el login de `demo.director.c` en Empresa Demo C y solo datos de prueba
+(emisor de sandbox "ESCUELA KEMPER URGATE" y un proveedor ficticio). Nada se borró.
+
+**Fase 1, solo lectura.**
+- `confirmar_pago_cliente` y `confirmar_pago_proveedor`: `for no key update`, mensaje
+  "pagada de más", `security definer` y `search_path=public`: las dos en `true`.
+- `authenticated` puede ejecutarlas. `anon` también (permiso por defecto de Postgres):
+  es informativo; sin sesión la función no encuentra empresa ni pago y se detiene.
+  Revocarlo a `anon` sería una defensa adicional (SQL de escritura, no hecho).
+- Vistas `cfdis_saldo` y `cfdis_proveedor_saldo` con `security_invoker=true`.
+- Pagos "registrados" que ya no caben: 1 (el de $100 de OT-0034).
+
+**Pruebas de concurrencia (escriben en DEV).**
+
+| Prueba | Resultado |
+|---|---|
+| A, cliente (`test-confirmacion-concurrente.js`), factura de sandbox con saldo $580 | 2 pagos de $348: uno confirmado (póliza `I-00005`), otro rechazado "saldo actual $232.00"; saldo final $232.00 |
+| A, proveedor, factura ficticia `OT29-001` (saldo $580) | 2 pagos de $348: uno confirmado (póliza `E-00008`), otro rechazado; saldo $232.00; veredicto `✔ CORRECTO` |
+| Carga, proveedor (`test-bloqueo-concurrente.js`), `OT29-001` con saldo $232.00 | 8 pagos de $51.04 confirmados a la vez; caben 4. **Se confirmaron exactamente 4** (`E-00009` a `E-00012`) y 4 fueron rechazados con "dejaría la factura pagada de más". Saldo final $27.84 (= 232 − 4 × 51.04). Una póliza por pago. |
+
+Tiempos de la prueba de carga: las 4 confirmaciones terminaron escalonadas a los 0.16,
+0.30, 0.33 y 0.34 s, y los 4 rechazos entre 0.43 y 0.70 s (el rechazo llega después de
+que se confirmaron los que sí cabían). Dos registros de $1.00 hechos durante la
+espera tardaron 441 y 454 ms y terminaron antes que la última confirmación (0.70 s):
+no se quedaron esperando detrás de ellas.
+
+**Verificación final (solo lectura, todas las empresas de DEV).** 0 facturas de cliente
+con saldo negativo, 0 de proveedor, 0 pagos confirmados sin póliza, 0 pólizas de pagos
+con debe distinto de haber (de 12), 0 folios de póliza duplicados (de 51). `OT29-001`:
+12 pagos (5 confirmados por $552.16 y 7 registrados), pagado 552.16, saldo 27.84.
+
+**Datos de prueba que quedan en DEV (no se borraron):** en `OT29-001`, 7 pagos
+"registrados" sin póliza (uno de $348, cuatro de $51.04 y dos de $1.00) y 5
+confirmados; en la factura de cliente de sandbox, el pago `P-00004` de $348
+"registrado". No hay función para cancelar pagos registrados.
+
+**No se hizo (para que no se dé por probado):**
+- La prueba B original (mantener bloqueada la factura 45 s desde el SQL Editor y
+  confirmar desde la app): se sustituyó por la prueba de carga de 8 pagos, que prueba
+  que las confirmaciones se forman en fila pero no mide una espera deliberada.
+- Prueba de carga en cliente (solo se hizo con 2 pagos), borde exacto (pago igual al
+  saldo restante), doble clic sobre el mismo pago, rol sin permiso y pago de otra empresa.
+- Comparar `registrar_pago_*` y `siguiente_folio` de DEV con el repo (consulta C).
+- Aplicación en producción.
+
+**Veredicto:** la confirmación atómica de pagos funciona en DEV para Cobranza y Cuentas por
+pagar: con competencia real nunca se confirma más de lo que cabe, no se duplican pólizas ni
+folios y los saldos cuadran. Queda pendiente solo lo anterior, de bajo riesgo.
