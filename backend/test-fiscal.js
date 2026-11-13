@@ -335,6 +335,13 @@ await ok('mensajes del inicio de sesión: errores conocidos traducidos y el téc
   assert.equal(avisos.length, 3); // cada llamada con un error no reconocido deja rastro en la consola
 });
 
+await ok('Dashboard: la tarjeta de ingresos − egresos no se llama "utilidad" (no es la utilidad del Estado de Resultados)', () => {
+  const app = codigo('app.js');
+  assert.ok(app.includes('kpiCard("Ingresos − egresos (pólizas)"'), 'falta la etiqueta nueva');
+  assert.ok(!app.includes('kpiCard("Utilidad operativa"'), 'volvió la etiqueta confusa "Utilidad operativa"');
+  assert.match(codigo('dashboard.html'), /app\.js\?v=\d+/);
+});
+
 // ============================================================
 console.log('\n4) contabilidad.js completo en un navegador simulado (XML del SAT, hoja de cuentas, IVA y DIOT)');
 
