@@ -348,6 +348,12 @@
         if (d.documento_path) acciones += '<button class="v-mini" data-fis-ver-doc="' + esc(d.documento_path) + '">Ver acuse</button> ';
         if (puedeRegistrar()) acciones += '<button class="v-mini" data-fis-deshacer="' + esc(d.id) + '">Regresar a pendiente</button>';
       }
+      // Corregir o eliminar una declaración que aún no está presentada: solo admin y director.
+      // Eliminar no se ofrece si ya tiene un acuse adjunto (el archivo quedaría huérfano en Storage).
+      if (d.estado !== "presentada" && puedeConfigurar()) {
+        acciones += ' <button class="v-mini" data-fis-edit-decl="' + esc(d.id) + '">Editar</button>';
+        if (!d.documento_path) acciones += ' <button class="v-mini" data-fis-del-decl="' + esc(d.id) + '">Eliminar</button>';
+      }
       const tipoDecl = tipoDeNotas(d.notas);
       const etiquetaTipo = tipoDecl ? ' <span class="v-badge v-badge--warn">' + esc(tipoDecl) + "</span>" : "";
       return "<tr><td>" + esc(nombreObligacion(d.obligacion_id)) + "</td><td>" + esc(d.periodo) + etiquetaTipo + "</td><td>" + esc(fmtFecha(d.fecha_vencimiento)) +
@@ -569,6 +575,44 @@
       <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-fis-confirmar-dup>Registrar de todos modos</button></div>`);
   }
 
+  // ---- Corregir o eliminar una declaración pendiente (admin y director) ----
+  let declaracionEnCorreccion = null;
+  function openEditarDeclaracion(id) {
+    const d = declaraciones.find((x) => x.id === id);
+    if (!d) return;
+    declaracionEnCorreccion = d.id;
+    openModal(`
+      <h2 class="v-h2">Corregir declaración</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .8rem">${esc(nombreObligacion(d.obligacion_id))}. Solo se corrigen el periodo y la fecha límite; el estado no cambia.</p>
+      <div class="v-grid2">
+        <div class="v-field"><label>Periodo</label><input class="v-inp" id="fed-periodo" maxlength="60" value="${esc(d.periodo)}"></div>
+        <div class="v-field"><label>Fecha límite</label><input class="v-inp" id="fed-vence" type="date" value="${esc(String(d.fecha_vencimiento).slice(0, 10))}"></div>
+      </div>
+      <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" data-fis-guardar-edicion>Guardar cambios</button></div>`);
+  }
+  async function guardarEdicionDeclaracion() {
+    const periodo = document.getElementById("fed-periodo").value.trim();
+    const fechaVencimiento = document.getElementById("fed-vence").value;
+    if (!periodo || !fechaVencimiento) { toast("Captura el periodo y la fecha límite", "warn"); return; }
+    const data = await enviar("PUT", "/api/fiscal/declaraciones/" + encodeURIComponent(declaracionEnCorreccion) + "/datos", { periodo, fechaVencimiento });
+    if (!data.ok) { toast(data.error || "No se pudo guardar", "warn"); return; }
+    closeModal(); toast("Declaración corregida"); await render();
+  }
+  function openEliminarDeclaracion(id) {
+    const d = declaraciones.find((x) => x.id === id);
+    if (!d) return;
+    declaracionEnCorreccion = d.id;
+    openModal(`
+      <h2 class="v-h2">Eliminar declaración</h2>
+      <p style="color:var(--muted);font-size:.88rem">Se eliminará <b>${esc(nombreObligacion(d.obligacion_id))} · ${esc(d.periodo)}</b> (vence ${esc(fmtFecha(d.fecha_vencimiento))}). Esta acción no se puede deshacer. Úsala solo para un registro capturado por error.</p>
+      <div class="v-modal__foot"><button class="btn btn--ghost" data-v-close>Cancelar</button><button class="btn btn--primary" style="background:#FB7185;border-color:#FB7185" data-fis-confirmar-eliminar>Eliminar</button></div>`);
+  }
+  async function confirmarEliminarDeclaracion() {
+    const data = await enviar("DELETE", "/api/fiscal/declaraciones/" + encodeURIComponent(declaracionEnCorreccion));
+    if (!data.ok) { toast(data.error || "No se pudo eliminar", "warn"); return; }
+    closeModal(); toast("Declaración eliminada"); await render();
+  }
+
   function openDeshacerPresentada(id) {
     declaracionActual = id;
     openModal(`
@@ -650,6 +694,10 @@
     const conf = e.target.closest("[data-fis-confirmar-presentada]"); if (conf) { conBoton(conf, confirmarPresentada); return; }
     const cDup = e.target.closest("[data-fis-confirmar-dup]");
     if (cDup) { conBoton(cDup, () => enviarDeclaracion(Object.assign({}, declaracionPorConfirmar, { confirmarDuplicada: true }))); return; }
+    const edD = e.target.closest("[data-fis-edit-decl]"); if (edD) { openEditarDeclaracion(edD.getAttribute("data-fis-edit-decl")); return; }
+    const gEd = e.target.closest("[data-fis-guardar-edicion]"); if (gEd) { conBoton(gEd, guardarEdicionDeclaracion); return; }
+    const dlD = e.target.closest("[data-fis-del-decl]"); if (dlD) { openEliminarDeclaracion(dlD.getAttribute("data-fis-del-decl")); return; }
+    const cEl = e.target.closest("[data-fis-confirmar-eliminar]"); if (cEl) { conBoton(cEl, confirmarEliminarDeclaracion); return; }
     const des = e.target.closest("[data-fis-deshacer]"); if (des) { openDeshacerPresentada(des.getAttribute("data-fis-deshacer")); return; }
     const cDes = e.target.closest("[data-fis-confirmar-deshacer]"); if (cDes) { conBoton(cDes, confirmarDeshacer); return; }
     const ver = e.target.closest("[data-fis-ver-doc]"); if (ver) { verDocumento(ver.getAttribute("data-fis-ver-doc")); return; }

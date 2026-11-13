@@ -158,6 +158,25 @@ seguridad y se sustituyeron por una simulación en memoria.
 
 **Datos de prueba que quedaron en Demo C:** pólizas `E-00014` (anulada) y `E-00015` (reversa), que se cancelan entre sí; un documento fiscal y una declaración (Octubre 2026) rotulados PRUEBA, cada uno con su PDF en Storage, que hay que borrar en Supabase (el panel no tiene botón de eliminar, por decisión de la sección 6).
 
+### 1f. OT-0031c · Catálogo oficial del SAT, corregir/eliminar declaraciones y mensaje para la contadora
+
+Rama `feature/OT-0031b-sat-diot-agrupador` (commits locales, sin push, sin SQL).
+
+| # | Cambio | Dónde |
+|---|---|---|
+| S35 | **Códigos agrupador validados contra el catálogo oficial del SAT.** Se descargó el esquema oficial (`CatalogosParaEsqContE.xsd`, tipo `c_CodAgrup`): **1,080 códigos**, todos con formato `NNN` o `NNN.NN` (confirma el formato que se usaba). El backend rechaza al guardar un código que no exista y la hoja avisa, antes de guardar, cuáles no existen ("NO existen en el catálogo oficial del SAT"). Si no se pudiera traer el catálogo, la hoja revisa solo el formato y lo dice | `backend/src/catalogoCodigoAgrupador.js` (nuevo, generado del XSD), `validacionesFiscal.js`, `routes/fiscal.js` (`GET /api/fiscal/codigos-agrupador/catalogo`), `frontend/contabilidad.js` |
+| S36 | **Corregir y eliminar una declaración pendiente sin entrar a Supabase** (solo admin y director). "Editar" cambia periodo y fecha límite; "Eliminar" pide confirmación. Una presentada no se edita ni se elimina (primero se regresa a pendiente) y una con acuse adjunto no se elimina desde el panel (el archivo quedaría huérfano en Storage). Si la política de la base no permite borrar a ese rol, el panel lo dice con un mensaje claro | `supabaseFiscal.js` (`corregirDeclaracion`, `eliminarDeclaracion`), `routes/fiscal.js` (`PUT /api/fiscal/declaraciones/:id/datos`, `DELETE /api/fiscal/declaraciones/:id`), `frontend/fiscal.js` |
+| S37 | **Mensaje para la contadora** listo para mandar (versión corta de WhatsApp y versión completa con tus propuestas por defecto): `docs/work-orders/Mensaje-Contadora-SAT-Fiscal.md` | `docs/work-orders/` |
+
+Versiones de caché: `contabilidad.js` v21 y `fiscal.js` v5 (en la rama de integración ya estaban `contabilidad.js` v20 y `fiscal.js` v4).
+
+**Pruebas hechas (sin pantalla):** catálogo oficial (existencia de códigos, rechazo de uno inexistente al guardar sin tocar la base, el plan de la hoja con y sin
+catálogo); editar y eliminar con cliente falso (roles contador y auditor rechazados, solo admin y director; presentada y con acuse rechazadas; error cuando la
+base no permite borrar; id inválido; no existe). Las pruebas anteriores siguen pasando.
+
+**NO verificado:** nada de esto en pantalla ni contra la base real todavía (necesita unir la rama a `integracion-local` y reiniciar el backend). En especial
+si la política RLS de `declaraciones` permite el DELETE a admin y director: si no, el panel responde "falta el permiso de borrado" y haría falta una política (SQL, que no se ejecuta sin aviso).
+
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
 | Sev. | Hallazgo | Estado |
