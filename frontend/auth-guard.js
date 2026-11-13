@@ -109,7 +109,12 @@ if (!configured) {
           fetch(`${BACKEND}/api/cfdis`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/empleados`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/onboarding/estado`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
-          fetch(`${BACKEND}/api/config-contable`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
+          // OT-0044: por CTPostgres (caché de 8 s con petición compartida) para que Contabilidad, que la pide
+          // otra vez al abrir, no repita la petición. Sin CTPostgres (páginas que no lo cargan) va directo.
+          (window.CTPostgres && window.CTPostgres.leerConfigContable
+            ? window.CTPostgres.leerConfigContable()
+            : fetch(`${BACKEND}/api/config-contable`, { headers: authHeader }).then((r) => r.json())
+          ).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/cfdis-saldo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
           fetch(`${BACKEND}/api/cfdis-proveedor-saldo`, { headers: authHeader }).then((r) => r.json()).catch(() => ({ ok: false })),
         ]);
