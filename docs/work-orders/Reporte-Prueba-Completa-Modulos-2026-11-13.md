@@ -46,3 +46,8 @@ select proname,
  where pronamespace = 'public'::regnamespace and proname in ('crear_nomina', 'cerrar_periodo');
 ```
 Debe devolver `revisa_rol = true` y una línea con los roles permitidos en las dos funciones.
+
+## Limpieza de datos demo en Empresa Demo C (13-nov-2026)
+- Se dieron de baja (baja suave, `activo = false`, reversible con "reactivar") las 3 cuentas de prueba sin movimientos ni uso en la configuración contable: `103` "bancos", `10003` "ban" y `bancos` "banco". Las hizo el director desde el visor con la función de eliminar cuenta del propio sistema.
+- Después: el catálogo activo pasó de 28 a 25 cuentas, el Balance sigue cuadrando y la configuración contable no cambió.
+- **No se tocaron** (decisión pendiente del usuario): las pólizas sin partidas `DEMO-D-00003` ($3,200) y `E-00005` ($200), porque anularlas no se puede deshacer y crea pólizas de reversa nuevas; las pólizas repetidas `E-00009` a `E-00012` ($51.04); el salario diario de 16.67 de una empleada dada de baja.
