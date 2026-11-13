@@ -36,4 +36,21 @@ intentarlos, pero verlos confunde. En SAT y Fiscal ya estaban ocultos por códig
   Se comprobó que detecta errores rompiendo a propósito tres cosas (el borrado del caché al escribir, un botón de la lista, un botón nuevo sin ocultar).
 - Las 20 pruebas de `npm run test:fiscal` siguen pasando.
 
-**NO verificado:** en pantalla todavía (el panel que corre no trae esta rama).
+## 4. Verificación en pantalla (13-nov-2026, rama unida a `integracion-local`, commit `4cdea42`)
+
+Las 13 pruebas de esta OT y las 20 de `npm run test:fiscal` también pasan en el checkout de integración.
+
+| Rol | Qué se comprobó | Resultado |
+|---|---|---|
+| Auditor (Demo C) | Botones de escritura visibles | **Ninguno**: 17 tipos de botón de acción presentes en pantalla (Nueva póliza/cuenta, Editar y Eliminar cuenta, Cerrar periodo, Nueva venta, Timbrar CFDI, correo, NC, cancelar CFDI, Calcular, Empleado…) con 0 visibles |
+| Auditor | Botones de lectura | Siguen visibles: Ver venta (5/5), Ver póliza (16/16), Mayor (22/22), historial de proveedor, PDF de CFDI (2/2), Simulador fiscal, descargas de XML y hoja, "Ver acuse" |
+| Auditor | Ventanas | Detalle de ventas y de pólizas sin botones de acción; en la póliza `E-00013` el "Editar" sale oculto |
+| Director (Demo C) | Botones | Todos visibles (los 24 tipos presentes en pantalla); el "1/2" de Nueva póliza es el botón del Dashboard y el de Contabilidad, que no se muestran a la vez |
+| Director | Datos que pasan por el caché | Iguales a antes: 16 pólizas (14 con partidas), Activo −424.57, Pasivo −510.78, Resultado 86.21, balanza cuadrada (3,132.16), 2 periodos, 1 factura de proveedor, configuración contable 8 de 8 |
+| Auditor y director | Peticiones al backend al abrir el panel | **16** (antes 28); la única repetida es `config-contable` ×2 |
+| Director | Caché en acción | Tres lecturas simultáneas de periodos = 1 petición |
+
+**Pendiente menor:** `config-contable` aún se pide 2 veces al abrir, porque `auth-guard.js` la pide directo y no pasa por el caché. Se evita haciendo que `auth-guard.js` la deje en el caché o que Contabilidad reutilice `window.CONTATECK_CONFIG_CONTABLE_PG`.
+
+**No verificado:** el rol contador con esta versión (la regla solo actúa con `data-rol="auditor"`, así que no debería cambiar nada para él; el caché sí lo usa); el parpadeo de 1 a 2 s antes de ocultarse los botones del auditor; el caché frente a datos cambiados por otra persona a la vez.
+
