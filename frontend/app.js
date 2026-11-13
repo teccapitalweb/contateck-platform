@@ -316,7 +316,10 @@
             deltaFact !== null ? Math.abs(deltaFact).toFixed(1) : null, deltaFact !== null ? deltaFact >= 0 : true) +
           kpiCard("Ingresos (pólizas)", o.ingresosMes || 0, "trend", null, null, true) +
           kpiCard("Egresos (pólizas)", o.egresosMes || 0, "down", null, null, false) +
-          kpiCard("Utilidad operativa", o.utilidadMes || 0, "wallet", null, null, (o.utilidadMes || 0) >= 0);
+          // OT-0043: antes decía "Utilidad operativa", pero es ingresos − egresos según el MONTO de las pólizas del mes
+          // (movimientos de caja), no la utilidad contable del Estado de Resultados (cuentas de ingresos y gastos);
+          // las dos cifras podían ser muy distintas y parecía un error. La clave `utilidadMes` del servidor no cambia.
+          kpiCard("Ingresos − egresos (pólizas)", o.utilidadMes || 0, "wallet", null, null, (o.utilidadMes || 0) >= 0);
       }
 
       renderChartAnio(serie, gastosSerie);
