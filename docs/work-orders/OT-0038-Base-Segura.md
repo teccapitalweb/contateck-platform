@@ -9,9 +9,9 @@ esquema de DEV documentado en el repo y la autenticación endurecida. Producció
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Datos del navegador por empresa (`localStorage`) | **Hecha** (esta entrega) |
-| 2 | Prueba de aislamiento entre empresas en todas las tablas + consulta de introspección RLS (solo lectura) | **Preparada y probada con base falsa; falta ejecutarla contra DEV** (ver "Fase 2") |
-| 3 | Exportar al repo lo que existe en DEV y no está en `database/` (tablas, políticas, funciones). Es documentación, no migración | Pendiente |
-| 4 | Backend rechaza correos sin confirmar; "Confirm email" en Supabase; revocar `anon` en las funciones de confirmación (SQL, con aprobación) | Pendiente |
+| 2 | Prueba de aislamiento entre empresas en todas las tablas + consulta de introspección RLS (solo lectura) | **Hecha**: 24 OK, 0 fugas, 0 errores; 3 tablas sin prueba en vivo (ver "Fase 2") |
+| 3 | Exportar al repo lo que existe en DEV y no está en `database/` (tablas, políticas, funciones). Es documentación, no migración | **Hecha** para las 7 tablas y 5 funciones de la consulta (ver "Fase 3"); las políticas ya estaban documentadas en la Fase 2c |
+| 4 | Endurecimiento de seguridad en DEV (triggers en `perfiles` e `invitaciones`, `csd_*` ilegible con sesión, folios y periodo con comprobación de empresa, `anon` sin ejecución). Prueba 12/12 | **Aplicada en DEV** (ver "Fase 4"). **Sin constancia** de: "Confirm email" en Supabase y que el backend rechace correos sin confirmar |
 
 ## Fase 1 · Datos del navegador por empresa
 
@@ -233,3 +233,28 @@ toque a Admin/Director y que quede una empresa sin director activo; revocar `sel
 - Escrituras entre empresas (insertar, actualizar o borrar filas ajenas): la prueba no escribe; se audita con las políticas
   (insert y update de todas las tablas comprueban `empresa_id = auth_empresa_id()`, salvo `perfiles` y las funciones de folio).
 - `documentos_fiscales`, sin filas en DEV.
+
+## Fase 3 · Esquema real de DEV exportado al repo (2026-11-13)
+
+**Qué se hizo:** el usuario corrió en el SQL Editor de DEV `database/OT-0038-introspeccion-esquema.sql` (solo lectura, devuelve
+estructura y ningún dato). Con su resultado se escribió `database/OT-0038-esquema-dev-exportado.sql`: columnas, restricciones e índices de
+`periodos_contables`, `nominas`, `nomina_detalle`, `invitaciones`, `obligaciones_fiscales`, `declaraciones` y `documentos_fiscales`, y el
+cuerpo de `crear_nomina`, `periodo_esta_cerrado`, `siguiente_folio_pago`, `siguiente_folio_pago_proveedor` y `set_updated_at`.
+**Es documentación: no se aplica, no se ejecutó nada en la base.** Los `CREATE TABLE` son una reescritura legible, no el DDL original.
+
+**No incluye** (fuera de esa consulta): triggers de esas tablas, si RLS está activo, permisos (`GRANT`) ni comentarios. Las políticas están
+en `policies.sql` y en el resultado de la introspección RLS de la Fase 2c.
+
+**Hallazgos de la exportación (no corregidos; deciden con una OT y SQL aprobado):**
+- `nominas` y `nomina_detalle` no tienen llave foránea de `empresa_id` a `empresas`, ni `created_by` a `perfiles`.
+- No hay CHECK en `estado`/`periodicidad` (nominas, invitaciones, declaraciones, obligaciones) ni en `dia_limite`/`mes_limite`.
+- `declaraciones` no es única por (obligación, periodo): los duplicados los evita solo la app (OT-0031).
+- `invitaciones.token` no tiene índice único.
+- `crear_nomina` no consulta `periodo_esta_cerrado`, no valida que `empleado_id` sea de la misma empresa y no valida periodicidad, días,
+  fechas ni importes negativos (severidad baja o media; se asume uso normal desde la app).
+
+**Qué desbloquea:** ya se puede sembrar una fila de prueba en otra empresa de DEV para cerrar la prueba en vivo de `obligaciones_fiscales`
+y `declaraciones` (columnas y restricciones conocidas). Sigue siendo SQL de escritura: requiere aprobación del usuario.
+
+**Sigue sin verificarse:** la regla de RH (no hay usuario RH), la prueba en vivo de `obligaciones_fiscales`/`declaraciones`/
+`documentos_fiscales`, y "Confirm email" en Supabase.
