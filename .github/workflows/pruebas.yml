@@ -1,0 +1,36 @@
+name: Pruebas automaticas
+
+# OT-0046. Corre las pruebas del backend en cada push y en cada pull request, para enterarnos de
+# inmediato si un cambio rompe algo. Solo ejecuta pruebas que NO necesitan red, llaves ni base de datos
+# (usan clientes de Supabase simulados), asi que no requiere secretos. NO publica nada: el despliegue
+# del frontend sigue siendo solo pages.yml, al hacer push a dev.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas-backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr las pruebas sin red
+        run: npm run test:ci
