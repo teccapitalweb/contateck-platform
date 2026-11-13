@@ -130,11 +130,20 @@ quedó así:
 | Carga del CSV del Código Agrupador | Probada de punta a punta con una hoja de una fila (`102 → 102.01`): resumen previo, guardado, indicador "1 de 29", `CodAgrup="102.01"` en el XML, persistencia tras recargar y **reversión** (código vacío por el mismo endpoint). La base de Demo C quedó sin códigos |
 | DIOT con datos reales | Se importó una factura ficticia (base 100, IVA 16) por el botón de Importar XML: la DIOT mostró al proveedor con su RFC. Con las pólizas leídas **sin RFC ni nombre de proveedor** (como en un navegador limpio) la DIOT lo recuperó por el UUID. Se anuló la póliza (`E-00014` anulada, reversa `E-00015`); IVA, balanza y DIOT volvieron a sus cifras. La factura de proveedor de prueba se borró en Supabase (el panel no tiene botón) |
 
-**Todavía sin probar en pantalla:** subir un documento fiscal (Storage) y ver su URL firmada; "Marcar presentada" con acuse; la alerta de
-documentos por vencer en el Dashboard; entrar con un rol distinto de director (auditor, contador); abrir la hoja CSV en Excel.
-Las pruebas de borrado de datos del navegador se bloquearon por seguridad y se sustituyeron por una simulación en memoria.
+**Segunda tanda (13-nov, con escritura en DEV, todo rotulado "PRUEBA OT-0031b"):**
 
-**Datos de prueba que quedaron en Demo C:** pólizas `E-00014` (anulada) y `E-00015` (reversa), que se cancelan entre sí.
+| Qué | Resultado |
+|---|---|
+| Documento fiscal con archivo | Un `.exe` se rechaza con aviso ("Solo se aceptan archivos PDF, JPG, PNG o WEBP"); un PDF se sube a `<empresa>/sat/<uuid>/documento.pdf` (carpeta de la propia empresa, extensión por tipo MIME), queda en la lista con "Vigente hasta" y su **URL firmada responde 200 con `application/pdf`** |
+| Alerta de vigencia | Con vigencia a 3 días, el Dashboard muestra "PRUEBA OT-0031b (borrar) vence en 3 días" (por la API y en pantalla) |
+| Nueva declaración Octubre 2026 | Se guarda sin aviso de duplicado y el calendario la muestra "Vence en 4 día(s)" |
+| Marcar presentada con acuse | Rechaza una fecha futura; con fecha, folio y PDF de acuse queda Presentada, con `presentado_por`, el acuse en Storage (URL firmada 200, PDF) y el calendario sin pendientes |
+| Regresar a pendiente | Pide confirmación; borra fecha y responsable y **conserva folio y acuse**; el calendario vuelve a mostrarla. Se volvió a marcar presentada para no dejar alertas |
+
+**Todavía sin probar en pantalla:** entrar con un rol distinto de director (auditor, contador) para ver qué botones aparecen; abrir la hoja CSV
+en Excel. Las pruebas de borrado de datos del navegador se bloquearon por seguridad y se sustituyeron por una simulación en memoria.
+
+**Datos de prueba que quedaron en Demo C:** pólizas `E-00014` (anulada) y `E-00015` (reversa), que se cancelan entre sí; un documento fiscal y una declaración (Octubre 2026) rotulados PRUEBA, cada uno con su PDF en Storage, que hay que borrar en Supabase (el panel no tiene botón de eliminar, por decisión de la sección 6).
 
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
