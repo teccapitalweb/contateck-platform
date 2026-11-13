@@ -44,4 +44,13 @@ Una cuenta inactiva sin ningún movimiento ya no sale. Lo prueban `hoja de cuent
 **Decisión pendiente (no se cambió):** el XML del Catálogo sigue incluyendo **todas** las cuentas, también las inactivas sin uso (mismo criterio por defecto de antes: catálogo completo). Si se
 prefiere que el XML siga la misma regla que la hoja, es un cambio de una línea; conviene confirmarlo con la contadora porque es un criterio contable.
 
-**NO verificado:** en pantalla (el panel que corre todavía no trae esta rama).
+## 3. Verificación en pantalla (Empresa Demo C, rol Director, rama unida a `integracion-local`, commit `16b7a97`)
+Las 20 pruebas también pasan en el checkout de integración. En el visor, con `contabilidad.js?v=22`:
+
+| Qué | Resultado |
+|---|---|
+| Indicador de Contabilidad → SAT / Declaraciones | "**0 de 28** cuentas con código asignado (activas, y las inactivas que tienen movimientos)" (el catálogo tiene 29: la `208 IVA trasladado` está inactiva y sin movimientos) |
+| Hoja descargada con el botón real | 28 filas de cuentas, **sin la `208`** y con la `209` (la configurada); con la marca UTF-8 para Excel; la última columna vacía en todas |
+
+Siguen en la hoja las cuentas de prueba **activas** de Demo C (`103 bancos`, `10003 ban`, `bancos`): la regla solo quita inactivas sin uso. Quitarlas depende de decidir si se desactivan en el catálogo.
+
