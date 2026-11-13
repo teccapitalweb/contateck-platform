@@ -5,6 +5,8 @@
 //  datos ya limpios (texto recortado, tipos correctos).
 // ============================================================
 
+import { codigoAgrupadorExiste } from './catalogoCodigoAgrupador.js';
+
 export const PERIODICIDADES = ['mensual', 'bimestral', 'anual'];
 export const ESTADOS_DECLARACION = ['pendiente', 'en_proceso', 'presentada'];
 export const TIPOS_DOCUMENTO = ['opinion_cumplimiento', 'constancia_situacion_fiscal', 'otro'];
@@ -235,7 +237,26 @@ export function validarCodigosAgrupador(filas) {
     vistos.add(f.id);
     const c = f.codigoAgrupador == null ? '' : String(f.codigoAgrupador).trim();
     if (c && !codigoAgrupadorValido(c)) return { error: `El código "${c.slice(0, 20)}" no tiene el formato del Código Agrupador (NNN o NNN.NN, por ejemplo 102.01).` };
+    // Además de tener el formato, debe existir en el catálogo oficial del SAT (OT-0031c).
+    if (c && !codigoAgrupadorExiste(c)) return { error: `El código "${c}" no existe en el catálogo de Códigos Agrupadores del SAT.` };
     valores.push({ id: f.id, codigo_agrupador: c || null });
   }
+  return { valores };
+}
+
+// ---------------- Corregir una declaración pendiente (periodo y fecha límite) ----------------
+export function validarCorreccionDeclaracion(datos) {
+  const d = datos || {};
+  const valores = {};
+  if (d.periodo !== undefined) {
+    const r = validarTextoLargo(d.periodo, 'el periodo', MAX_PERIODO, true);
+    if (r.error) return { error: r.error };
+    valores.periodo = r.valor;
+  }
+  if (d.fechaVencimiento !== undefined) {
+    if (!fechaIsoValida(d.fechaVencimiento)) return { error: 'La fecha de vencimiento no es válida (AAAA-MM-DD).' };
+    valores.fecha_vencimiento = d.fechaVencimiento;
+  }
+  if (!Object.keys(valores).length) return { error: 'No hay cambios que guardar.' };
   return { valores };
 }

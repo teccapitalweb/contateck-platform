@@ -9,16 +9,19 @@
 //    GET  /api/fiscal/documentos
 //    POST /api/fiscal/documentos
 //    GET  /api/fiscal/calendario
+//    PUT  /api/fiscal/declaraciones/:id/datos  (corregir periodo y fecha límite; admin/director)
+//    DELETE /api/fiscal/declaraciones/:id      (eliminar pendiente sin acuse; admin/director)
 //    GET  /api/fiscal/proveedores-diot     (RFC y nombre por UUID, para la DIOT)
 //    PUT  /api/fiscal/codigos-agrupador    (lote: { cuentas: [{ id, codigoAgrupador }] })
 // ============================================================
 import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
+import { CODIGOS_AGRUPADOR_SAT } from '../catalogoCodigoAgrupador.js';
 import {
   listarObligaciones, crearObligacion, actualizarObligacion,
   listarDeclaraciones, crearDeclaracion, actualizarDeclaracion,
   listarDocumentosFiscales, crearDocumentoFiscal,
-  obtenerCalendario, listarProveedoresDiot, guardarCodigosAgrupador,
+  obtenerCalendario, listarProveedoresDiot, guardarCodigosAgrupador, corregirDeclaracion, eliminarDeclaracion,
 } from '../supabaseFiscal.js';
 
 export const fiscalRouter = Router();
@@ -84,8 +87,27 @@ fiscalRouter.get('/fiscal/proveedores-diot', async (req, res) => {
   res.status(r.ok ? 200 : 403).json(r);
 });
 
+// Catálogo oficial de Códigos Agrupadores del SAT (dato público y fijo): el panel lo usa para
+// avisar, antes de guardar, qué códigos de la hoja no existen.
+fiscalRouter.get('/fiscal/codigos-agrupador/catalogo', (req, res) => {
+  if (!requireAuth(req, res)) return;
+  res.json({ ok: true, codigos: CODIGOS_AGRUPADOR_SAT });
+});
+
 fiscalRouter.put('/fiscal/codigos-agrupador', async (req, res) => {
   if (!requireAuth(req, res)) return;
   const r = await guardarCodigosAgrupador(req.token, (req.body || {}).cuentas);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+fiscalRouter.put('/fiscal/declaraciones/:id/datos', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await corregirDeclaracion(req.token, req.params.id, req.body || {});
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+fiscalRouter.delete('/fiscal/declaraciones/:id', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await eliminarDeclaracion(req.token, req.params.id);
   res.status(r.ok ? 200 : 400).json(r);
 });

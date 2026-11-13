@@ -674,8 +674,9 @@
     return s;
   }
   // Compara el CSV con el catálogo SIN guardar nada. Las celdas vacías no borran: significan "aún sin llenar".
-  function planCargaAgrupador(filas, cuentas) {
-    const plan = { aplicar: [], sinCambio: 0, vacias: 0, invalidas: [], noEncontradas: [] };
+  // `catalogo`: Set con los códigos oficiales del SAT (o null si no se pudo traer: entonces solo se revisa el formato).
+  function planCargaAgrupador(filas, cuentas, catalogo) {
+    const plan = { aplicar: [], sinCambio: 0, vacias: 0, invalidas: [], noEnCatalogo: [], noEncontradas: [] };
     if (!filas || filas.length < 2) { plan.error = "El archivo está vacío o solo trae el encabezado."; return plan; }
     const enc = filas[0].map((h) => String(h).trim().toLowerCase());
     const iCod = enc.findIndex((h) => h === "código" || h === "codigo");
@@ -691,6 +692,7 @@
       if (!cuenta) { plan.noEncontradas.push(codigo); return; }
       if (!valor) { plan.vacias++; return; }
       if (!AGRUPADOR_SAT.test(valor)) { plan.invalidas.push({ codigo, valor }); return; }
+      if (catalogo && !catalogo.has(valor)) { plan.noEnCatalogo.push({ codigo, valor }); return; }
       if (valor === (cuenta.codigoAgrupador || "")) { plan.sinCambio++; return; }
       plan.aplicar.push({ id: cuenta.id, codigo, codigoAgrupador: valor });
     });
@@ -2997,6 +2999,22 @@ ${ctas}
     descargarTexto("Balanza_" + suf, xmlBalanzaSAT(rfc, mes, anio), "application/xml");
   }
 
+  // Catálogo oficial de Códigos Agrupadores (lo sirve el backend); se pide una vez y se guarda en memoria.
+  let catalogoAgrupadorSat = null;
+  async function cargarCatalogoAgrupadorSat() {
+    if (catalogoAgrupadorSat) return catalogoAgrupadorSat;
+    try {
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const t = window.CONTATECK_SUPABASE_TOKEN;
+      if (!t) return null;
+      const r = await fetch(BACKEND + "/api/fiscal/codigos-agrupador/catalogo", { headers: { Authorization: "Bearer " + t } });
+      const j = await r.json();
+      if (!j || !j.ok || !Array.isArray(j.codigos) || j.codigos.length < 500) return null;
+      catalogoAgrupadorSat = new Set(j.codigos);
+      return catalogoAgrupadorSat;
+    } catch (e) { return null; }
+  }
+
   // Sube la hoja de Código Agrupador: se lee y se muestra un resumen; NO se guarda nada hasta confirmar.
   let planAgrupadorPendiente = null;
   async function leerHojaAgrupador(input) {
@@ -3006,7 +3024,9 @@ ${ctas}
     if (f.size > 1024 * 1024) { toast("La hoja pesa más de 1 MB; revisa que sea la de cuentas.", "error"); return; }
     let texto;
     try { texto = await f.text(); } catch (e) { toast("No se pudo leer el archivo.", "error"); return; }
-    const plan = planCargaAgrupador(parsearCsv(texto), getCuentas());
+    const catalogo = await cargarCatalogoAgrupadorSat();
+    const plan = planCargaAgrupador(parsearCsv(texto), getCuentas(), catalogo);
+    plan.sinCatalogo = !catalogo;
     if (plan.error) { toast(plan.error, "error", 6000); return; }
     planAgrupadorPendiente = plan;
     const lista = (arr, fmtFila) => arr.slice(0, 8).map((x) => `<li>${fmtFila(x)}</li>`).join("") + (arr.length > 8 ? `<li>… y ${arr.length - 8} más</li>` : "");
@@ -3015,10 +3035,12 @@ ${ctas}
       <p style="margin:0 0 .6rem;font-size:.9rem"><b>${plan.aplicar.length}</b> cuenta(s) por actualizar · ${plan.sinCambio} sin cambio · ${plan.vacias} sin llenar (no se tocan)</p>
       ${plan.invalidas.length ? `<div class="cont-err" style="margin-bottom:.6rem"><b>${plan.invalidas.length} con formato inválido (no se cargarán):</b>
         <ul style="margin:.3rem 0 0 1.1rem">${lista(plan.invalidas, (x) => `${esc(x.codigo)} → «${esc(x.valor)}» (debe ser NNN o NNN.NN, ej. 102.01)`)}</ul></div>` : ""}
+      ${plan.noEnCatalogo.length ? `<div class="cont-err" style="margin-bottom:.6rem"><b>${plan.noEnCatalogo.length} código(s) que NO existen en el catálogo oficial del SAT (no se cargarán):</b>
+        <ul style="margin:.3rem 0 0 1.1rem">${lista(plan.noEnCatalogo, (x) => `${esc(x.codigo)} → «${esc(x.valor)}»`)}</ul></div>` : ""}
       ${plan.noEncontradas.length ? `<div class="cont-err" style="margin-bottom:.6rem"><b>${plan.noEncontradas.length} código(s) de la hoja que no existen en tu catálogo (se ignoran):</b>
         <ul style="margin:.3rem 0 0 1.1rem">${lista(plan.noEncontradas, (x) => esc(x))}</ul></div>` : ""}
       ${plan.aplicar.length ? `<ul style="margin:0 0 .8rem 1.1rem;font-size:.85rem">${lista(plan.aplicar, (x) => `${esc(x.codigo)} → <b>${esc(x.codigoAgrupador)}</b>`)}</ul>` : '<p style="color:var(--muted);font-size:.88rem">No hay cambios que guardar.</p>'}
-      <p style="color:var(--faint);font-size:.78rem;margin:0 0 .6rem">Solo se revisa el formato; que el código exista en el catálogo del SAT lo confirma la contadora.</p>
+      <p style="color:var(--faint);font-size:.78rem;margin:0 0 .6rem">${plan.sinCatalogo ? "No se pudo traer el catálogo oficial del SAT: solo se revisó el formato; que cada código exista lo confirma la contadora." : "Se revisó que cada código exista en el catálogo oficial del SAT (1,080 códigos). Que sea el código que corresponde a la cuenta lo decide la contadora."}</p>
       <div data-cont-msg></div>
       <div class="cont-foot"><button class="btn btn--ghost" data-cont-close>Cancelar</button>
         ${plan.aplicar.length ? `<button class="btn btn--primary" data-sat-agr-aplicar>Guardar ${plan.aplicar.length} código(s)</button>` : ""}</div>`;

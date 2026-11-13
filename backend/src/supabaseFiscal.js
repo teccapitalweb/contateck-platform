@@ -32,7 +32,7 @@ import { obtenerRolUsuario } from './supabaseCfdis.js';
 import {
   esUuid, hoyMexico, diasEntre, validarObligacion, validarDeclaracionNueva,
   validarActualizacionDeclaracion, validarDocumentoNuevo, rutaDocumentoValida, alertasVigencia,
-  esComplementaria, similaresDePeriodo, esDuplicadaDePresentada, validarCodigosAgrupador,
+  esComplementaria, similaresDePeriodo, esDuplicadaDePresentada, validarCodigosAgrupador, validarCorreccionDeclaracion,
 } from './validacionesFiscal.js';
 
 const ROLES_VEN = ['contador', 'admin', 'director', 'auditor'];
@@ -258,6 +258,52 @@ export async function actualizarDeclaracion(accessToken, userId, declaracionId, 
     .from('declaraciones').update(patch).eq('id', declaracionId).select().single();
   if (error) return errorAmigable(error, 'actualizar la declaración', log);
   return { ok: true, declaracion: data };
+}
+
+// Corrige periodo y/o fecha límite de una declaración que AÚN NO está presentada (solo admin y director).
+// Una presentada no se edita aquí: primero se regresa a pendiente (así queda claro que se está corrigiendo un dato ya reportado).
+export async function corregirDeclaracion(accessToken, declaracionId, datos, log = console) {
+  const chk = await verificarAcceso(accessToken, ROLES_CONFIGURAN_OBLIGACIONES, log);
+  if (!chk.ok) return chk;
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  if (!esUuid(declaracionId)) return { ok: false, error: 'El identificador de la declaración no es válido.' };
+  const v = validarCorreccionDeclaracion(datos);
+  if (v.error) return { ok: false, error: v.error };
+
+  const { data: actual, error: errAct } = await supabase
+    .from('declaraciones').select('id, estado').eq('id', declaracionId).maybeSingle();
+  if (errAct) return errorAmigable(errAct, 'consultar la declaración', log);
+  if (!actual) return { ok: false, error: 'La declaración no existe o no es de tu empresa.' };
+  if (actual.estado === 'presentada') return { ok: false, error: 'Una declaración presentada no se edita: primero regrésala a pendiente.' };
+
+  const { data, error } = await supabase
+    .from('declaraciones').update(v.valores).eq('id', declaracionId).select().single();
+  if (error) return errorAmigable(error, 'corregir la declaración', log);
+  return { ok: true, declaracion: data };
+}
+
+// Elimina una declaración que no está presentada y no tiene acuse adjunto (solo admin y director).
+// Con acuse no se borra desde aquí: el archivo quedaría huérfano en Storage.
+export async function eliminarDeclaracion(accessToken, declaracionId, log = console) {
+  const chk = await verificarAcceso(accessToken, ROLES_CONFIGURAN_OBLIGACIONES, log);
+  if (!chk.ok) return chk;
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  if (!esUuid(declaracionId)) return { ok: false, error: 'El identificador de la declaración no es válido.' };
+
+  const { data: actual, error: errAct } = await supabase
+    .from('declaraciones').select('id, estado, documento_path').eq('id', declaracionId).maybeSingle();
+  if (errAct) return errorAmigable(errAct, 'consultar la declaración', log);
+  if (!actual) return { ok: false, error: 'La declaración no existe o no es de tu empresa.' };
+  if (actual.estado === 'presentada') return { ok: false, error: 'Una declaración presentada no se elimina: primero regrésala a pendiente.' };
+  if (actual.documento_path) return { ok: false, error: 'Esta declaración tiene un acuse adjunto y no se puede eliminar desde el panel.' };
+
+  const { data, error } = await supabase.from('declaraciones').delete().eq('id', declaracionId).select('id');
+  if (error) return errorAmigable(error, 'eliminar la declaración', log);
+  // Sin error pero sin filas: la política de la base no permite borrar a este rol.
+  if (!data || !data.length) return { ok: false, error: 'La base de datos no permitió eliminarla (falta el permiso de borrado para tu rol).' };
+  return { ok: true };
 }
 
 // ---------------- Documentos fiscales ----------------

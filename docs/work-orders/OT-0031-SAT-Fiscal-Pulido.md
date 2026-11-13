@@ -113,6 +113,70 @@ oficial; que la política de UPDATE de `cuentas_contables` permita escribir la c
 **Dato a tener presente:** en la prueba el IVA acreditable sumó también la póliza anulada porque en los datos simulados no había
 su reversa; en el sistema real una anulación genera la reversa y el saldo queda neto (la DIOT sí excluye las anuladas).
 
+### 1e. Verificación en pantalla (13-nov-2026, Empresa Demo C, rol Director, rama integracion-local)
+
+Hecha en el visor de la app con la sesión real del usuario, contra DEV. Lo que dice "No verificado" más arriba en las secciones 1b a 1d
+quedó así:
+
+| Qué | Resultado |
+|---|---|
+| SAT y Fiscal: botones de e.firma, aviso, Editar/Desactivar, Cargar comunes | Se ven y funcionan como se diseñaron (pantalla ancha y angosta) |
+| Dos declaraciones de Julio 2026 (caso de Auditoría) | La presentada muestra "Ver acuse" y "Regresar a pendiente"; la otra sale **Duplicada**; el calendario y el Dashboard ya no alertan |
+| Nueva declaración | Por defecto propone el último periodo concluido (Octubre 2026) con fecha límite 17 nov 2026; al cambiar la fecha a mano avisa que difiere de la sugerida; Julio 2026 sugiere 17 ago 2026 |
+| Aviso de duplicado al crear | El backend responde `DUPLICADA` con el detalle y **no guarda**; el panel muestra las dos existentes con "Cancelar" y "Registrar de todos modos". Se canceló: la base quedó con las mismas 2 declaraciones |
+| Editar obligación y plantilla | Abren con los datos de la obligación; al elegir Anual aparece el mes límite; la plantilla marca "ya existe" en IVA mensual y deja 5 casillas marcadas. Se cancelaron sin guardar |
+| Contabilidad → SAT / Declaraciones | Indicador "0 de 29 cuentas con código", botón de carga (solo contador, admin y director), RFC precargado de la empresa |
+| Descarga real de los botones | Catálogo XML (29 cuentas), Balanza XML (21 filas, `TipoEnvio=N`) y hoja CSV (29 filas): bien formados, con el nombre de archivo esperado; la balanza de julio (900 = 900) y la de noviembre (2,000.16 = 2,000.16) cuadran y cada fila cumple saldo final = inicial ± movimientos. Aviso "29 cuentas sin Código Agrupador" al bajar el catálogo |
+| Carga del CSV del Código Agrupador | Probada de punta a punta con una hoja de una fila (`102 → 102.01`): resumen previo, guardado, indicador "1 de 29", `CodAgrup="102.01"` en el XML, persistencia tras recargar y **reversión** (código vacío por el mismo endpoint). La base de Demo C quedó sin códigos |
+| DIOT con datos reales | Se importó una factura ficticia (base 100, IVA 16) por el botón de Importar XML: la DIOT mostró al proveedor con su RFC. Con las pólizas leídas **sin RFC ni nombre de proveedor** (como en un navegador limpio) la DIOT lo recuperó por el UUID. Se anuló la póliza (`E-00014` anulada, reversa `E-00015`); IVA, balanza y DIOT volvieron a sus cifras. La factura de proveedor de prueba se borró en Supabase (el panel no tiene botón) |
+
+**Segunda tanda (13-nov, con escritura en DEV, todo rotulado "PRUEBA OT-0031b"):**
+
+| Qué | Resultado |
+|---|---|
+| Documento fiscal con archivo | Un `.exe` se rechaza con aviso ("Solo se aceptan archivos PDF, JPG, PNG o WEBP"); un PDF se sube a `<empresa>/sat/<uuid>/documento.pdf` (carpeta de la propia empresa, extensión por tipo MIME), queda en la lista con "Vigente hasta" y su **URL firmada responde 200 con `application/pdf`** |
+| Alerta de vigencia | Con vigencia a 3 días, el Dashboard muestra "PRUEBA OT-0031b (borrar) vence en 3 días" (por la API y en pantalla) |
+| Nueva declaración Octubre 2026 | Se guarda sin aviso de duplicado y el calendario la muestra "Vence en 4 día(s)" |
+| Marcar presentada con acuse | Rechaza una fecha futura; con fecha, folio y PDF de acuse queda Presentada, con `presentado_por`, el acuse en Storage (URL firmada 200, PDF) y el calendario sin pendientes |
+| Regresar a pendiente | Pide confirmación; borra fecha y responsable y **conserva folio y acuse**; el calendario vuelve a mostrarla. Se volvió a marcar presentada para no dejar alertas |
+
+**Tercera tanda (13-nov): otro rol y otra empresa.** Sesión `demo.contador@contateck.mx`, rol **contador**, empresa TEC CAPITAL Group (DEV). Solo lectura
+más llamadas con datos inválidos a propósito (no escriben nada):
+
+| Qué | Resultado |
+|---|---|
+| Botones en SAT y Fiscal | Ve "+ Documento" y "+ Declaración"; **no** ve "+ Obligación", "Cargar comunes" ni "Editar/Desactivar" |
+| Contabilidad → SAT / Declaraciones | Ve "Cargar códigos agrupador (CSV)" (contador, admin y director); indicador "0 de 33 cuentas" |
+| Backend: crear o editar obligación | Rechaza con "No tienes permiso… (tu rol no lo permite)" |
+| Backend: lo que sí puede | Lee obligaciones; crear declaración o cargar códigos con datos inválidos responde el error de validación (el permiso pasa) |
+| Aislamiento entre empresas | Esta empresa no ve ninguna obligación, declaración ni documento de Empresa Demo C (0 en cada lista) |
+
+Observación menor, sin cambio: las respuestas de "sin permiso" en escritura salen con HTTP 400 y no 403 (las lecturas sí usan 403); el mensaje es correcto.
+
+**Todavía sin probar:** el rol auditor (solo lectura) y abrir la hoja CSV en Excel. Las pruebas de borrado de datos del navegador se bloquearon por
+seguridad y se sustituyeron por una simulación en memoria.
+
+**Datos de prueba que quedaron en Demo C:** pólizas `E-00014` (anulada) y `E-00015` (reversa), que se cancelan entre sí; un documento fiscal y una declaración (Octubre 2026) rotulados PRUEBA, cada uno con su PDF en Storage, que hay que borrar en Supabase (el panel no tiene botón de eliminar, por decisión de la sección 6).
+
+### 1f. OT-0031c · Catálogo oficial del SAT, corregir/eliminar declaraciones y mensaje para la contadora
+
+Rama `feature/OT-0031b-sat-diot-agrupador` (commits locales, sin push, sin SQL).
+
+| # | Cambio | Dónde |
+|---|---|---|
+| S35 | **Códigos agrupador validados contra el catálogo oficial del SAT.** Se descargó el esquema oficial (`CatalogosParaEsqContE.xsd`, tipo `c_CodAgrup`): **1,080 códigos**, todos con formato `NNN` o `NNN.NN` (confirma el formato que se usaba). El backend rechaza al guardar un código que no exista y la hoja avisa, antes de guardar, cuáles no existen ("NO existen en el catálogo oficial del SAT"). Si no se pudiera traer el catálogo, la hoja revisa solo el formato y lo dice | `backend/src/catalogoCodigoAgrupador.js` (nuevo, generado del XSD), `validacionesFiscal.js`, `routes/fiscal.js` (`GET /api/fiscal/codigos-agrupador/catalogo`), `frontend/contabilidad.js` |
+| S36 | **Corregir y eliminar una declaración pendiente sin entrar a Supabase** (solo admin y director). "Editar" cambia periodo y fecha límite; "Eliminar" pide confirmación. Una presentada no se edita ni se elimina (primero se regresa a pendiente) y una con acuse adjunto no se elimina desde el panel (el archivo quedaría huérfano en Storage). Si la política de la base no permite borrar a ese rol, el panel lo dice con un mensaje claro | `supabaseFiscal.js` (`corregirDeclaracion`, `eliminarDeclaracion`), `routes/fiscal.js` (`PUT /api/fiscal/declaraciones/:id/datos`, `DELETE /api/fiscal/declaraciones/:id`), `frontend/fiscal.js` |
+| S37 | **Mensaje para la contadora** listo para mandar (versión corta de WhatsApp y versión completa con tus propuestas por defecto): `docs/work-orders/Mensaje-Contadora-SAT-Fiscal.md` | `docs/work-orders/` |
+
+Versiones de caché: `contabilidad.js` v21 y `fiscal.js` v5 (en la rama de integración ya estaban `contabilidad.js` v20 y `fiscal.js` v4).
+
+**Pruebas hechas (sin pantalla):** catálogo oficial (existencia de códigos, rechazo de uno inexistente al guardar sin tocar la base, el plan de la hoja con y sin
+catálogo); editar y eliminar con cliente falso (roles contador y auditor rechazados, solo admin y director; presentada y con acuse rechazadas; error cuando la
+base no permite borrar; id inválido; no existe). Las pruebas anteriores siguen pasando.
+
+**NO verificado:** nada de esto en pantalla ni contra la base real todavía (necesita unir la rama a `integracion-local` y reiniciar el backend). En especial
+si la política RLS de `declaraciones` permite el DELETE a admin y director: si no, el panel responde "falta el permiso de borrado" y haría falta una política (SQL, que no se ejecuta sin aviso).
+
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
 | Sev. | Hallazgo | Estado |
