@@ -140,8 +140,21 @@ quedó así:
 | Marcar presentada con acuse | Rechaza una fecha futura; con fecha, folio y PDF de acuse queda Presentada, con `presentado_por`, el acuse en Storage (URL firmada 200, PDF) y el calendario sin pendientes |
 | Regresar a pendiente | Pide confirmación; borra fecha y responsable y **conserva folio y acuse**; el calendario vuelve a mostrarla. Se volvió a marcar presentada para no dejar alertas |
 
-**Todavía sin probar en pantalla:** entrar con un rol distinto de director (auditor, contador) para ver qué botones aparecen; abrir la hoja CSV
-en Excel. Las pruebas de borrado de datos del navegador se bloquearon por seguridad y se sustituyeron por una simulación en memoria.
+**Tercera tanda (13-nov): otro rol y otra empresa.** Sesión `demo.contador@contateck.mx`, rol **contador**, empresa TEC CAPITAL Group (DEV). Solo lectura
+más llamadas con datos inválidos a propósito (no escriben nada):
+
+| Qué | Resultado |
+|---|---|
+| Botones en SAT y Fiscal | Ve "+ Documento" y "+ Declaración"; **no** ve "+ Obligación", "Cargar comunes" ni "Editar/Desactivar" |
+| Contabilidad → SAT / Declaraciones | Ve "Cargar códigos agrupador (CSV)" (contador, admin y director); indicador "0 de 33 cuentas" |
+| Backend: crear o editar obligación | Rechaza con "No tienes permiso… (tu rol no lo permite)" |
+| Backend: lo que sí puede | Lee obligaciones; crear declaración o cargar códigos con datos inválidos responde el error de validación (el permiso pasa) |
+| Aislamiento entre empresas | Esta empresa no ve ninguna obligación, declaración ni documento de Empresa Demo C (0 en cada lista) |
+
+Observación menor, sin cambio: las respuestas de "sin permiso" en escritura salen con HTTP 400 y no 403 (las lecturas sí usan 403); el mensaje es correcto.
+
+**Todavía sin probar:** el rol auditor (solo lectura) y abrir la hoja CSV en Excel. Las pruebas de borrado de datos del navegador se bloquearon por
+seguridad y se sustituyeron por una simulación en memoria.
 
 **Datos de prueba que quedaron en Demo C:** pólizas `E-00014` (anulada) y `E-00015` (reversa), que se cancelan entre sí; un documento fiscal y una declaración (Octubre 2026) rotulados PRUEBA, cada uno con su PDF en Storage, que hay que borrar en Supabase (el panel no tiene botón de eliminar, por decisión de la sección 6).
 
