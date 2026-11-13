@@ -66,11 +66,23 @@ if (!configured) {
     [/email not confirmed/i,        "Confirma tu correo antes de entrar."],
     [/user not found/i,             "No existe una cuenta con ese correo."],
     [/too many requests/i,          "Demasiados intentos. Espera un momento e inténtalo de nuevo."],
-    [/network/i,                    "Sin conexión. Revisa tu internet."],
+    // OT-0039: errores de registro que antes caían todos en "No se pudo iniciar sesión".
+    [/user already registered|already been registered|already exists/i, "Ese correo ya tiene una cuenta. Usa «Iniciar sesión»."],
+    [/rate limit|over_email_send_rate_limit/i, "Se enviaron demasiados correos a esa dirección. Espera unos minutos e inténtalo de nuevo."],
+    [/signups? (are |is )?(not allowed|disabled)/i, "El registro con correo está desactivado. Pide una invitación a tu administrador."],
+    [/sending (confirmation|magic link|recovery).*email|error sending/i, "No se pudo enviar el correo de confirmación. Inténtalo más tarde o avisa al administrador."],
+    [/password should be|weak password|password is too/i, "La contraseña es muy débil. Usa al menos 6 caracteres, mejor con letras y números."],
+    [/unable to validate email|email address .* is invalid|invalid email|invalid format/i, "Revisa el correo: no parece válido."],
+    [/user is banned|banned/i,      "Esta cuenta está suspendida. Contacta al administrador."],
+    [/network|failed to fetch|load failed/i, "Sin conexión. Revisa tu internet."],
   ];
-  const msgFor = (message) => {
+  // `porDefecto`: texto cuando el error no se reconoce (cada acción tiene el suyo: entrar, crear cuenta, Google).
+  // El mensaje técnico original no se muestra, pero queda en la consola del navegador para diagnosticar.
+  const msgFor = (message, porDefecto) => {
     const match = ERR_MATCH.find(([re]) => re.test(message || ""));
-    return match ? match[1] : "No se pudo iniciar sesión. Inténtalo de nuevo.";
+    if (match) return match[1];
+    try { console.warn("[auth] error no reconocido:", message); } catch (e) { /* sin consola */ }
+    return porDefecto || "No se pudo iniciar sesión. Inténtalo de nuevo.";
   };
 
   // Si ya hay sesión activa, deja que onboarding.html decida el destino
@@ -109,7 +121,7 @@ if (!configured) {
       // No hay redirect manual aquí: Supabase navega la página completa a Google
       // y de regreso a redirectTo — a diferencia del popup que usaba Firebase.
     } catch (err) {
-      note(msgFor(err.message), true);
+      note(msgFor(err.message, "No se pudo conectar con Google. Inténtalo de nuevo."), true);
       loading(false, btnG);
     }
   }
@@ -128,7 +140,7 @@ if (!configured) {
       if (error) throw error;
       window.location.replace("onboarding.html");
     } catch (err) {
-      note(msgFor(err.message), true);
+      note(msgFor(err.message, "No se pudo crear la cuenta. Inténtalo de nuevo; si persiste, avisa al administrador."), true);
       loading(false, btnReg);
     }
   }
