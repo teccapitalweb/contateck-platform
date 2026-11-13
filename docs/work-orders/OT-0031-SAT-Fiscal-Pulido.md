@@ -165,7 +165,7 @@ Rama `feature/OT-0031b-sat-diot-agrupador` (commits locales, sin push, sin SQL).
 | # | Cambio | Dónde |
 |---|---|---|
 | S35 | **Códigos agrupador validados contra el catálogo oficial del SAT.** Se descargó el esquema oficial (`CatalogosParaEsqContE.xsd`, tipo `c_CodAgrup`): **1,080 códigos**, todos con formato `NNN` o `NNN.NN` (confirma el formato que se usaba). El backend rechaza al guardar un código que no exista y la hoja avisa, antes de guardar, cuáles no existen ("NO existen en el catálogo oficial del SAT"). Si no se pudiera traer el catálogo, la hoja revisa solo el formato y lo dice | `backend/src/catalogoCodigoAgrupador.js` (nuevo, generado del XSD), `validacionesFiscal.js`, `routes/fiscal.js` (`GET /api/fiscal/codigos-agrupador/catalogo`), `frontend/contabilidad.js` |
-| S36 | **Corregir y eliminar una declaración pendiente sin entrar a Supabase** (solo admin y director). "Editar" cambia periodo y fecha límite; "Eliminar" pide confirmación. Una presentada no se edita ni se elimina (primero se regresa a pendiente) y una con acuse adjunto no se elimina desde el panel (el archivo quedaría huérfano en Storage). Si la política de la base no permite borrar a ese rol, el panel lo dice con un mensaje claro | `supabaseFiscal.js` (`corregirDeclaracion`, `eliminarDeclaracion`), `routes/fiscal.js` (`PUT /api/fiscal/declaraciones/:id/datos`, `DELETE /api/fiscal/declaraciones/:id`), `frontend/fiscal.js` |
+| S36 | **Corregir y eliminar una declaración pendiente sin entrar a Supabase** (requiere correr `database/OT-0031c-declaraciones-borrado.sql`, ya corrido en DEV) (solo admin y director). "Editar" cambia periodo y fecha límite; "Eliminar" pide confirmación. Una presentada no se edita ni se elimina (primero se regresa a pendiente) y una con acuse adjunto no se elimina desde el panel (el archivo quedaría huérfano en Storage). Si la política de la base no permite borrar a ese rol, el panel lo dice con un mensaje claro | `supabaseFiscal.js` (`corregirDeclaracion`, `eliminarDeclaracion`), `routes/fiscal.js` (`PUT /api/fiscal/declaraciones/:id/datos`, `DELETE /api/fiscal/declaraciones/:id`), `frontend/fiscal.js` |
 | S37 | **Mensaje para la contadora** listo para mandar (versión corta de WhatsApp y versión completa con tus propuestas por defecto): `docs/work-orders/Mensaje-Contadora-SAT-Fiscal.md` | `docs/work-orders/` |
 
 Versiones de caché: `contabilidad.js` v21 y `fiscal.js` v5 (en la rama de integración ya estaban `contabilidad.js` v20 y `fiscal.js` v4).
@@ -174,8 +174,17 @@ Versiones de caché: `contabilidad.js` v21 y `fiscal.js` v5 (en la rama de integ
 catálogo); editar y eliminar con cliente falso (roles contador y auditor rechazados, solo admin y director; presentada y con acuse rechazadas; error cuando la
 base no permite borrar; id inválido; no existe). Las pruebas anteriores siguen pasando.
 
-**NO verificado:** nada de esto en pantalla ni contra la base real todavía (necesita unir la rama a `integracion-local` y reiniciar el backend). En especial
-si la política RLS de `declaraciones` permite el DELETE a admin y director: si no, el panel responde "falta el permiso de borrado" y haría falta una política (SQL, que no se ejecuta sin aviso).
+**Verificado en pantalla (13-nov, tras unir la rama a `integracion-local`, commit `38669e7`, y reiniciar el backend):**
+
+| Qué | Resultado |
+|---|---|
+| Catálogo oficial del SAT | El backend sirve los 1,080 códigos; la hoja separa en la vista previa "por actualizar", "formato inválido" y "NO existen en el catálogo oficial"; el servidor rechaza `102.99` ("no existe en el catálogo de Códigos Agrupadores del SAT"). Se canceló sin guardar |
+| Permisos del contador | No puede editar ni eliminar declaraciones: el servidor responde "tu rol no lo permite" |
+| Editar declaración (director, Demo C) | Aparece solo en pendientes; rechaza periodo vacío; con datos buenos cambia periodo y fecha (la fecha futura pasa de "Vencida" a "Pendiente") |
+| Eliminar declaración | **Antes del SQL:** la base respondió que falta el permiso de borrado (el panel lo dice con un mensaje claro y la fila se conserva). **Después de correr `database/OT-0031c-declaraciones-borrado.sql`** (lo corrió el usuario en DEV): "Declaración eliminada" y la base vuelve a sus 2 declaraciones |
+| Protección de la base | Un borrado DIRECTO (sin pasar por el backend) de una declaración **presentada** devuelve 0 filas borradas: la política lo impide. Se probó con una declaración de prueba, nunca con las reales; se regresó a pendiente y se eliminó por el camino normal |
+
+Sin datos de prueba pendientes de estas pruebas: las declaraciones "PRUEBA OT-0031c" se eliminaron.
 
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
