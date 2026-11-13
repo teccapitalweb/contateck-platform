@@ -635,6 +635,16 @@
     return null;
   }
 
+  // OT-0040: cuentas que se mandan a revisar el Código Agrupador: las ACTIVAS y las inactivas
+  // que ya tienen movimientos (siguen saliendo en la balanza y su XML). Una cuenta inactiva
+  // sin ningún movimiento no se manda a revisar (antes la hoja traía también esas, p. ej. una
+  // duplicada que alguien ya desactivó).
+  function cuentasParaSat() {
+    const usadas = {};
+    leerPolizas().forEach((p) => (p.asientos || []).forEach((a) => { usadas[a.codigo] = true; }));
+    return getCuentas().filter((c) => c.activo !== false || usadas[c.codigo]);
+  }
+
   // Hoja para la contadora: tus cuentas + una columna vacía donde anota el código
   // agrupador del SAT. Abre bien en Excel (BOM UTF-8) y neutraliza celdas que
   // empiezan con = + - @ para que no se interpreten como fórmula.
@@ -645,7 +655,7 @@
       return '"' + s.replace(/"/g, '""') + '"';
     };
     const filas = [["Código", "Nombre", "Nivel", "Naturaleza", "Cuenta de mayor", "Código agrupador SAT (llenar)"]]
-      .concat(getCuentas().map((c) => [c.codigo, c.nombre, c.nivel, c.nat, c.padre || "", c.codigoAgrupador || ""]));
+      .concat(cuentasParaSat().map((c) => [c.codigo, c.nombre, c.nivel, c.nat, c.padre || "", c.codigoAgrupador || ""]));
     return "﻿" + filas.map((f) => f.map(celda).join(",")).join("\r\n");
   }
 
@@ -801,6 +811,7 @@ ${ctas}
     cfdiAPoliza, cfdisPendientes, contabilizarCfdi, parsearCfdiXml, xmlAPolizaGasto,
     estadoResultados, balanceGeneral, xmlCatalogoSAT, xmlBalanzaSAT, determinacionIVA, diot,
     setPeriodo, getPeriodo, periodosDisponibles, getRfcEmisor, setRfcEmisor,
+    cuentasParaSat, csvCuentasContadora, // OT-0040: la hoja del Código Agrupador (se prueba en backend/test-fiscal.js)
   };
 
   /* ====================== PARTE 2 · UI ====================== */
@@ -1464,7 +1475,7 @@ ${ctas}
     const anioActual = new Date().getFullYear();
     const mes = per ? per.mes : (new Date().getMonth() + 1), anio = per ? per.anio : anioActual;
     const balanzaBloqueada = !b.cuadra || !per;
-    const cuentasSat = getCuentas();
+    const cuentasSat = cuentasParaSat();
     const conAgrupador = cuentasSat.filter((c) => c.codigoAgrupador).length;
     const puedeCargarAgrupador = ["contador", "admin", "director"].indexOf((window.CONTATECK_PERFIL_PG || {}).rol) !== -1;
     const diotFilas = dt.length ? dt.map((d) => `<tr><td class="num">${esc(d.rfc)}</td><td>${esc(d.nombre)}</td>
@@ -1487,7 +1498,7 @@ ${ctas}
           <div class="field" style="margin:0;max-width:120px"><label>Año</label><input class="input" data-sat-anio type="number" min="2015" max="${Math.max(anioActual, anio)}" value="${anio}"></div>
         </div>
         <p style="color:var(--faint);font-size:.78rem;margin:.6rem 0 0">El Catálogo usa el mes y año que captures aquí. La Balanza se genera del periodo elegido en el selector de arriba, y el mes y año de aquí deben coincidir con él.</p>
-        <p style="color:var(--faint);font-size:.78rem;margin:.4rem 0 0">Código Agrupador SAT: <b>${conAgrupador} de ${cuentasSat.length}</b> cuentas con código asignado.${conAgrupador < cuentasSat.length ? " A las que faltan se les manda su código interno, y el SAT puede rechazar el catálogo. Descarga la hoja, que la contadora anote el código de cada cuenta (si Excel pide formato, que la columna sea Texto) y súbela con el botón de al lado." : ""}</p>
+        <p style="color:var(--faint);font-size:.78rem;margin:.4rem 0 0">Código Agrupador SAT: <b>${conAgrupador} de ${cuentasSat.length}</b> cuentas con código asignado (activas, y las inactivas que tienen movimientos).${conAgrupador < cuentasSat.length ? " A las que faltan se les manda su código interno, y el SAT puede rechazar el catálogo. Descarga la hoja, que la contadora anote el código de cada cuenta (si Excel pide formato, que la columna sea Texto) y súbela con el botón de al lado." : ""}</p>
         <div class="cont-foot" style="justify-content:flex-start;margin-top:.8rem">
           <button class="btn btn--primary" data-sat-xml-cat>Descargar XML Catálogo</button>
           <button class="btn btn--ghost" data-sat-csv-cat title="Hoja con tus cuentas y una columna vacía para que la contadora anote el código agrupador del SAT">Hoja de cuentas para la contadora (CSV)</button>
@@ -2984,7 +2995,7 @@ ${ctas}
     const suf = `${rfc}_${anio}${String(mes).padStart(2, "0")}.xml`;
     if (tipo === "catalogo") {
       descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml");
-      const sinAgr = getCuentas().filter((c) => !c.codigoAgrupador).length;
+      const sinAgr = cuentasParaSat().filter((c) => !c.codigoAgrupador).length;
       if (sinAgr) toast(`${sinAgr} cuenta(s) sin Código Agrupador SAT: se usó su código interno y el SAT puede rechazar el archivo.`, "warn", 6000);
       return;
     }
