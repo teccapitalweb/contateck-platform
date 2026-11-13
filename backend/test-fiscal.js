@@ -484,4 +484,30 @@ await ok('XML del SAT: catálogo (usa el Código Agrupador si existe) y balanza 
   assert.ok(n > 0);
 });
 
+// OT-0045: alerta del Dashboard por CFDI timbrados sin póliza.
+await ok('alerta de CFDI sin póliza: cuenta solo vigentes timbrados sin póliza activa, y no avisa con listas truncadas', async () => {
+  const { cfdisSinPoliza, alertaCfdiSinPoliza, TOPE_FILAS_CONSULTA } = await import('./src/alertasContables.js');
+  const cf = [
+    { uuid_sat: 'AAA-1', tipo: 'I', estatus: 'vigente' },     // con póliza activa
+    { uuid_sat: 'BBB-2', tipo: 'I', estatus: 'vigente' },     // sin póliza  -> avisa
+    { uuid_sat: 'CCC-3', tipo: 'I', estatus: 'cancelado' },   // cancelado   -> no avisa
+    { uuid_sat: null, tipo: 'I', estatus: 'vigente' },        // sin timbrar -> no avisa
+    { uuid_sat: 'DDD-4', tipo: 'E', estatus: 'vigente' },     // póliza anulada no cuenta -> avisa
+  ];
+  const po = [{ cfdi_uuid: 'aaa-1 ', estado: 'ok' }, { cfdi_uuid: 'DDD-4', estado: 'anulada' }];
+  assert.deepEqual(cfdisSinPoliza(cf, po).map((c) => c.uuid_sat), ['BBB-2', 'DDD-4']);   // mayúsculas y espacios no importan
+  const a = alertaCfdiSinPoliza(cf, po);
+  assert.equal(a.tipo, 'warn'); assert.equal(a.accion.vista, 'contabilidad'); assert.match(a.titulo, /^2 CFDI vigentes sin póliza/);
+  assert.match(alertaCfdiSinPoliza([cf[1]], []).titulo, /^1 CFDI vigente sin póliza/);
+  assert.equal(alertaCfdiSinPoliza([cf[0]], po), null);                                  // todo contabilizado
+  assert.equal(alertaCfdiSinPoliza(undefined, undefined), null);                          // sin datos
+  const muchos = Array.from({ length: TOPE_FILAS_CONSULTA }, (_, i) => ({ uuid_sat: 'U' + i, estatus: 'vigente' }));
+  assert.equal(cfdisSinPoliza(muchos, []), null);                                         // lista posiblemente truncada: no se arriesga un falso aviso
+  assert.equal(alertaCfdiSinPoliza(muchos, []), null);
+  // El Dashboard usa esta alerta y no tumba la respuesta si las consultas fallan.
+  const d = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'src', 'supabaseDashboard.js'), 'utf8');
+  assert.match(d, /alertaCfdiSinPoliza\(cfdisParaPoliza\.data, polizasConCfdi\.data\)/);
+  assert.match(d, /!cfdisParaPoliza\.error && !polizasConCfdi\.error/);
+});
+
 console.log(`\n✔ ${pruebas} pruebas del módulo SAT y Fiscal pasaron\n`);

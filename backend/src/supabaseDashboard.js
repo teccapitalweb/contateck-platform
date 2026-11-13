@@ -17,6 +17,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
 import { obtenerCalendario, obtenerAlertasDocumentos } from './supabaseFiscal.js';
+import { alertaCfdiSinPoliza } from './alertasContables.js';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -60,7 +61,7 @@ export async function obtenerDashboard(accessToken, log = console) {
   const desde6Meses = inicioMesesAtras(6);
 
   try {
-    const [cfdisMes, cfdis6Meses, polizasMes, gastos6Meses, empleados, cuentas, partidas, calendarioSat, alertasDocs] = await Promise.all([
+    const [cfdisMes, cfdis6Meses, polizasMes, gastos6Meses, empleados, cuentas, partidas, calendarioSat, alertasDocs, cfdisParaPoliza, polizasConCfdi] = await Promise.all([
       supabase.from('cfdis').select('total, tipo, estatus, fecha, cancelled_at, created_at')
         .gte('created_at', desdeMesActual),
       supabase.from('cfdis').select('total, tipo, estatus, created_at')
@@ -83,6 +84,9 @@ export async function obtenerDashboard(accessToken, log = console) {
         .eq('polizas.estado', 'ok'),
       obtenerCalendario(accessToken, log, supabase),
       obtenerAlertasDocumentos(supabase, log),
+      // OT-0045: CFDI emitidos vigentes y pólizas ligadas a un CFDI, para avisar de los que no se contabilizaron.
+      supabase.from('cfdis').select('uuid_sat, tipo, estatus').neq('estatus', 'cancelado').not('uuid_sat', 'is', null),
+      supabase.from('polizas').select('cfdi_uuid, estado').not('cfdi_uuid', 'is', null),
     ]);
 
     if (cfdisMes.error) throw cfdisMes.error;
@@ -162,6 +166,13 @@ export async function obtenerDashboard(accessToken, log = console) {
         texto: 'Revisa si alguno requiere reexpedirse.',
         accion: { vista: 'facturacion' },
       });
+    }
+
+    // OT-0045: CFDI timbrados que todavía no tienen póliza. Si alguna de las dos consultas falla, no se avisa
+    // (la alerta es un apoyo; no debe tirar el Dashboard ni dar un aviso falso).
+    if (!cfdisParaPoliza.error && !polizasConCfdi.error) {
+      const sinPoliza = alertaCfdiSinPoliza(cfdisParaPoliza.data, polizasConCfdi.data);
+      if (sinPoliza) alertas.push(sinPoliza);
     }
 
     // ---- Balance General y Composición de gastos (aritmética real) ----
