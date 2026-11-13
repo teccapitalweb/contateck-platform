@@ -14,7 +14,7 @@ window.CTPostgres = (function () {
     return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
   }
 
-  async function llamar(metodo, ruta, body) {
+  async function pedir(metodo, ruta, body) {
     const token = window.CONTATECK_SUPABASE_TOKEN;
     if (!token) return { ok: false, error: "Sin sesión de Supabase todavía." };
     try {
@@ -27,6 +27,33 @@ window.CTPostgres = (function () {
     } catch (e) {
       return { ok: false, error: e.message || "No se pudo conectar con el backend." };
     }
+  }
+
+  // OT-0042 · Caché corta de lecturas repetidas. Al abrir el panel, Contabilidad se vuelve a pintar
+  // varias veces seguidas y cada pintado pedía de nuevo la misma lista (periodos ×6, facturas de
+  // proveedor ×6…); cada petición cuesta ~1 s en el backend. Aquí, para estas rutas de solo lectura:
+  //   · dos pedidos iguales casi al mismo tiempo comparten UNA sola petición, y
+  //   · el resultado se reutiliza unos segundos.
+  // Cualquier escritura (POST/PUT/DELETE) borra todo el caché, y un error nunca se guarda. Cada quien
+  // recibe su propia copia, para que modificar el resultado no afecte a los demás.
+  var TTL_LECTURAS_MS = 8000;
+  var RUTAS_CACHEABLES = /^\/api\/(periodos|cfdis-proveedor|config-contable|polizas-completas\/con-partidas)(\?|$)/;
+  var lecturas = {}; // ruta -> { hasta, promesa }
+  function copia(x) {
+    try { return typeof structuredClone === "function" ? structuredClone(x) : JSON.parse(JSON.stringify(x)); } catch (e) { return x; }
+  }
+
+  async function llamar(metodo, ruta, body) {
+    if (metodo !== "GET") lecturas = {}; // una escritura puede cambiar lo ya leído
+    if (metodo !== "GET" || !RUTAS_CACHEABLES.test(ruta)) return pedir(metodo, ruta, body);
+    const guardada = lecturas[ruta];
+    if (guardada && guardada.hasta > Date.now()) return copia(await guardada.promesa);
+    const promesa = pedir(metodo, ruta, body);
+    const entrada = { hasta: Date.now() + TTL_LECTURAS_MS, promesa };
+    lecturas[ruta] = entrada;
+    const r = await promesa;
+    if ((!r || r.ok === false) && lecturas[ruta] === entrada) delete lecturas[ruta]; // un error no se guarda
+    return copia(r);
   }
 
   return {

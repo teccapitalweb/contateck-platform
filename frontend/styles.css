@@ -732,3 +732,30 @@ html[data-theme="light"] .tab.is-active{color:#fff}
 /* Botón peligro (eliminar en modal) */
 .btn--danger{color:#fff;background:linear-gradient(135deg,var(--down),#E0485F);box-shadow:0 12px 26px -12px rgba(251,113,133,.5)}
 .btn--danger:hover{transform:translateY(-2px);box-shadow:0 18px 34px -14px rgba(251,113,133,.55)}
+
+/* ============================================================
+   OT-0042 · Rol de solo lectura (auditor)
+   auth-guard.js pone <html data-rol="auditor"> cuando entra un auditor. Aquí se ocultan los botones que
+   ESCRIBEN (crear, editar, eliminar, confirmar, timbrar, cerrar…). El servidor y la base ya rechazan estas
+   acciones; esto evita mostrar botones que fallarían. Los botones de lectura (Ver, PDF, historial, descargas
+   de XML y hojas) NO están en esta lista. Si un módulo agrega un botón que escribe, se agrega su atributo aquí.
+   ============================================================ */
+html[data-rol="auditor"] :is(
+  /* Contabilidad y Dashboard */
+  [data-cont-nueva-pol], [data-cont-nueva-cta], [data-cont-edit-cta], [data-cont-del-cta], [data-cont-reactivar-cta],
+  [data-cont-contabilizar], [data-cont-importar-xml], [data-cont-config-contable], [data-cerrar-periodo],
+  [data-cont-editar-pol], [data-cont-del-pol], [data-cont-anular-pol], [data-cont-guardar-pol], [data-cont-guardar-cta],
+  [data-config-contable-guardar], [data-rapido-guardar], [data-rapido-importar-cfdi], [data-cont-contab-go], [data-xml-go], [data-guardar-cuenta-inline],
+  [data-cobro-confirmar], [data-prov-confirmar], [data-anulacion-confirmar], [data-correccion-confirmar], [data-cierre-confirmar],
+  [data-sat-agr-cargar], [data-sat-agr-aplicar],
+  /* Ventas y pagos */
+  [data-v-nueva], [data-v-tomar], [data-v-conf], [data-v-rech], [data-v-rech-ok], [data-v-genpol], [data-v-guardar],
+  /* Facturación (y los avisos "timbrado" de Nómina) */
+  [data-config-empresa], [data-facturar], [data-correo-cfdi], [data-nc-cfdi], [data-rep-cfdi], [data-cancelar-cfdi],
+  [data-fac-timbrar], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
+  [data-perfil-editar], [data-perfil-nuevo], [data-perfil-guardar], [data-perfil-activar], [data-perfil-borrar], [data-soon*="imbrado"],
+  /* Nómina */
+  [data-nom-calcular], [data-pn-generar], [data-pn-aprobar], [data-pn-descartar],
+  /* Altas, ediciones y bajas genéricas (p. ej. "Empleado") */
+  [data-new], [data-edit], [data-del]
+) { display: none !important; }
