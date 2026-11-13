@@ -153,7 +153,25 @@ más llamadas con datos inválidos a propósito (no escriben nada):
 
 Observación menor, sin cambio: las respuestas de "sin permiso" en escritura salen con HTTP 400 y no 403 (las lecturas sí usan 403); el mensaje es correcto.
 
-**Todavía sin probar:** el rol auditor (solo lectura) y abrir la hoja CSV en Excel. Las pruebas de borrado de datos del navegador se bloquearon por
+**Cuarta tanda (13-nov): rol auditor.** Usuario `demo.auditor@contateck.mx` (creado con una invitación de rol Auditor desde Equipo y aceptada al entrar),
+empresa Empresa Demo C. Solo lectura, más llamadas con datos inválidos a propósito (no escriben nada):
+
+| Qué | Resultado |
+|---|---|
+| SAT y Fiscal | Ve las tablas de obligaciones y declaraciones y "Ver acuse"; **ningún** botón de alta, edición, "Marcar presentada", "Regresar a pendiente", Editar ni Eliminar |
+| Contabilidad → SAT / Declaraciones | Ve "Descargar XML Catálogo", la hoja CSV y "Descargar XML Balanza"; **no** ve "Cargar códigos agrupador" |
+| Backend, 8 acciones de escritura (crear/editar obligación, crear declaración, marcar presentada, corregir, eliminar, crear documento, cargar códigos agrupador) | Las 8 rechazadas con "tu rol no lo permite" |
+| Backend, lectura | Obligaciones, declaraciones, calendario y proveedores de la DIOT: responden bien |
+| Base de datos directa (sin pasar por el backend) | Altas en `obligaciones_fiscales`, `declaraciones` y `documentos_fiscales`: error de seguridad `42501` (política RLS); edición directa de una obligación: 0 filas afectadas |
+
+Nota: el intento de crear la cuenta por la pantalla "Crea una aquí" con el correo `@contateck.mx` (dominio de prueba, no recibe correo) mostró el mensaje genérico
+"No se pudo iniciar sesión. Inténtalo de nuevo.", que oculta el error real de Supabase (el panel solo traduce unos pocos mensajes). La cuenta se resolvió fuera del panel.
+
+**Observaciones del catálogo de Empresa Demo C (datos de prueba, no del módulo):** el catálogo trae cuentas sueltas de pruebas anteriores (`103 bancos`,
+`10003 ban`, `bancos` con nombre `banco`, y `208` y `209` las dos como "IVA trasladado"). Irán tal cual al XML del catálogo si no se limpian.
+
+**Todavía sin probar:** que Excel abra bien la hoja CSV (el archivo trae la marca UTF-8 y los acentos en UTF-8, pero solo se confirma abriéndolo en Excel; hay una copia de
+Empresa Demo C en `C:\RESIDENCIA\PROYECTO\Cuentas_para_contadora_EmpresaDemoC.csv`). Las pruebas de borrado de datos del navegador se bloquearon por
 seguridad y se sustituyeron por una simulación en memoria.
 
 **Datos de prueba que quedaron en Demo C:** pólizas `E-00014` (anulada) y `E-00015` (reversa), que se cancelan entre sí; un documento fiscal y una declaración (Octubre 2026) rotulados PRUEBA, cada uno con su PDF en Storage, que hay que borrar en Supabase (el panel no tiene botón de eliminar, por decisión de la sección 6).
