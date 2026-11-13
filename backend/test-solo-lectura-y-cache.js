@@ -175,4 +175,16 @@ await ok('las pólizas con partidas se cachean por conjunto de ids, no mezclan r
   assert.equal(llamadas.length, 2);
 });
 
+// OT-0044: auth-guard pide la configuración contable por el caché (si existe), no con un fetch propio,
+// para que la petición que hace Contabilidad después se comparta y no se repita.
+await ok('auth-guard pide config-contable por CTPostgres (caché) y solo cae a fetch directo sin él', async () => {
+  const g = leer('auth-guard.js');
+  assert.match(g, /window\.CTPostgres\s*&&\s*window\.CTPostgres\.leerConfigContable/);
+  assert.equal((g.match(/\/api\/config-contable/g) || []).length, 1, 'solo queda el respaldo directo');
+  const { C, llamadas } = cliente({ respuestas: { '/api/config-contable': { ok: true, config: { a: 1 } } } });
+  const [x, y] = await Promise.all([C.leerConfigContable(), C.leerConfigContable()]);   // auth-guard + Contabilidad
+  assert.equal(x.ok && y.ok, true);
+  assert.equal(llamadas.filter((l) => l.includes('/api/config-contable')).length, 1);
+});
+
 console.log(`\n✔ ${pruebas} pruebas de solo lectura y caché pasaron\n`);
