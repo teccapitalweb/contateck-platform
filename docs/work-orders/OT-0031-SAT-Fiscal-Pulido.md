@@ -113,6 +113,29 @@ oficial; que la política de UPDATE de `cuentas_contables` permita escribir la c
 **Dato a tener presente:** en la prueba el IVA acreditable sumó también la póliza anulada porque en los datos simulados no había
 su reversa; en el sistema real una anulación genera la reversa y el saldo queda neto (la DIOT sí excluye las anuladas).
 
+### 1e. Verificación en pantalla (13-nov-2026, Empresa Demo C, rol Director, rama integracion-local)
+
+Hecha en el visor de la app con la sesión real del usuario, contra DEV. Lo que dice "No verificado" más arriba en las secciones 1b a 1d
+quedó así:
+
+| Qué | Resultado |
+|---|---|
+| SAT y Fiscal: botones de e.firma, aviso, Editar/Desactivar, Cargar comunes | Se ven y funcionan como se diseñaron (pantalla ancha y angosta) |
+| Dos declaraciones de Julio 2026 (caso de Auditoría) | La presentada muestra "Ver acuse" y "Regresar a pendiente"; la otra sale **Duplicada**; el calendario y el Dashboard ya no alertan |
+| Nueva declaración | Por defecto propone el último periodo concluido (Octubre 2026) con fecha límite 17 nov 2026; al cambiar la fecha a mano avisa que difiere de la sugerida; Julio 2026 sugiere 17 ago 2026 |
+| Aviso de duplicado al crear | El backend responde `DUPLICADA` con el detalle y **no guarda**; el panel muestra las dos existentes con "Cancelar" y "Registrar de todos modos". Se canceló: la base quedó con las mismas 2 declaraciones |
+| Editar obligación y plantilla | Abren con los datos de la obligación; al elegir Anual aparece el mes límite; la plantilla marca "ya existe" en IVA mensual y deja 5 casillas marcadas. Se cancelaron sin guardar |
+| Contabilidad → SAT / Declaraciones | Indicador "0 de 29 cuentas con código", botón de carga (solo contador, admin y director), RFC precargado de la empresa |
+| Descarga real de los botones | Catálogo XML (29 cuentas), Balanza XML (21 filas, `TipoEnvio=N`) y hoja CSV (29 filas): bien formados, con el nombre de archivo esperado; la balanza de julio (900 = 900) y la de noviembre (2,000.16 = 2,000.16) cuadran y cada fila cumple saldo final = inicial ± movimientos. Aviso "29 cuentas sin Código Agrupador" al bajar el catálogo |
+| Carga del CSV del Código Agrupador | Probada de punta a punta con una hoja de una fila (`102 → 102.01`): resumen previo, guardado, indicador "1 de 29", `CodAgrup="102.01"` en el XML, persistencia tras recargar y **reversión** (código vacío por el mismo endpoint). La base de Demo C quedó sin códigos |
+| DIOT con datos reales | Se importó una factura ficticia (base 100, IVA 16) por el botón de Importar XML: la DIOT mostró al proveedor con su RFC. Con las pólizas leídas **sin RFC ni nombre de proveedor** (como en un navegador limpio) la DIOT lo recuperó por el UUID. Se anuló la póliza (`E-00014` anulada, reversa `E-00015`); IVA, balanza y DIOT volvieron a sus cifras. La factura de proveedor de prueba se borró en Supabase (el panel no tiene botón) |
+
+**Todavía sin probar en pantalla:** subir un documento fiscal (Storage) y ver su URL firmada; "Marcar presentada" con acuse; la alerta de
+documentos por vencer en el Dashboard; entrar con un rol distinto de director (auditor, contador); abrir la hoja CSV en Excel.
+Las pruebas de borrado de datos del navegador se bloquearon por seguridad y se sustituyeron por una simulación en memoria.
+
+**Datos de prueba que quedaron en Demo C:** pólizas `E-00014` (anulada) y `E-00015` (reversa), que se cancelan entre sí.
+
 ## 2. Hallazgos de la revisión (archivo:línea del código ANTES de esta OT)
 
 | Sev. | Hallazgo | Estado |
