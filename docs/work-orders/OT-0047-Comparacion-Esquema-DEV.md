@@ -13,7 +13,8 @@ y `storage`; **no se escribió nada en la base** y no se leyeron datos de negoci
 índices y las 5 funciones cuadran en las 7 tablas que documenta. Las dos cosas aplicadas a mano (`codigo_agrupador` y la
 política de DELETE de `declaraciones`) están en la base tal como las describen sus archivos SQL.
 Lo más serio (gravedad **media**) es que `crear_nomina` sigue sin validar la empresa del empleado ni el cierre de periodo
-(ya señalado en el archivo), y que **16 políticas RLS reales no tienen DDL en el repo** (solo existen en la base).
+(ya señalado en el archivo). Las **16 políticas RLS** que existían en la base sin DDL en el repo ya se exportaron como
+documentación a `database/OT-0047-politicas-dev-exportadas.sql` (hallazgo #2, resuelto).
 Nota: la tabla se llama `declaraciones` (no `declaraciones_fiscales`).
 
 ## Verificado (contra la base real)
@@ -51,7 +52,7 @@ Nota: la tabla se llama `declaraciones` (no `declaraciones_fiscales`).
 | # | Gravedad | Qué | En la base | En el repo | Propuesta |
 |---|---|---|---|---|---|
 | 1 | Media | `crear_nomina` no llama a `periodo_esta_cerrado`, no valida que `empleado_id` sea de la empresa, ni periodicidad/días/fechas/importes | Confirmado (el cuerpo no contiene `periodo_esta_cerrado`) | Ya listado como obs. f, g, h del archivo | OT aparte; ver SQL abajo |
-| 2 | Media | 16 políticas RLS existen en la base sin DDL en el repo (solo nombradas en la introspección): `cfdis_proveedor_update_empresa`; las 3 de `declaraciones` (select/write/update); las 2 de `documentos_fiscales`; `invitaciones_select/update_gestion_equipo`; `nomina_detalle_insert/select`; `nominas_insert/select`; las 3 de `obligaciones_fiscales`; `periodos_contables_select` | Presentes | Sin `CREATE POLICY`; si hubiera que rehacer DEV no se pueden reproducir | Exportarlas como documentación (nuevo archivo, sin aplicar) |
+| 2 | ~~Media~~ **Resuelta (documentación)** | 16 políticas RLS existían en la base sin DDL en el repo (solo nombradas en la introspección): `cfdis_proveedor_update_empresa`; las 3 de `declaraciones` (select/write/update); las 2 de `documentos_fiscales`; `invitaciones_select/update_gestion_equipo`; `nomina_detalle_insert/select`; `nominas_insert/select`; las 3 de `obligaciones_fiscales`; `periodos_contables_select` | Presentes | **Exportadas** a `database/OT-0047-politicas-dev-exportadas.sql` (2026-11-13; documentación, no se aplica) | Hecho. Pendiente solo comparar ese archivo contra la base tras cualquier cambio de políticas |
 | 3 | Baja | Archivo exportado dice que no se confirmó ningún trigger de `declaraciones` y `obligaciones_fiscales` | Existen `trg_declaraciones_updated_at` y `trg_obligaciones_updated_at` (BEFORE UPDATE → `set_updated_at`); también en `empleados` y `ventas` | Encabezado: "no está confirmado" | Actualizar el comentario del archivo |
 | 4 | Baja | Todas las tablas dan DML completo a `anon` y `authenticated` por GRANT (valor por defecto de Supabase); lo único que protege es RLS. `periodos_contables`, `pagos_*`, `auditoria_log` y `folios_contador` no tienen política de escritura, así que la escritura directa queda negada | Confirmado | No documentado | Opcional: `revoke` de escritura a `anon` (defensa en profundidad) |
 | 5 | Baja | Todas las políticas son para el rol `public`, no `authenticated` | Confirmado | Ya listado en OT-0038 (menores) | Sin riesgo mientras `auth_empresa_id()` sea nulo sin sesión |
@@ -61,7 +62,10 @@ Nota: la tabla se llama `declaraciones` (no `declaraciones_fiscales`).
 | 9 | Informativa | `cuentas_contables.codigo_agrupador` y la política `declaraciones_delete_admin_director` aplicadas a mano | Presentes y correctas | `OT-0031b` / `OT-0031c` | Sin diferencia |
 
 **Diferencias en tipos, defaults o columnas entre el archivo y la base: ninguna.**
-**Cosas en la base y no en el archivo:** las políticas (#2) y los triggers (#3), que el archivo declara fuera de alcance.
+**Cosas en la base y no en el archivo:** las políticas (#2, ya exportadas en `OT-0047-politicas-dev-exportadas.sql`) y los triggers (#3), que el archivo declara fuera de alcance.
+
+**Actualización 2026-11-13:** el archivo de políticas se escribió desde `pg_policies` en la misma sesión; no se volvió a
+comparar contra la base después de escribirlo.
 **Cosas en el archivo y no en la base:** ninguna.
 
 ## SQL propuesto (solo texto, NO ejecutado)

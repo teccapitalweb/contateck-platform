@@ -136,7 +136,9 @@ confirmado contra DEV que la tabla cerrada se comporta como se diseñó en OT-00
 - `administradores_plataforma`: RLS sin políticas y sin permisos para `anon` ni `authenticated`. `folios_contador`, `pagos_*` y
   `auditoria_log` solo se escriben a través de funciones `SECURITY DEFINER`.
 - Storage: bucket `documentos` privado, políticas por carpeta de empresa y carpeta `sat` restringida por rol.
-- No hay políticas de `DELETE` sobre pólizas, CFDI, cuentas ni declaraciones.
+- No hay políticas de `DELETE` sobre pólizas, CFDI ni cuentas. *(Actualización 2026-11-13, OT-0047: `declaraciones` sí tiene
+  `declaraciones_delete_admin_director` desde la OT-0031c, aplicada después de esta introspección; verificada en DEV
+  con el MCP: admin/director, misma empresa y `estado <> 'presentada'`.)*
 
 **Confirmación (segunda introspección en DEV, 2026-11-12, solo lectura):** no hay triggers en `perfiles`, `empresas` ni
 `invitaciones`; `authenticated` puede actualizar TODAS las columnas de `perfiles` (`rol_id`, `empresa_id`, `activo`,
@@ -244,6 +246,12 @@ cuerpo de `crear_nomina`, `periodo_esta_cerrado`, `siguiente_folio_pago`, `sigui
 
 **No incluye** (fuera de esa consulta): triggers de esas tablas, si RLS está activo, permisos (`GRANT`) ni comentarios. Las políticas están
 en `policies.sql` y en el resultado de la introspección RLS de la Fase 2c.
+
+**Actualización 2026-11-13 (OT-0047, comparación contra la base real con el MCP `supabase-dev`, solo lectura):** el archivo exportado
+coincide con DEV (columnas, restricciones, índices y funciones). Lo que esta fase dejaba fuera quedó así: RLS activo en las 28 tablas;
+`trg_declaraciones_updated_at` y `trg_obligaciones_updated_at` existen (también en `empleados` y `ventas`); y las 16 políticas que solo
+estaban nombradas en la introspección se exportaron a `database/OT-0047-politicas-dev-exportadas.sql` (documentación, no se aplica).
+Detalle en `docs/work-orders/OT-0047-Comparacion-Esquema-DEV.md`.
 
 **Hallazgos de la exportación (no corregidos; deciden con una OT y SQL aprobado):**
 - `nominas` y `nomina_detalle` no tienen llave foránea de `empresa_id` a `empresas`, ni `created_by` a `perfiles`.
