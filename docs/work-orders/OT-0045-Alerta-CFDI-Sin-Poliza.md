@@ -22,7 +22,8 @@ Reglas (en `backend/src/alertasContables.js`, funciones puras con prueba):
 | Prueba (22 en total en `npm run test:fiscal`) | `backend/test-fiscal.js` |
 
 ## Límites conocidos
-- Solo detecta pólizas **ligadas por UUID**. Las pólizas de Ventas y Pagos (`origen = ventas`) no guardan el UUID del CFDI, así que si una factura se contabilizó por ahí la alerta puede seguir apareciendo. Si el equipo de Ventas y Pagos decide guardar el UUID en esas pólizas, el aviso queda exacto.
+- Solo cuentan las pólizas **ligadas por UUID** a la factura, y eso es lo correcto (respuesta de la sesión de Ventas y Pagos, 13-nov-2026): las ventas (`ventas`) no tienen CFDI ni UUID, son el registro de un pago recibido; y los cobros y pagos a proveedor (`confirmar_pago_cliente` / `confirmar_pago_proveedor`) son Bancos contra Clientes/Proveedores, no la contabilización de la factura, y una factura puede tener varios cobros parciales. Por eso **ni una póliza de Ventas ni un cobro deben dar por contabilizado un CFDI**, y no se descuentan. Si llevaran el UUID chocarían además con la regla `CFDI_DUPLICADO` de `crear_poliza_completa`. No hay falso aviso por ese lado.
+- Riesgo relacionado, que no es de esta alerta: doble ingreso si una misma venta se contabiliza por Facturación **y** por Ventas/Cobranza. Es una decisión pendiente de la contadora, anotada en `OT-0029-Ventas-y-Pagos.md`.
 - No cubre facturas de proveedor ni la situación inversa (CFDI cancelado con póliza vigente): es un caso aparte.
 
 ## Verificación (13-nov-2026, rama unida a `integracion-local`, backend reiniciado)
