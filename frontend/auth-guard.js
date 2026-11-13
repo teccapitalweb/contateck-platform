@@ -126,6 +126,9 @@ if (!configured) {
         if (perfilData.ok && perfilData.fuente === "postgres" && perfilData.empresa) {
           window.CONTATECK_EMPRESA_PG = perfilData.empresa;
           window.CONTATECK_PERFIL_PG = perfilData.perfil;
+          // OT-0042: el rol queda en <html data-rol="…"> para que styles.css oculte, al auditor
+          // (rol de solo lectura), los botones que escriben. El servidor y la base los rechazan igual.
+          if (perfilData.perfil && perfilData.perfil.rol) document.documentElement.setAttribute("data-rol", perfilData.perfil.rol);
           document.querySelectorAll("[data-empresa-label]").forEach((el) => {
             el.textContent = perfilData.empresa.nombre;
           });
