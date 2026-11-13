@@ -24,4 +24,9 @@ El valor y el servidor (`utilidadMes`) no cambian.
 Si se quiere mostrar también la utilidad contable en el Dashboard, hay que decidir cuál es la que debe verse ahí (la del mes o la del ejercicio) y calcularla con las cuentas, como el Estado de Resultados.
 Es una decisión de producto y de la contadora, no un arreglo de texto.
 
-**NO verificado:** en pantalla todavía (el panel que corre no trae esta rama).
+## Verificación en pantalla (13-nov-2026, rama unida a `integracion-local`, commit `2517716`)
+
+- Pruebas en el checkout de integración: 21 de `npm run test:fiscal` y 13 de `npm run test:lectura`, todas pasan.
+- Dashboard de Empresa Demo C con rol director (`app.js?v=11`): la tarjeta dice **"Ingresos − egresos (pólizas)"**, con el mismo valor de antes (−$1,104.16, "Mes en curso"). El texto "Utilidad operativa" ya no aparece en la pantalla.
+
+**No verificado:** el Dashboard con los roles contador y auditor (el cambio es solo texto, igual para todos).
