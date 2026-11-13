@@ -24,3 +24,10 @@ Reglas (en `backend/src/alertasContables.js`, funciones puras con prueba):
 ## Límites conocidos
 - Solo detecta pólizas **ligadas por UUID**. Las pólizas de Ventas y Pagos (`origen = ventas`) no guardan el UUID del CFDI, así que si una factura se contabilizó por ahí la alerta puede seguir apareciendo. Si el equipo de Ventas y Pagos decide guardar el UUID en esas pólizas, el aviso queda exacto.
 - No cubre facturas de proveedor ni la situación inversa (CFDI cancelado con póliza vigente): es un caso aparte.
+
+## Verificación (13-nov-2026, rama unida a `integracion-local`, backend reiniciado)
+- Pruebas en el checkout de integración: 22 de `npm run test:fiscal` y 14 de `npm run test:lectura` pasan.
+- Director, Empresa Demo C: `/api/dashboard` responde `ok` con **una** alerta nueva, "1 CFDI vigente sin póliza contable" (amarilla, lleva a Contabilidad). Corresponde al CFDI `CT-29` (vigente, sin póliza ligada); el CFDI `CT` está cancelado y no cuenta. La alerta se ve en el Dashboard y el clic abre "Contabilidad general".
+- Se reinició solo el backend (puerto 8080) para cargar el cambio.
+
+**No verificado:** la alerta con los roles contador y auditor (la consulta usa la sesión de cada quien, con RLS); el caso de más de 1,000 CFDI (cubierto solo por la prueba).
