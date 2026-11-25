@@ -74,11 +74,22 @@ if (!configured) {
     [/password should be|weak password|password is too/i, "La contraseña es muy débil. Usa al menos 6 caracteres, mejor con letras y números."],
     [/unable to validate email|email address .* is invalid|invalid email|invalid format/i, "Revisa el correo: no parece válido."],
     [/user is banned|banned/i,      "Esta cuenta está suspendida. Contacta al administrador."],
-    [/network|failed to fetch|load failed/i, "Sin conexión. Revisa tu internet."],
+    // (los errores de red se resuelven aparte, en msgFor: dependen de si el navegador tiene internet)
   ];
+  // OT-0048: "failed to fetch" significa que el navegador no pudo llegar a Supabase, y eso pasa por dos motivos
+  // muy distintos: no hay internet, o el proyecto no responde (pausado por inactividad, en mantenimiento…).
+  // Antes ambos decían "Sin conexión. Revisa tu internet." y mandaban a buscar en el lugar equivocado.
+  const ES_ERROR_DE_RED = /network|failed to fetch|load failed|networkerror|err_name_not_resolved/i;
+  const MSG_SIN_INTERNET = "Sin conexión a internet. Revisa tu red e inténtalo de nuevo.";
+  const MSG_SERVIDOR = "No pudimos comunicarnos con el servidor, aunque tu internet parece estar bien. Puede estar en mantenimiento o pausado. Inténtalo en unos minutos y, si sigue igual, avisa al administrador.";
   // `porDefecto`: texto cuando el error no se reconoce (cada acción tiene el suyo: entrar, crear cuenta, Google).
   // El mensaje técnico original no se muestra, pero queda en la consola del navegador para diagnosticar.
   const msgFor = (message, porDefecto) => {
+    if (ES_ERROR_DE_RED.test(message || "")) {
+      const sinInternet = typeof navigator !== "undefined" && navigator.onLine === false;
+      try { console.warn("[auth] error de red:", message, "· navegador en línea:", !sinInternet); } catch (e) { /* sin consola */ }
+      return sinInternet ? MSG_SIN_INTERNET : MSG_SERVIDOR;
+    }
     const match = ERR_MATCH.find(([re]) => re.test(message || ""));
     if (match) return match[1];
     try { console.warn("[auth] error no reconocido:", message); } catch (e) { /* sin consola */ }
