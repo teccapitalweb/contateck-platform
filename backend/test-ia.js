@@ -124,7 +124,7 @@ await ok('errores del proveedor (llave inválida, saturación, caída, red, resp
 
 await ok('solo hay herramientas de consulta, todas implementadas, y ninguna escribe', () => {
   const nombres = DEFINICION_HERRAMIENTAS.map((h) => h.name).sort();
-  assert.deepEqual(nombres, ['cuentas_por_cobrar_y_pagar', 'obligaciones_fiscales', 'resumen_general', 'saldos_de_cuentas']);
+  assert.deepEqual(nombres, ['cuentas_por_cobrar_y_pagar', 'iva_del_periodo', 'obligaciones_fiscales', 'resumen_general', 'saldos_de_cuentas']);
   const reales = crearHerramientasReales('token', { clienteComoUsuario: () => null, obtenerDashboard: async () => ({}), obtenerCalendario: async () => ({}) });
   for (const n of nombres) assert.equal(typeof reales[n], 'function', n);
   assert.deepEqual(Object.keys(reales).sort(), nombres);
@@ -172,7 +172,7 @@ function supabaseFalso(respuestas) {
   const registro = [];
   const cliente = { from(tabla) {
     const q = { tabla, filtros: [] };
-    const b = { select(c) { q.select = c; return b; }, eq(c, v) { q.filtros.push(['eq', c, v]); return b; }, gte(c, v) { q.filtros.push(['gte', c, v]); return b; }, lt(c, v) { q.filtros.push(['lt', c, v]); return b; },
+    const b = { select(c) { q.select = c; return b; }, eq(c, v) { q.filtros.push(['eq', c, v]); return b; }, gte(c, v) { q.filtros.push(['gte', c, v]); return b; }, lt(c, v) { q.filtros.push(['lt', c, v]); return b; }, in(c, v) { q.filtros.push(['in', c, v]); return b; }, maybeSingle() { return b; },
       then(res, rej) { registro.push(q); return Promise.resolve(respuestas[tabla] || { data: [], error: null }).then(res, rej); } };
     return b;
   } };
@@ -213,6 +213,27 @@ await ok('cuentas por cobrar y pagar: solo cuenta saldos mayores a cero y no ent
   assert.equal((await malo.obligaciones_fiscales()).error, 'sin permiso');
 });
 
+await ok('iva_del_periodo: usa las cuentas de IVA de la Configuración contable, valor absoluto de sus saldos, y explica si falta configurar', async () => {
+  const partidas = [
+    { debe: 0, haber: 160, cuentas_contables: { codigo: '209', nombre: 'IVA trasladado', naturaleza: 'acreedora' } },
+    { debe: 100, haber: 0, cuentas_contables: { codigo: '118', nombre: 'IVA acreditable', naturaleza: 'deudora' } },
+    { debe: 50, haber: 0, cuentas_contables: { codigo: '102', nombre: 'Bancos', naturaleza: 'deudora' } },
+  ];
+  const f = supabaseFalso({
+    configuracion_contable: { data: { cuenta_iva_trasladado_id: 'id-t', cuenta_iva_acreditable_id: 'id-a' }, error: null },
+    cuentas_contables: { data: [{ id: 'id-t', codigo: '209' }, { id: 'id-a', codigo: '118' }], error: null },
+    poliza_partidas: { data: partidas, error: null },
+  });
+  const h = crearHerramientasReales('t', { clienteComoUsuario: () => f.cliente });
+  const r = await h.iva_del_periodo({ anio: 2026, mes: 11 });
+  assert.deepEqual([r.periodo, r.trasladado, r.acreditable, r.resultado], ['2026-11', 160, 100, 60]);
+  assert.ok(f.registro.some((q) => q.tabla === 'cuentas_contables' && q.filtros.some((x) => x[0] === 'in')));
+  const sinCfg = await crearHerramientasReales('t', { clienteComoUsuario: () => supabaseFalso({ configuracion_contable: { data: { cuenta_iva_trasladado_id: null, cuenta_iva_acreditable_id: 'x' }, error: null } }).cliente }).iva_del_periodo({});
+  assert.match(sinCfg.error, /Configuración contable/);
+  const fallo = await crearHerramientasReales('t', { clienteComoUsuario: () => supabaseFalso({ configuracion_contable: { data: null, error: { message: 'secreto' } } }).cliente }).iva_del_periodo({});
+  assert.ok(!JSON.stringify(fallo).includes('secreto'));
+});
+
 await ok('límite de uso: bloquea al pasar el máximo por usuario y se libera cuando termina la ventana', () => {
   let t = 0; const permitir = crearLimitador({ max: 2, ventanaMs: 1000, ahora: () => t });
   assert.equal(permitir('ana'), true); assert.equal(permitir('ana'), true); assert.equal(permitir('ana'), false);
@@ -224,8 +245,8 @@ await ok('la ruta exige sesión y un rol con acceso (director, admin, contador, 
   assert.deepEqual([...ROLES_IA].sort(), ['admin', 'auditor', 'contador', 'director']);
   const r = fs.readFileSync(path.join(aqui, 'src', 'routes', 'ia.js'), 'utf8');
   assert.ok(r.includes('iaRouter.use(verifyAuth)'));
-  const i401 = r.indexOf('401'), i403 = r.indexOf('403'), i503 = r.indexOf('503'), i429 = r.indexOf('429'), iConsulta = r.indexOf('consultarIA({');
-  assert.ok(i401 > 0 && i401 < i403 && i403 < i503 && i503 < i429 && i429 < iConsulta, 'primero sesión, luego rol, llave y límite; al final la consulta');
+  const i401 = r.indexOf('401'), i403 = r.indexOf('403'), iReglas = r.indexOf('responderPorReglas('), i503 = r.indexOf('503'), i429 = r.lastIndexOf('429'), iConsulta = r.indexOf('consultarIA({');
+  assert.ok(i401 > 0 && i401 < i403 && i403 < iReglas && iReglas < i503 && i503 < i429 && i429 < iConsulta, 'primero sesión y rol; en modo IA luego llave y límite, y al final la consulta');
   // La llave solo se usa para: saber si existe (booleano) o pasársela al núcleo; jamás se devuelve.
   const usos = r.match(/config\.ia\.apiKey/g) || [];
   const permitidos = r.match(/Boolean\(config\.ia\.apiKey\)|!config\.ia\.apiKey|apiKey: config\.ia\.apiKey/g) || [];
@@ -257,11 +278,11 @@ await ok('frontend: la IA arranca desactivada, se inicia al abrir la vista, y co
   assert.ok(app.includes('bloquear("Cargando…")'));
   assert.ok(app.includes('navIA.addEventListener("click", iniciar)'), 'no debe pedir nada al cargar el panel, solo al abrir la vista');
   assert.ok(app.includes('window.CTPostgres.estadoIA()') && app.includes('window.CTPostgres.consultarIA('));
-  for (const msg of ['Tu rol no tiene acceso a la IA Contable.', 'falta configurar la llave del proveedor']) assert.ok(app.includes(msg), msg);
+  for (const msg of ['Tu rol no tiene acceso al asistente contable.', 'falta configurar la llave del proveedor']) assert.ok(app.includes(msg), msg);
   const pg = fs.readFileSync(path.join(aqui, '..', 'frontend', 'postgres-crud.js'), 'utf8');
   assert.ok(pg.includes('"/api/ia/estado"') && pg.includes('"/api/ia/consultar"'));
   const html = fs.readFileSync(path.join(aqui, '..', 'frontend', 'dashboard.html'), 'utf8');
-  assert.ok(html.includes('app.js?v=12') && html.includes('postgres-crud.js?v=4'));
+  assert.ok(html.includes('app.js?v=13') && html.includes('postgres-crud.js?v=4'));
   assert.ok(!html.includes('>En desarrollo<'), 'la etiqueta "En desarrollo" ya no aplica');
   const css = fs.readFileSync(path.join(aqui, '..', 'frontend', 'styles.css'), 'utf8');
   assert.ok(!css.includes('data-ia'), 'el auditor (solo lectura) debe poder usar la IA: no se oculta');

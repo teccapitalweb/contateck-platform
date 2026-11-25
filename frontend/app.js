@@ -613,7 +613,7 @@
 
     /* ---------- Módulo 02 · SAT y Fiscal: ver fiscal.js ---------- */
 
-    /* ---------- Módulo 15 · IA Contable (OT-0053) ---------- */
+    /* ---------- Módulo 15 · Asistente contable (OT-0053 IA / OT-0054 reglas) ---------- */
     // Chat real de SOLO LECTURA: el backend consulta los datos de la empresa con el permiso del propio usuario y se los
     // da a la IA como herramientas. Se inicia al abrir la vista (no al cargar el panel, para no sumar peticiones).
     // El texto del usuario se pinta con textContent y el de la IA se escapa antes de dar formato: nada de HTML ajeno.
@@ -624,7 +624,7 @@
       const enviar = document.querySelector("[data-ia-send]");
       const navIA = document.querySelector('.nav-item[data-view="ia"]');
       const historial = [];
-      const SUGERENCIAS = ["¿Cómo va el Balance General?", "¿Cuánto hay en bancos?", "¿Qué obligaciones fiscales vencen pronto?", "¿Cuánto me deben mis clientes y cuánto debo a proveedores?"];
+      const SUGERENCIAS = ["¿Cómo va el Balance General?", "¿Cuánto hay en bancos y caja?", "¿Cuánto me deben mis clientes y cuánto debo a proveedores?", "¿Cómo va el IVA este mes?", "¿Qué obligaciones fiscales vencen pronto?", "¿Cuánto gané este mes?", "¿Tengo alertas pendientes?"];
       const AV = '<span class="msg__av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4l1.4 4L17 9.5l-3.6 1.5L12 15l-1.4-4L7 9.5 10.6 8z"/></svg></span>';
       let iniciada = false, ocupada = false;
 
@@ -641,7 +641,7 @@
         return b;
       };
       const bloquear = function (mensaje) {
-        chatLog.innerHTML = ""; burbuja("ai", "<b>IA Contable</b><br>" + escIA(mensaje));
+        chatLog.innerHTML = ""; burbuja("ai", "<b>Asistente contable</b><br>" + escIA(mensaje));
         if (chipHost) chipHost.style.display = "none";
         if (input) { input.disabled = true; input.placeholder = "No disponible"; }
         if (enviar) { enviar.disabled = true; enviar.style.opacity = ".4"; enviar.style.cursor = "not-allowed"; }
@@ -668,10 +668,12 @@
         for (let i = 0; i < 40 && !window.CONTATECK_SUPABASE_TOKEN; i++) await new Promise(function (r) { setTimeout(r, 150); });
         const e = await window.CTPostgres.estadoIA();
         if (!e || !e.ok) { iniciada = false; bloquear("No se pudo comprobar el estado de la IA. Recarga la página e inténtalo de nuevo."); return; }
-        if (!e.rolPermitido) { bloquear("Tu rol no tiene acceso a la IA Contable."); return; }
+        if (!e.rolPermitido) { bloquear("Tu rol no tiene acceso al asistente contable."); return; }
         if (!e.disponible) { bloquear("La IA Contable todavía no está activada en el servidor (falta configurar la llave del proveedor). El resto del sistema funciona con normalidad."); return; }
         chatLog.innerHTML = "";
-        burbuja("ai", "<b>Hola, soy tu asistente contable.</b><br>Consulto los datos de tu empresa (solo lectura): saldos, Balance General, obligaciones fiscales y cuentas por cobrar y pagar. No puedo modificar nada. Verifica las cifras importantes antes de decidir.");
+        burbuja("ai", e.modo === "ia"
+          ? "<b>Hola, soy tu asistente contable con IA.</b><br>Consulto los datos de tu empresa (solo lectura): saldos, Balance General, obligaciones fiscales y cuentas por cobrar y pagar. No puedo modificar nada. Verifica las cifras importantes antes de decidir."
+          : "<b>Hola, soy el asistente contable de CONTATECK.</b><br>Contesto preguntas frecuentes con los datos reales de tu empresa (solo lectura, no modifico nada). No es inteligencia artificial: reconozco ciertos temas y, si no entiendo, te lo digo. Prueba con una de las sugerencias o escribe tu pregunta.");
         if (chipHost) {
           chipHost.innerHTML = "";
           SUGERENCIAS.forEach(function (s) {

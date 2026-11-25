@@ -58,6 +58,9 @@ export const config = {
   // La llave es SECRETA: solo en el backend (.env o variables de Railway), nunca en el frontend ni en el repositorio.
   // Sin llave la IA queda desactivada y el resto del sistema funciona igual.
   ia: {
+    // OT-0054: "reglas" (por defecto) = chatbot sin IA de pago, sin llave; "ia" = modelo de IA (necesita la llave).
+    modo: String(process.env.ASISTENTE_MODO || 'reglas').toLowerCase() === 'ia' ? 'ia' : 'reglas',
+    maxPorHoraReglas: parseInt(process.env.ASISTENTE_MAX_POR_HORA || '120', 10),
     apiKey: process.env.ANTHROPIC_API_KEY || '',
     model: process.env.IA_MODEL || 'claude-haiku-5-5',
     maxTokens: parseInt(process.env.IA_MAX_TOKENS || '1024', 10),
