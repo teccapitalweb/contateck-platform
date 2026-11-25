@@ -755,7 +755,7 @@ html[data-rol="auditor"] :is(
   [data-fac-timbrar], [data-fac-masivo], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
   [data-perfil-editar], [data-perfil-nuevo], [data-perfil-guardar], [data-perfil-activar], [data-perfil-borrar], [data-soon*="imbrado"],
   /* Nómina */
-  [data-nom-calcular], [data-pn-generar], [data-pn-aprobar], [data-pn-descartar],
+  [data-nom-calcular], [data-pn-generar], [data-pn-aprobar], [data-pn-descartar], [data-hist-timbrar],
   /* Altas, ediciones y bajas genéricas (p. ej. "Empleado") */
   [data-new], [data-edit], [data-del]
 ) { display: none !important; }

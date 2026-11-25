@@ -8,7 +8,9 @@
 - **Seguridad:** el detalle de la nómina pintaba nombres, puestos y notas sin escapar; ahora se escapan (igual que los recibos).
 - El asistente explica el alcance: el timbrado del CFDI de nómina no forma parte de la plataforma.
 
-## Por qué el timbrado de CFDI de nómina queda fuera del alcance (decisión de alcance, no "pendiente")
+> **Actualización (OT-0064):** esta decisión se revisó y el timbrado de CFDI de nómina **sí se construyó**, en el ambiente de pruebas del proveedor. Lo de abajo explica por qué antes se había dejado fuera y qué datos faltaban (hoy ya se capturan).
+
+## Por qué el timbrado de CFDI de nómina quedó fuera en un primer momento
 Se revisó el proveedor de timbrado (el SDK de Fiscalapi 4.0.417 sí admite facturas de nómina "por valores"). Hacerlo bien exige datos y validaciones que hoy no existen en el sistema ni se pueden comprobar sin un contador:
 - **Datos del empleado que no se capturan:** código postal fiscal, régimen fiscal del trabajador, tipo de contrato, tipo de jornada, riesgo de puesto, periodicidad de pago por catálogo del SAT, entidad federativa, antigüedad y salario diario integrado. La tabla `empleados` tiene RFC, CURP, NSS, fecha de ingreso, cuenta bancaria y sueldo.
 - **Datos del patrón:** registro patronal, y que el RFC emisor tenga CSD vigente.
