@@ -12,6 +12,15 @@ Archivo (fuera del repo): `C:\RESIDENCIA\PROYECTO\Cuentas_Sugerencias_CodigoAgru
 
 **Qué falta:** que la contadora corrija las sugerencias y llene la última columna; luego se carga con el flujo ya existente en Contabilidad → SAT. No se carga nada hasta entonces.
 
+### Verificación contra el Anexo 24 oficial (25-nov-2026)
+El usuario descargó del SAT el **Anexo 24 de la RMF 2026** (`Anexo_24_RMF2026-13012026.pdf`, 37 páginas) y se leyó su texto para contrastar cada sugerencia con el **nombre oficial** del código. (El "Anexo Técnico de Contabilidad Electrónica 1.3" no sirve para esto: es la guía del XML y no trae nombres.)
+- Se leyeron 1,061 códigos con nombre; de los 1,080 del catálogo del repo, 19 no se pudieron leer por cortes de línea del PDF (por ejemplo "2 10.04" por "210.04"). Ningún código leído del Anexo falta en el repo.
+- La hoja se regeneró con una columna nueva, "Nombre oficial de ese código (Anexo 24 RMF 2026)", y la última columna sigue vacía.
+- Correcciones que salieron de la verificación: **205.01 era un error** (es "Socios, accionistas o representante legal"; el correcto es 205.02 "Acreedores diversos a corto plazo nacional"); **603.01 era un error** (es "Sueldos y salarios"; se sugiere 603, "Gastos de administración"); los productos financieros van en **702** (sugerido 702.04 "Intereses a favor bancarios nacional"); y el **cruce 602/603 quedó confirmado**.
+- Resultado: 12 Alta, 12 Media y 1 Dudosa (IVA trasladado: cobrado 208.01 o no cobrado 209.01, depende de cómo lleven el IVA).
+
+**Qué sigue siendo criterio contable:** qué subcódigo corresponde a cada cuenta (por ejemplo IVA pagado o pendiente, capital fijo o variable). Eso lo confirma quien lleve la contabilidad de cada empresa.
+
 ## 2. Tarea programada para que Supabase no pause DEV
 `supabase-dev-mantener-activo` (en la app, sección Programadas): lunes y jueves a las 10:00 hora local ejecuta una sola consulta de **solo lectura** (`select now(), count(empresas)`) con el MCP `supabase-dev`. Si falla, solo avisa que el proyecto parece pausado.
 - Limitaciones: solo corre con la app abierta (si estaba cerrada, corre al abrirla). No está demostrado que una consulta del MCP cuente como actividad para Supabase; si el proyecto se pausa igual, habrá que usar otra vía (por ejemplo, entrar al panel).
