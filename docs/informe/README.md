@@ -14,3 +14,5 @@ Material de apoyo para el informe técnico de residencia profesional (proyecto C
 | `../work-orders/Reporte-Prueba-Completa-Modulos-2026-11-13.md` | Prueba de todos los módulos con 3 roles (13-nov y 25-nov-2026) |
 
 Los diagramas son de texto (Mermaid): se ven en GitHub y en VS Code, y se exportan como imagen en https://mermaid.live para pegarlos en el documento.
+
+**Validación de los diagramas:** los 8 diagramas de `diagramas/` se revisaron con el analizador oficial de Mermaid (sintaxis válida, 8 de 8). No se renderizaron como imagen: al exportarlos para el informe, revisa que se vean bien.
