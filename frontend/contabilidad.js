@@ -713,8 +713,22 @@
   // CodAgrup lleva el Código Agrupador SAT que la contadora asignó a la cuenta (columna
   // codigo_agrupador). Si la cuenta aún no lo tiene se manda su código interno, que solo
   // sirve si coincide con uno del SAT: por eso el panel avisa cuántas cuentas faltan.
+  // OT-0050: el XML del catálogo lleva las MISMAS cuentas que se revisan para el Código Agrupador
+  // (activas, e inactivas con movimientos) más las cuentas "madre" de esas (SubCtaDe debe existir
+  // en el catálogo, o el SAT rechaza el archivo). Antes llevaba todas, y una cuenta inactiva sin uso
+  // y sin código salía con su código interno ("10003", "bancos"), que no es un Código Agrupador.
+  function cuentasParaXmlCatalogo() {
+    const todas = getCuentas();
+    const incluir = new Set(cuentasParaSat().map((c) => c.codigo));
+    let cambio = true;
+    while (cambio) {
+      cambio = false;
+      todas.forEach((c) => { if (incluir.has(c.codigo) && c.padre && !incluir.has(c.padre)) { incluir.add(c.padre); cambio = true; } });
+    }
+    return todas.filter((c) => incluir.has(c.codigo));
+  }
   function xmlCatalogoSAT(rfc, mes, anio) {
-    const ctas = getCuentas().map((c) =>
+    const ctas = cuentasParaXmlCatalogo().map((c) =>
       `    <catalogocuentas:Ctas CodAgrup="${attrSAT(c.codigoAgrupador || c.codigo, 20)}" NumCta="${attrSAT(c.codigo, 100)}" Desc="${attrSAT(c.nombre || c.codigo, 400)}" Nivel="${parseInt(c.nivel, 10) || 1}" Natur="${c.nat === "Deudora" ? "D" : "A"}"${c.padre ? ` SubCtaDe="${attrSAT(c.padre, 100)}"` : ""}/>`
     ).join("\n");
     const ns = "http://www.sat.gob.mx/esquemas/ContabilidadE/1_3/CatalogoCuentas";
@@ -811,7 +825,7 @@ ${ctas}
     cfdiAPoliza, cfdisPendientes, contabilizarCfdi, parsearCfdiXml, xmlAPolizaGasto,
     estadoResultados, balanceGeneral, xmlCatalogoSAT, xmlBalanzaSAT, determinacionIVA, diot,
     setPeriodo, getPeriodo, periodosDisponibles, getRfcEmisor, setRfcEmisor,
-    cuentasParaSat, csvCuentasContadora, // OT-0040: la hoja del Código Agrupador (se prueba en backend/test-fiscal.js)
+    cuentasParaSat, cuentasParaXmlCatalogo, csvCuentasContadora, // OT-0040: la hoja del Código Agrupador (se prueba en backend/test-fiscal.js)
   };
 
   /* ====================== PARTE 2 · UI ====================== */
@@ -2994,9 +3008,15 @@ ${ctas}
     setRfcEmisor(rfc);
     const suf = `${rfc}_${anio}${String(mes).padStart(2, "0")}.xml`;
     if (tipo === "catalogo") {
+      // OT-0050: una cuenta sin Código Agrupador saldría con su código interno, que no es un código del SAT:
+      // el SAT rechazaría el archivo. Mejor no descargarlo y decir cuáles faltan.
+      const sinAgr = cuentasParaXmlCatalogo().filter((c) => !c.codigoAgrupador);
+      if (sinAgr.length) {
+        const lista = sinAgr.slice(0, 5).map((c) => c.codigo).join(", ") + (sinAgr.length > 5 ? "…" : "");
+        toast(`Faltan ${sinAgr.length} cuenta(s) por asignar su Código Agrupador SAT (${lista}). Descarga la hoja para la contadora y carga sus códigos antes de bajar el XML.`, "error", 8000);
+        return;
+      }
       descargarTexto("Catalogo_" + suf, xmlCatalogoSAT(rfc, mes, anio), "application/xml");
-      const sinAgr = cuentasParaSat().filter((c) => !c.codigoAgrupador).length;
-      if (sinAgr) toast(`${sinAgr} cuenta(s) sin Código Agrupador SAT: se usó su código interno y el SAT puede rechazar el archivo.`, "warn", 6000);
       return;
     }
     // La Balanza se arma con las pólizas del periodo activo: el mes/año del XML

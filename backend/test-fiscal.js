@@ -470,7 +470,9 @@ await ok('XML del SAT: catálogo (usa el Código Agrupador si existe) y balanza 
   const cat = win.CTCont.xmlCatalogoSAT('EKU9003173C9', 11, 2026);
   assert.match(cat, /<catalogocuentas:Catalogo [^>]*Version="1\.3"[^>]*RFC="EKU9003173C9"[^>]*Mes="11"[^>]*Anio="2026"/);
   assert.ok(cat.includes('CodAgrup="102.01" NumCta="102"') && cat.includes('CodAgrup="105" NumCta="105"'));
-  assert.equal((cat.match(/<catalogocuentas:Ctas /g) || []).length, cuentasDemo.length);
+  // OT-0050: solo las cuentas que se revisan (no la inactiva sin uso, que saldría con un código interno inválido).
+  assert.equal((cat.match(/<catalogocuentas:Ctas /g) || []).length, win.CTCont.cuentasParaSat().length);
+  assert.ok(!cat.includes('NumCta="299"') && cat.includes('NumCta="298"'));
   win.CTCont.setPeriodo({ mes: 11, anio: 2026 });
   const bal = win.CTCont.xmlBalanzaSAT('EKU9003173C9', 11, 2026);
   assert.match(bal, /<BCE:Balanza [^>]*TipoEnvio="N"/);
@@ -482,6 +484,24 @@ await ok('XML del SAT: catálogo (usa el Código Agrupador si existe) y balanza 
     for (const x of [m[2], m[3], m[4], m[5]]) assert.match(x, /^-?\d+\.\d{2}$/);
   }
   assert.ok(n > 0);
+});
+
+// OT-0050: el XML del catálogo no lleva cuentas inactivas sin uso, pero sí las "madre" de las que lleva.
+await ok('XML del catálogo: sin cuentas inactivas sin uso, con las cuentas madre, y el botón no descarga si falta algún Código Agrupador', async () => {
+  const cuentas = [
+    { id: 'p1', codigo: '100', nombre: 'Activo', nat: 'Deudora', nivel: 1, activo: false },                       // inactiva SIN uso, pero es madre de una activa
+    { id: 'h1', codigo: '102', nombre: 'Bancos', nat: 'Deudora', nivel: 2, activo: true, padre: '100', codigoAgrupador: '102.01' },
+    { id: 'x1', codigo: '10003', nombre: 'ban', nat: 'Acreedora', nivel: 2, activo: false },                       // inactiva sin uso: fuera
+  ];
+  const { win } = navegadorSat({ polizas: [], cuentas }); await esperar(60);
+  const cat = win.CTCont.xmlCatalogoSAT('EKU9003173C9', 11, 2026);
+  assert.ok(cat.includes('NumCta="102"') && cat.includes('SubCtaDe="100"'));
+  assert.ok(cat.includes('NumCta="100"'), 'la cuenta madre debe estar para que SubCtaDe exista');
+  assert.ok(!cat.includes('10003'), 'una cuenta inactiva sin uso no entra al XML');
+  assert.deepEqual(Array.from(win.CTCont.cuentasParaXmlCatalogo()).map((c) => c.codigo), ['100', '102']);
+  const src = codigo('contabilidad.js');
+  assert.ok(src.includes('cuentasParaXmlCatalogo().filter((c) => !c.codigoAgrupador)'));
+  assert.ok(src.indexOf('cuenta(s) por asignar su Código Agrupador') > 0 && src.indexOf('cuenta(s) por asignar su Código Agrupador') < src.indexOf('descargarTexto("Catalogo_"'), 'el aviso debe ir antes de descargar');
 });
 
 // OT-0045: alerta del Dashboard por CFDI timbrados sin póliza.
