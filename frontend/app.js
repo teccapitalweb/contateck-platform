@@ -157,7 +157,64 @@
        ============================================================ */
     function proximamente(motivo) {
       return '<div class="dash-proximamente" style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' +
-        '<b style="display:block;color:var(--text);margin-bottom:.2rem">Próximamente</b>' + motivo + '</div>';
+        '<b style="display:block;color:var(--text);margin-bottom:.2rem">Sin información</b>' + motivo + '</div>';
+    }
+    /*CSV-INICIO*/
+    // Exporta el resumen del Dashboard como CSV (Excel lo abre con acentos por el BOM). Los textos que escribió un usuario
+    // se neutralizan (=, +, -, @ al inicio) para que Excel no los tome como fórmula; los números van tal cual.
+    function dashboardACsv(d, empresa, fecha) {
+      const txt = function (v) {
+        let s = String(v == null ? "" : v).replace(/\r?\n/g, " ");
+        if (/^[=+\-@\t]/.test(s)) s = "'" + s;
+        return '"' + s.replace(/"/g, '""') + '"';
+      };
+      const n = function (v) { return String(Math.round((Number(v) || 0) * 100) / 100); };
+      const f = function (a, b, c) { return [txt(a), b === undefined ? "" : (typeof b === "number" ? n(b) : txt(b)), c === undefined ? "" : txt(c)].join(","); };
+      const fac = d.facturacion || {}, op = d.operacion || {}, nom = d.nomina || {}, bal = d.balanceGeneral || {};
+      const filas = [
+        f("CONTATECK · Resumen del Dashboard"), f("Empresa", empresa), f("Fecha", fecha), "",
+        f("Facturación del mes"), f("Facturado", Number(fac.montoMes) || 0), f("CFDI timbrados", Number(fac.timbradasMes) || 0), f("CFDI cancelados", Number(fac.canceladasMes) || 0), "",
+        f("Movimientos de pólizas del mes"), f("Ingresos", Number(op.ingresosMes) || 0), f("Egresos", Number(op.egresosMes) || 0), f("Ingresos menos egresos (no es la utilidad contable)", Number(op.utilidadMes) || 0), "",
+        f("Nómina"), f("Empleados activos", Number(nom.empleadosActivos) || 0), f("Nómina mensual estimada", Number(nom.nominaMensualEstimada) || 0), "",
+        f("Balance General"), f("Activo", Number(bal.totalActivo) || 0), f("Pasivo", Number(bal.totalPasivo) || 0), f("Capital", Number(bal.totalCapital) || 0), f("Resultado del periodo", Number(bal.resultadoDelPeriodo) || 0), f("Cuadra", bal.cuadra ? "Sí" : "No"), "",
+        f("Gastos por cuenta"), f("Cuenta", "Monto"),
+      ].concat((d.composicionGastos || []).map(function (g) { return f(g.cuenta, Number(g.monto) || 0); }))
+        .concat(["", f("Alertas")]).concat((d.alertas || []).length ? d.alertas.map(function (a) { return f(a.titulo, a.texto || ""); }) : [f("Sin alertas")])
+        .concat(["", f("Obligaciones pendientes"), f("Obligación", "Periodo", "Vence")]).concat((d.proximasObligacionesSat || []).map(function (o) { return f(o.obligacion, o.periodo, o.fechaVencimiento); }));
+      return "\uFEFF" + filas.join("\r\n") + "\r\n";
+    }
+    /*CSV-FIN*/
+    document.addEventListener("click", function (e) {
+      if (e.target.closest("[data-dash-imprimir]")) { window.print(); return; }
+      if (!e.target.closest("[data-dash-exportar]")) return;
+      const datos = window.__ctDashDatos;
+      if (!datos || !datos.ok) { toast("Espera a que carguen los datos del Dashboard e inténtalo de nuevo.", "warn"); return; }
+      const empresa = (window.CONTATECK_EMPRESA_PG && window.CONTATECK_EMPRESA_PG.nombre) || "empresa";
+      const fecha = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Mexico_City" });
+      const blob = new Blob([dashboardACsv(datos, empresa, fecha)], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "Dashboard_" + empresa.replace(/[^A-Za-z0-9]+/g, "_") + "_" + fecha + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      toast("Se descargó el resumen del Dashboard (se abre en Excel).", "ok");
+    });
+    // Tarjeta "Indicadores fiscales" (OT-0061): IVA del mes e ISR estimado; todo con aviso de que es referencia.
+    function pintarIndicadoresFiscales(r) {
+      if (!r || !r.ok) return sinPendientes("No se pudieron calcular los indicadores fiscales.");
+      if (r.restringido) return sinPendientes("Disponible para los roles de contabilidad.");
+      const fila = function (a, b) { return '<div class="comp__row"><span>' + a + '</span><b>' + b + '</b></div>'; };
+      let h = "";
+      const iva = r.iva || {};
+      if (iva.error) h += '<p style="color:var(--faint);font-size:.82rem;margin:.2rem 0">' + esc(iva.detalle || iva.error) + '</p>';
+      else {
+        h += fila("IVA trasladado (" + esc(iva.periodo) + ")", "$" + money(iva.trasladado)) + fila("IVA acreditable", "$" + money(iva.acreditable)) +
+          fila(iva.resultado > 0 ? "IVA a cargo" : "IVA a favor", "$" + money(Math.abs(iva.resultado)));
+      }
+      const isr = r.isr || {};
+      if (isr.disponible) h += fila("ISR estimado " + esc(isr.anio), "$" + money(isr.estimado)) + '<p style="color:var(--faint);font-size:.76rem;margin:.4rem 0 0">30% de la utilidad contable acumulada ($' + money(isr.base) + '). Es un estimado: el pago provisional real usa el coeficiente de utilidad.</p>';
+      else h += '<p style="color:var(--faint);font-size:.78rem;margin:.5rem 0 0"><b>ISR:</b> ' + esc(isr.motivo || "no disponible") + '</p>';
+      return h + '<p style="color:var(--faint);font-size:.72rem;margin:.4rem 0 0">' + esc(r.nota || "") + '</p>';
     }
     // Estado vacío SIN el rótulo "Próximamente": para cuando no hay nada que mostrar pero la función sí existe.
     function sinPendientes(texto) {
@@ -289,12 +346,16 @@
       if (donutHost) donutHost.innerHTML = "";
       if (donutLegend) donutLegend.innerHTML = cargando("la composición de gastos");
       if (balHost) balHost.innerHTML = cargando("el balance general");
-      // Este SÍ es un pendiente real (no es carga): ISR necesita las
-      // deducciones autorizadas que defina la contadora.
-      if (fiscalHost) fiscalHost.innerHTML = proximamente("Estimados de IVA/ISR — pendiente de definición fiscal.");
+      // OT-0061: IVA del mes e ISR estimado (de referencia); se piden aparte para no retrasar el resto del Dashboard.
+      if (fiscalHost) fiscalHost.innerHTML = cargando("los indicadores fiscales");
       if (oblHost) oblHost.innerHTML = '<tr><td colspan="5">' + cargando("las obligaciones SAT") + '</td></tr>';
 
       const datos = await window.dashboardService.obtenerDatos();
+      window.__ctDashDatos = datos; // para Exportar
+      if (fiscalHost) {
+        window.CTPostgres.indicadoresFiscales().then(function (r) { fiscalHost.innerHTML = pintarIndicadoresFiscales(r); })
+          .catch(function () { fiscalHost.innerHTML = sinPendientes("No se pudieron calcular los indicadores fiscales."); });
+      }
 
       if (!datos.ok) {
         if (kpiWrap) kpiWrap.innerHTML = proximamente("No se pudieron cargar los datos (" + (datos.error || "sin conexión") + ").");

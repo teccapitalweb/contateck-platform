@@ -759,3 +759,10 @@ html[data-rol="auditor"] :is(
   /* Altas, ediciones y bajas genéricas (p. ej. "Empleado") */
   [data-new], [data-edit], [data-del]
 ) { display: none !important; }
+
+/* OT-0060 · Imprimir / guardar PDF: se ocultan el menú, la barra superior, los botones y los modales. */
+@media print {
+  .side, .topbar, .page-head__actions, .modal, .toast, [data-modal], .chat__input { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .card { break-inside: avoid; box-shadow: none !important; border: 1px solid #bbb !important; }
+}
