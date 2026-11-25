@@ -38,6 +38,7 @@ await ok('reconoce la intención de las preguntas frecuentes, con acentos, mayú
     resultado: ['¿Cuánto gané este mes?', 'cuál es mi utilidad', 'estoy ganando o perdiendo', 'resultado de octubre'],
     ingresos_egresos: ['¿Cuánto vendí este mes?', 'mis ingresos', 'cuánto facturé', 'cuánto gasté', 'egresos del mes'],
     alertas: ['¿Tengo alertas pendientes?', 'qué debo revisar', 'hay algún problema', 'resumen'],
+    sin_poliza: ['¿Qué facturas no tienen póliza?', 'facturas sin contabilizar', 'cuáles facturas no están contabilizadas', 'cfdi sin póliza'],
     nomina: ['¿Cuántos empleados tengo?', 'cuánto es la nómina', 'sueldos'],
     ayuda: ['hola', 'ayuda', '¿qué puedes hacer?', 'buenos días', 'gracias'],
   };
@@ -84,6 +85,7 @@ const herramientas = (extra = {}) => ({
   },
   async cuentas_por_cobrar_y_pagar() { return { por_cobrar_clientes: { facturas_con_saldo: 2, importe_total: 150.5 }, por_pagar_proveedores: { facturas_con_saldo: 0, importe_total: 0 } }; },
   async iva_del_periodo() { return { periodo: '2026-11', trasladado: 160, acreditable: 100, resultado: 60 }; },
+  async cfdis_sin_poliza() { return { total: 2, facturas: [{ folio: 'CT-29', fecha: '2026-11-08T11:10:21+00:00', total: 142.68, tipo: 'I' }, { folio: null, fecha: '2026-11-10', total: 50, tipo: 'I' }] }; },
   async obligaciones_fiscales() { return { proximas: [
     { obligacion: 'IVA mensual', periodo: 'octubre 2026', fecha_limite: '2026-11-17', dias_restantes: -8 },
     { obligacion: 'DIOT', periodo: 'octubre 2026', fecha_limite: '2026-11-30', dias_restantes: 5 },
@@ -163,7 +165,7 @@ await ok('una pregunta que menciona clientes y proveedores contesta las dos cosa
 
 await ok('aclara qué cubre cada cifra: el IVA de un mes es el movimiento del mes, y sin movimientos sugiere preguntar por el año', async () => {
   const iva = await preguntar('¿Cómo va el IVA este mes?', herramientas());
-  assert.match(iva.respuesta, /Es el movimiento de noviembre de 2026/); assert.match(iva.respuesta, /saldo acumulado/);
+  assert.match(iva.respuesta, /Es el movimiento de noviembre de 2026/); assert.match(iva.respuesta, /saldo del año/);
   const vacio = await preguntar('¿Cuánto gané este mes?', herramientas({ async saldos_de_cuentas() { return { cuentas: [], totales_por_digito: {} }; } }));
   assert.match(vacio.respuesta, /¿cuánto gané este año\?/);
 });
@@ -202,6 +204,189 @@ await ok('el asistente no escribe, no usa la red ni la base por su cuenta, y la 
   const iRol = ruta.indexOf('ROL_SIN_ACCESO'), iReglas = ruta.indexOf('responderPorReglas('), iLlave = ruta.indexOf('IA_NO_CONFIGURADA');
   assert.ok(iRol > 0 && iRol < iReglas && iReglas < iLlave, 'primero el rol, luego el modo reglas (sin llave), y solo después se exige la llave de la IA');
   assert.deepEqual([...ROLES_IA].sort(), ['admin', 'auditor', 'contador', 'director']);
+});
+
+// ---------------- Base de conocimiento (OT-0056): conceptos y guías del sistema ----------------
+const { ENTRADAS, buscarConocimiento, esPreguntaConceptual, esPreguntaGuia } = await import('./src/baseConocimiento.js');
+const sinDatos = herramientas({ async resumen_general() { throw new Error('no debe consultarse'); }, async iva_del_periodo() { throw new Error('no debe consultarse'); } });
+const raiz = path.join(aqui, '..', 'frontend');
+const frontend = ['dashboard.html', 'app.js', 'auth-guard.js', 'contabilidad.js', 'facturacion.js', 'fiscal.js', 'nomina.js', 'ventas.js', 'invitaciones.js']
+  .map((f) => fs.readFileSync(path.join(raiz, f), 'utf8')).join('\n');
+
+await ok('base de conocimiento: conceptos básicos ("¿qué es…?") se contestan con la explicación, sin consultar los datos de la empresa', async () => {
+  const casos = {
+    iva: ['¿Qué es el IVA?', 'qué significa iva', 'explícame el IVA', 'cómo funciona el iva', '¿qué es el IVA trasladado?'],
+    cfdi: ['¿Qué es un CFDI?', 'qué es una factura electrónica'], timbrar: ['¿Qué es timbrar?', 'qué significa el uuid', 'qué es el pac'],
+    complemento_pago: ['¿Qué es PPD?', 'qué es el complemento de pago', 'qué significa PUE'], nota_credito: ['¿Qué es una nota de crédito?'],
+    poliza: ['¿Qué es una póliza?', 'para qué sirve una póliza'], debe_haber: ['¿Qué es el debe y el haber?', 'qué es la naturaleza deudora'],
+    catalogo_cuentas: ['¿Qué es el catálogo de cuentas?'], codigo_agrupador: ['¿Qué es el código agrupador?', 'qué es el anexo 24'],
+    contabilidad_electronica: ['¿Qué es la contabilidad electrónica?'], balanza: ['¿Qué es la balanza de comprobación?', 'para qué sirve la balanza'],
+    balance_general: ['¿Qué es el balance general?'], estado_resultados: ['¿Qué es el estado de resultados?', 'qué es la utilidad'],
+    activo_pasivo_capital: ['¿Qué es el activo?', 'qué es el pasivo', 'qué es el capital contable'], ingresos_costos_gastos: ['¿Qué es un costo?', 'qué son los gastos'],
+    libro_mayor: ['¿Qué es el libro mayor?'], causacion: ['¿Qué es causar una factura?', 'qué es una póliza de causación'], cuentas_cobrar_pagar: ['¿Qué son las cuentas por cobrar?'],
+    diot: ['¿Qué es la DIOT?'], isr: ['¿Qué es el ISR?', 'cómo se calcula el isr'], rfc: ['¿Qué es el RFC?'], regimen_fiscal: ['¿Qué es el régimen fiscal?'],
+    periodo_cierre: ['¿Qué es el cierre de periodo?'], nomina: ['¿Qué es la nómina?', 'qué es el imss'], obligaciones_fiscales: ['¿Qué son las obligaciones fiscales?'],
+    soy_ia: ['¿Eres una IA?', '¿eres un robot?', 'quién eres', 'cómo funcionas'], contateck: ['¿Qué es CONTATECK?', 'para qué sirve esta plataforma'],
+  };
+  for (const [id, preguntas] of Object.entries(casos)) {
+    for (const q of preguntas) {
+      const r = await preguntar(q, sinDatos);
+      assert.equal(r.intencion, 'conocimiento:' + id, `"${q}" debería explicar ${id} y fue ${r.intencion}`);
+      assert.equal(r.fuente, 'guía de CONTATECK');
+    }
+  }
+  const iva = await preguntar('¿Qué es el IVA?', sinDatos);
+  assert.match(iva.respuesta, /16%/); assert.match(iva.respuesta, /IVA trasladado/); assert.match(iva.respuesta, /Para ver el dato de tu empresa pregunta: "¿Cómo va el IVA este mes\?"/);
+});
+
+await ok('base de conocimiento: guías de uso ("¿cómo registro…?") dicen dónde y quién puede, sin consultar los datos', async () => {
+  const casos = {
+    guia_venta: ['¿Cómo registro una venta?', 'cómo puedo registrar una venta', 'dónde creo una nueva venta'], guia_timbrar: ['¿Cómo timbro una factura?', 'cómo hago una factura', 'cómo emito un cfdi'],
+    guia_cancelar_cfdi: ['¿Cómo cancelo una factura?', 'cómo hago una nota de crédito'], guia_cobro: ['¿Cómo registro un cobro?', 'cómo cobro una factura', 'cómo registro que me pagó un cliente'],
+    guia_pago_proveedor: ['¿Cómo pago a un proveedor?'], guia_contabilizar_cfdi: ['¿Cómo contabilizo una factura?', 'cómo importo una factura de proveedor'],
+    guia_poliza: ['¿Cómo creo una póliza?', 'cómo registro una póliza'], guia_cuenta: ['¿Cómo creo una cuenta?', 'cómo agrego una cuenta'],
+    guia_configuracion: ['¿Cómo configuro la contabilidad?'], guia_cerrar_periodo: ['¿Cómo cierro un periodo?', 'cómo cierro el mes', 'quién puede cerrar un periodo'],
+    guia_xml_sat: ['¿Cómo descargo el XML para el SAT?', 'cómo genero el xml de la balanza'], guia_codigo_agrupador: ['¿Cómo cargo los códigos agrupador?'],
+    guia_declaracion: ['¿Cómo registro una declaración?', 'cómo marco una declaración presentada'], guia_invitar: ['¿Cómo invito a un usuario?', 'cómo agrego un usuario'],
+    guia_roles: ['¿Qué roles hay?', 'qué puede hacer un contador', 'qué puede hacer un auditor'], guia_nomina: ['¿Cómo calculo la nómina?', 'cómo doy de alta un empleado'],
+    guia_sesion: ['¿Cómo cierro sesión?', 'cómo cambio el tema'], guia_dashboard: ['¿Qué muestra el dashboard?'],
+  };
+  for (const [id, preguntas] of Object.entries(casos)) {
+    for (const q of preguntas) {
+      const r = await preguntar(q, sinDatos);
+      assert.equal(r.intencion, 'conocimiento:' + id, `"${q}" debería ser la guía ${id} y fue ${r.intencion}`);
+    }
+  }
+  const venta = (await preguntar('¿Cómo registro una venta?', sinDatos)).respuesta;
+  assert.match(venta, /Ventas → Nueva venta/); assert.match(venta, /Tomar para revisión/);
+});
+
+await ok('las preguntas sobre los DATOS de la empresa siguen yendo a los datos, no a la explicación (sin regresiones)', async () => {
+  const datos = { '¿Cómo va el IVA este mes?': 'iva', '¿Cómo va el Balance General?': 'balance', '¿Cuánto me deben?': 'por_cobrar', '¿Cuánto gané este mes?': 'resultado', '¿Qué obligaciones vencen pronto?': 'obligaciones', '¿Tengo alertas?': 'alertas', 'cuánto hay en bancos': 'bancos', 'hola': 'ayuda', '¿qué puedes hacer?': 'ayuda', 'ayuda': 'ayuda', 'iva': 'iva', 'diot': 'obligaciones', 'balance': 'balance' };
+  for (const [q, esperada] of Object.entries(datos)) {
+    assert.equal(buscarConocimiento(q), null, `"${q}" no debe contestarse con una explicación`);
+    assert.equal((await preguntar(q, herramientas())).intencion, esperada, q);
+  }
+  assert.equal(esPreguntaConceptual('¿Cómo va el IVA este mes?'), false); assert.equal(esPreguntaGuia('¿Cómo va el IVA este mes?'), false);
+  // un concepto desconocido no se inventa
+  const raro = await preguntar('¿Qué es la fotosíntesis?', herramientas());
+  assert.equal(raro.intencion, null); assert.match(raro.respuesta, /No estoy seguro/);
+});
+
+await ok('la base es consistente: ids únicos, claves normalizadas, textos presentes, y cada sugerencia de datos lleva a una intención real', () => {
+  const ids = ENTRADAS.map((e) => e.id);
+  assert.equal(new Set(ids).size, ids.length, 'ids repetidos');
+  assert.ok(ENTRADAS.filter((e) => e.tipo === 'concepto').length >= 25 && ENTRADAS.filter((e) => e.tipo === 'guia').length >= 15);
+  for (const e of ENTRADAS) {
+    assert.ok(['concepto', 'guia'].includes(e.tipo), e.id);
+    assert.ok(e.titulo && e.respuesta.length > 40 && e.claves.length > 0, e.id);
+    for (const c of e.claves) assert.equal(normalizar(c).trim(), c, `la clave "${c}" de ${e.id} debe estar normalizada`);
+    if (e.datos) assert.notEqual(detectarIntencion(e.datos), null, `la sugerencia de ${e.id} debe llevar a una intención de datos`);
+  }
+});
+
+await ok('las pantallas y botones que citan las guías existen de verdad en el frontend', () => {
+  const etiquetas = ['Nueva venta', 'Tomar para revisión', 'Timbrar CFDI', 'Cancelar CFDI', 'Me pagó un cliente', 'Cuentas por Pagar', 'Captura rápida', 'Importar desde factura timbrada',
+    'Importar CFDI', 'Nueva póliza', 'Nueva cuenta', 'Configuración contable', 'Cerrar periodo', 'SAT / Declaraciones', 'Descargar XML Catálogo', 'Descargar XML Balanza',
+    'Hoja de cuentas para la contadora', 'Cargar códigos agrupador', '+ Declaración', 'Marcar presentada', '+ Obligación', 'Cargar comunes', 'Libro Mayor', 'Estados financieros',
+    'Balanza', 'Calcular', 'Empleado', 'Equipo', 'Cerrar sesión'];
+  for (const e of etiquetas) assert.ok(frontend.includes(e), `"${e}" ya no existe en el frontend: actualiza la guía`);
+  const citadas = ENTRADAS.map((x) => x.respuesta).join('\n');
+  for (const e of ['Nueva venta', 'Timbrar CFDI', 'Cerrar periodo', 'Nueva póliza', 'Libro Mayor', 'Cargar comunes']) assert.ok(citadas.includes(e), `la guía debería citar "${e}"`);
+});
+
+await ok('los roles que dicen las guías coinciden con los del código (ventas, nómina, facturación, SAT y Fiscal, invitaciones)', () => {
+  const leer = (...p) => fs.readFileSync(path.join(aqui, ...p), 'utf8');
+  const lista = (src, nombre) => { const m = new RegExp(nombre + '\\s*=\\s*\\[([^\\]]*)\\]').exec(src); assert.ok(m, nombre); return m[1].split(',').map((s) => s.replace(/['"\s]/g, '')).filter(Boolean).sort(); };
+  assert.deepEqual(lista(leer('..', 'frontend', 'ventas.js'), 'ROLES_VALIDADORES'), ['admin', 'contador', 'director']);
+  assert.deepEqual(lista(leer('src', 'supabaseVentas.js'), 'ROLES_REGISTRO'), ['admin', 'contador', 'director', 'vendedor']);
+  assert.deepEqual(lista(leer('..', 'frontend', 'nomina.js'), 'ROLES_PROCESAN'), ['admin', 'director', 'rh']);
+  assert.deepEqual(lista(leer('src', 'routes', 'invoices.js'), 'ROLES_FACTURACION'), ['admin', 'contador', 'director']);
+  assert.deepEqual(lista(leer('..', 'frontend', 'fiscal.js'), 'ROLES_CONFIGURAN'), ['admin', 'director']);
+  assert.deepEqual(lista(leer('..', 'frontend', 'fiscal.js'), 'ROLES_REGISTRAN'), ['admin', 'contador', 'director']);
+  assert.deepEqual(lista(leer('src', 'supabaseOnboarding.js'), 'ROLES_INVITAN'), ['admin', 'director', 'rh']);
+  const g = (id) => ENTRADAS.find((e) => e.id === id).respuesta;
+  assert.match(g('guia_venta'), /vendedor, contador, admin y director/); assert.match(g('guia_timbrar'), /director, admin y contador/);
+  assert.match(g('guia_cerrar_periodo'), /contador, admin o director/); assert.match(g('guia_nomina'), /rh, admin y director/);
+  assert.match(g('guia_invitar'), /rh, admin y director/); assert.match(g('guia_declaracion'), /solo admin y director/);
+});
+
+await ok('los textos no prometen lo que el sistema no hace: ISR sin cálculo y timbrado de nómina no disponible', () => {
+  const t = (id) => ENTRADAS.find((e) => e.id === id).respuesta;
+  assert.match(t('isr'), /no lo calcula por ti/); assert.match(t('nomina'), /no está disponible/); assert.match(t('guia_nomina'), /no está disponible/);
+  assert.match(t('soy_ia'), /No soy inteligencia artificial/);
+  const ayuda = textoAyuda(); assert.match(ayuda, /¿Qué es el IVA\?/); assert.match(ayuda, /¿Cómo registro una venta\?/);
+});
+
+// ---------------- Mejoras de la OT-0058: memoria, saldo de una cuenta, facturas sin póliza y faltas de ortografía ----------------
+const { detectarCuenta, corregirTexto } = await import('./src/asistenteContable.js');
+const conHistorial = (pregunta, historial, h = herramientas()) => responderPorReglas({ pregunta, historial }, { herramientas: h, hoy: HOY, log: sinLog });
+
+await ok('saldo de una cuenta: reconoce el código en la pregunta, pide solo esa cuenta y explica el saldo negativo', async () => {
+  for (const [q, c] of [['¿Cuánto hay en la cuenta 102?', '102'], ['saldo de la 105', '105'], ['cuál es el saldo de la cuenta número 4010', '4010'], ['cuánto tengo en la 102', '102']]) assert.equal(detectarCuenta(q), c, q);
+  assert.equal(detectarCuenta('cuánto hay en bancos'), null); assert.equal(detectarCuenta('el mes 11 de 2026'), null);
+  let pedido = null;
+  const r = await preguntar('¿Cuánto hay en la cuenta 101 este mes?', herramientas({ async saldos_de_cuentas(e) { pedido = e; return { cuentas: [{ codigo: '101', nombre: 'Caja', naturaleza: 'deudora', debe: 0, haber: 1000, saldo: -1000 }, { codigo: '1010', nombre: 'otra', naturaleza: 'deudora', debe: 5, haber: 0, saldo: 5 }] }; } }));
+  assert.deepEqual(pedido, { anio: 2026, mes: 11, prefijo: '101' });
+  assert.equal(r.intencion, 'saldo_cuenta'); assert.match(r.respuesta, /Caja \(101\)/); assert.match(r.respuesta, /Saldo: -\$1,000\.00/); assert.match(r.respuesta, /saldo negativo/);
+  assert.ok(!/otra/.test(r.respuesta), 'solo la cuenta exacta, no las que empiezan igual');
+  const nada = await preguntar('saldo de la cuenta 999', herramientas({ async saldos_de_cuentas() { return { cuentas: [] }; } }));
+  assert.match(nada.respuesta, /No encontré movimientos en la cuenta 999/);
+});
+
+await ok('facturas sin póliza: lista folio, fecha e importe (sin nombres) y dice cómo contabilizarlas; si no hay, lo dice', async () => {
+  const r = await preguntar('¿Qué facturas no tienen póliza?', herramientas());
+  assert.equal(r.intencion, 'sin_poliza'); assert.match(r.respuesta, /Tienes \*\*2\*\* facturas emitidas vigentes sin póliza/);
+  assert.match(r.respuesta, /CT-29 \(2026-11-08\) · \$142\.68/); assert.match(r.respuesta, /sin folio \(2026-11-10\) · \$50\.00/); assert.match(r.respuesta, /Importar desde factura timbrada/);
+  const vacia = await preguntar('facturas sin contabilizar', herramientas({ async cfdis_sin_poliza() { return { total: 0, facturas: [] }; } }));
+  assert.match(vacia.respuesta, /Todas tus facturas emitidas vigentes ya tienen su póliza/);
+  const err = await preguntar('facturas sin póliza', herramientas({ async cfdis_sin_poliza() { return { error: 'secreto interno' }; } }));
+  assert.ok(!/secreto/.test(JSON.stringify(err)));
+});
+
+await ok('memoria: "¿y el mes pasado?" repite la pregunta de datos anterior con el periodo nuevo; sin historial o sin periodo no inventa', async () => {
+  let pedido = null;
+  const h = herramientas({ async iva_del_periodo(e) { pedido = e; return { trasladado: 10, acreditable: 4, resultado: 6 }; } });
+  const hist = [{ rol: 'usuario', texto: '¿Cómo va el IVA este mes?' }, { rol: 'ia', texto: 'respuesta anterior' }];
+  const r = await conHistorial('¿y el mes pasado?', hist, h);
+  assert.equal(r.ok, true); assert.equal(r.intencion, 'iva'); assert.equal(r.seguimiento, true);
+  assert.deepEqual(pedido, { anio: 2026, mes: 10 }); assert.match(r.respuesta, /octubre de 2026/);
+  assert.equal((await conHistorial('¿y en septiembre?', hist, h)).intencion, 'iva');
+  assert.equal((await conHistorial('¿y el año pasado?', [{ rol: 'usuario', texto: 'cuánto gané este año' }])).intencion, 'resultado');
+  // sin historial no hay a qué darle seguimiento
+  const sola = await conHistorial('¿y el mes pasado?', []);
+  assert.equal(sola.intencion, null); assert.match(sola.respuesta, /No estoy seguro/);
+  // el seguimiento ignora las explicaciones (conceptos) y sigue con la última pregunta de datos
+  const mixto = await conHistorial('¿y octubre?', [{ rol: 'usuario', texto: '¿Cómo va el IVA?' }, { rol: 'usuario', texto: '¿Qué es una póliza?' }], h);
+  assert.equal(mixto.intencion, 'iva');
+  // un historial raro no rompe nada
+  assert.equal((await conHistorial('¿y el mes pasado?', 'basura')).intencion, null);
+  assert.equal((await conHistorial('hola', [null, 5, { rol: 'x' }])).intencion, 'ayuda');
+  // memoria también para el saldo de una cuenta
+  let cuentaPedida = null;
+  const rc = await conHistorial('¿y el mes pasado?', [{ rol: 'usuario', texto: 'saldo de la cuenta 102' }], herramientas({ async saldos_de_cuentas(e) { cuentaPedida = e; return { cuentas: [] }; } }));
+  assert.equal(rc.intencion, 'saldo_cuenta'); assert.deepEqual(cuentaPedida, { anio: 2026, mes: 10, prefijo: '102' });
+});
+
+await ok('faltas de ortografía: solo se corrigen cuando la pregunta tal cual no se entendió, y con una letra de diferencia', async () => {
+  assert.equal(corregirTexto('¿Cómo va el balnce general?').includes('balance'), true);
+  for (const [q, esperada] of [['¿cómo va el balnce?', 'balance'], ['cuanto hay en bancs', 'bancos'], ['¿qué obligacions vencen?', 'obligaciones'], ['cuánto me deban mis clientes', 'por_cobrar'], ['resumn', 'alertas'], ['¿qué es un cfdi? ', 'conocimiento:cfdi'], ['¿qué es la polza?', 'conocimiento:poliza']]) {
+    const r = await preguntar(q, herramientas());
+    assert.equal(r.intencion, esperada, q);
+  }
+  assert.equal((await preguntar('¿cómo va el balnce?', herramientas())).corregida, true);
+  // lo que ya se entiende no se toca, y lo que no se parece a nada no se inventa
+  const bien = await preguntar('¿Cómo va el balance?', herramientas()); assert.equal(bien.corregida, undefined);
+  for (const q of ['asdfghjkl qwertyuiop', 'cuéntame un chiste de contadores', 'zzzzz xxxxx']) assert.equal((await preguntar(q, herramientas())).intencion, null, q);
+  // los números y los meses no se alteran
+  assert.equal(corregirTexto('cuenta 102 de octubre').includes('102'), true);
+});
+
+await ok('el periodo "año pasado" se reconoce, y la ruta pasa el historial al asistente', async () => {
+  assert.deepEqual(detectarPeriodo('¿cuánto gané el año pasado?', HOY), { anio: 2025, etiqueta: 'el año 2025' });
+  assert.deepEqual(detectarPeriodo('iva del año anterior', '2026-01-05'), { anio: 2025, etiqueta: 'el año 2025' });
+  const ruta = fs.readFileSync(path.join(aqui, 'src', 'routes', 'ia.js'), 'utf8');
+  assert.ok(ruta.includes('responderPorReglas({ pregunta, historial }'));
 });
 
 console.log(`\n✔ ${pruebas} pruebas del asistente contable por reglas pasaron\n`);

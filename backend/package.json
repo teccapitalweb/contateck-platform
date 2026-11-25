@@ -11,7 +11,8 @@
     "test:login": "node test-login-mensajes.js",
     "test:ia": "node test-ia.js",
     "test:asistente": "node test-asistente.js",
-    "test:ci": "node test-fiscal.js && node test-solo-lectura-y-cache.js && node test-aislamiento-logica.js && node test-endurecimiento-logica.js && node test-storage-empresa.js && node test-login-mensajes.js && node test-ia.js && node test-asistente.js"
+    "test:canceladas": "node test-facturas-canceladas.js",
+    "test:ci": "node test-fiscal.js && node test-solo-lectura-y-cache.js && node test-aislamiento-logica.js && node test-endurecimiento-logica.js && node test-storage-empresa.js && node test-login-mensajes.js && node test-ia.js && node test-asistente.js && node test-facturas-canceladas.js"
   },
   "keywords": [],
   "author": "",

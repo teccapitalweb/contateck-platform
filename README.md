@@ -36,4 +36,5 @@ Jorge (Director General) · Miguel · Miguel · Britney · Jesús · Jesús · R
 
 ## Estado actual
 
-Migración Firebase → Supabase en curso. Ver `docs/work-orders/OT-0003.md` para el estado del esquema de base de datos.
+Autenticación, base de datos y almacenamiento en **Supabase** (Postgres con RLS en todas las tablas). Módulos: contabilidad, ventas y cobranza, facturación CFDI 4.0, nómina, SAT y Fiscal y asistente contable. Firebase/Firestore queda como código heredado opcional.
+Guía de instalación y operación: `docs/informe/Guia-de-Instalacion-y-Operacion.md`. Cada cambio tiene su orden de trabajo en `docs/work-orders/`.

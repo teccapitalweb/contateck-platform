@@ -17,6 +17,11 @@ function clienteComoUsuario(accessToken) {
 export async function registrarPagoProveedor(accessToken, datos, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  // OT-0057: igual que con los cobros a clientes (OT-0034), una factura de proveedor cancelada ya no se paga.
+  const { data: factura, error: errFactura } = await supabase.from('cfdis_proveedor').select('estatus').eq('id', datos.cfdiProveedorId).maybeSingle();
+  if (errFactura) { log.warn('[postgres] registrarPagoProveedor (factura):', errFactura.message); return { ok: false, error: 'No se pudo revisar la factura del proveedor.' }; }
+  if (!factura) return { ok: false, error: 'Factura de proveedor no encontrada o no pertenece a tu empresa.' };
+  if (factura.estatus === 'cancelado') return { ok: false, error: 'Esa factura del proveedor está cancelada: ya no se le registran pagos.' };
   const { data, error } = await supabase.rpc('registrar_pago_proveedor', {
     p_cfdi_proveedor_id: datos.cfdiProveedorId,
     p_monto: datos.monto,
