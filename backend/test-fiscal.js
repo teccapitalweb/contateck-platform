@@ -575,7 +575,7 @@ await ok('calendario: cuenta las obligaciones activas y el Dashboard lo usa para
   const dash = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'src', 'supabaseDashboard.js'), 'utf8');
   assert.ok(dash.includes('obligacionesConfiguradas: (calendarioSat && calendarioSat.ok)'));
   const app = codigo('app.js');
-  assert.ok(app.includes('datos.obligacionesConfiguradas > 0') && app.includes('No tienes obligaciones pendientes por presentar.'));
+  assert.ok(app.includes('datos.obligacionesConfiguradas > 0') && app.includes('sinPendientes("No tienes obligaciones pendientes por presentar.")'), 'si hay obligaciones activas no se rotula como "Próximamente"');
 });
 
 console.log(`\n✔ ${pruebas} pruebas del módulo SAT y Fiscal pasaron\n`);
