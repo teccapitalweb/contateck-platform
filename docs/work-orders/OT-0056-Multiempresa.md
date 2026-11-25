@@ -79,3 +79,9 @@ Conclusión: el SQL se puede aplicar tal cual. Sigue sin aplicarse: falta la rev
 ## 8. Aplicado en DEV (2026-11-25)
 
 `OT-0056-multiempresa.sql` se corrió en el SQL Editor de DEV (Success). Verificado con consultas de solo lectura: 9 membresías para 9 perfiles (ninguno sin membresía); triggers `perfiles_proteger_campos` (ya con la excepción) y `perfiles_sincronizar_membresia`; políticas `perfiles_select_empresa`, `perfiles_select_membresia`, `perfiles_update_gestion_equipo`, `perfiles_update_propio`; las 4 funciones nuevas; RLS activo en `usuario_empresas`; `authenticated` solo puede leerla (sin insert/update/delete), `anon` no la ve ni ejecuta `cambiar_empresa`. Falta la prueba con una cuenta de dos empresas en el panel real.
+
+## 9. Prueba en el panel real (DEV, 2026-11-25)
+
+Hecha por una persona con su login (`jimenaweb26@gmail.com`, a la que se le dio una segunda membresía: Empresa Demo C como contador), con el backend de esta rama en el puerto 8081 y el panel en el 5511. **Aprobado:** selector con las dos empresas y la activa marcada; cambio de empresa con recarga y cambio de rol; datos de cada empresa separados; regreso a la otra empresa; aviso de pestaña desactualizada. La base confirma que el cambio quedó guardado (después de la prueba su perfil activo es Empresa Demo C / contador).
+
+**No se pudo probar en el panel:** que un director vea en Equipo, con la marca "En otra empresa ahora", a alguien que hoy trabaja en otra empresa (no hay a mano la contraseña de un director de Demo C). Está cubierto por las pruebas del SQL y del backend (ver sección 5), no por el panel real.
