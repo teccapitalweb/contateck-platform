@@ -396,6 +396,8 @@
     if (e.target.closest("[data-pn-aprobar]")) { aprobarNomina(); return; }
     const histVer = e.target.closest("[data-hist-ver]");
     if (histVer) { verDetalleNomina(histVer.getAttribute("data-hist-ver")); return; }
+    const histRec = e.target.closest("[data-hist-recibos]");
+    if (histRec) { imprimirRecibosNomina(histRec.getAttribute("data-hist-recibos")); return; }
     // Periodicidad (seg propio del modal)
     const segBtn = e.target.closest("[data-pn-seg] button");
     if (segBtn) {
@@ -521,6 +523,7 @@
   }
   const PERIODO_ETIQUETAS = { semanal: "Semanal", catorcenal: "Catorcenal", quincenal: "Quincenal", mensual: "Mensual" };
 
+  let nominasCache = [];
   async function cargarHistorial() {
     const root = $("[data-historial-nominas-root]");
     if (!root) return;
@@ -532,6 +535,7 @@
       const data = await resp.json();
       if (data.ok) lista = data.nominas || [];
     } catch (e) { /* sin backend: historial vacío, no rompe la pantalla */ }
+    nominasCache = lista;
 
     if (!lista.length) {
       root.innerHTML =
@@ -546,7 +550,8 @@
       "<thead><tr><th>Periodo</th><th>Periodicidad</th><th style=\"text-align:right\">Empleados</th>" +
       "<th style=\"text-align:right\">Neto pagado</th><th>Procesada</th><th></th></tr></thead><tbody>" +
       lista.map(function (n) {
-        const btnVer = '<button class="btn btn--ghost" style="padding:.35rem .7rem;font-size:.82rem" data-hist-ver="' + n.id + '">Ver</button>';
+        const btnVer = '<button class="btn btn--ghost" style="padding:.35rem .7rem;font-size:.82rem" data-hist-ver="' + n.id + '">Ver</button> ' +
+          '<button class="btn btn--ghost" style="padding:.35rem .7rem;font-size:.82rem" data-hist-recibos="' + n.id + '">Recibos</button>';
         return "<tr><td>" + fmtFecha(n.fecha_inicio) + " a " + fmtFecha(n.fecha_fin) + "</td>" +
           "<td>" + (PERIODO_ETIQUETAS[n.periodicidad] || n.periodicidad) + "</td>" +
           '<td class="num" style="text-align:right">' + n.empleados_pagados + "</td>" +
@@ -577,17 +582,68 @@
       "<th style=\"text-align:right\">Percep.</th><th style=\"text-align:right\">Deduc.</th>" +
       "<th style=\"text-align:right\">Neto</th><th>Notas</th></tr></thead><tbody>" +
       detalle.map(function (d) {
-        return "<tr><td>" + d.nombre + (d.puesto ? ' <span style="color:var(--faint);font-size:.8rem">· ' + d.puesto + "</span>" : "") + "</td>" +
+        return "<tr><td>" + escNom(d.nombre) + (d.puesto ? ' <span style="color:var(--faint);font-size:.8rem">· ' + escNom(d.puesto) + "</span>" : "") + "</td>" +
           '<td class="num" style="text-align:right">$' + money(d.sueldo_base) + "</td>" +
           '<td class="num" style="text-align:right">$' + money(d.otras_percepciones) + "</td>" +
           '<td class="num" style="text-align:right">$' + money(d.deducciones) + "</td>" +
           '<td class="num" style="text-align:right;font-weight:600">$' + money(d.neto) + "</td>" +
-          "<td>" + (d.notas ? d.notas : '<span style="color:var(--faint)">—</span>') + "</td></tr>";
+          "<td>" + (d.notas ? escNom(d.notas) : '<span style="color:var(--faint)">—</span>') + "</td></tr>";
       }).join("") +
       "</tbody></table></div>" +
       '<p style="text-align:right;margin-top:.8rem;font-size:.95rem">Neto total: <b>$' + money(totNeto) + "</b></p>";
 
     verDetalleModal("Detalle de nómina · " + detalle.length + " empleado(s)", cuerpo);
+  }
+
+  /*RECIBO-INICIO*/
+  // OT-0062: recibo de nómina imprimible, uno por empleado. Es un documento INFORMATIVO de la empresa: no es un CFDI de nómina.
+  // Todo texto que llegue de la base (nombres, puestos, notas) se escapa.
+  function escNom(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
+  }
+  function reciboNominaHtml(nomina, detalle, empresa) {
+    const periodo = fmtFecha(nomina.fecha_inicio) + " al " + fmtFecha(nomina.fecha_fin);
+    const periodicidad = PERIODO_ETIQUETAS[nomina.periodicidad] || nomina.periodicidad || "";
+    const fila = function (a, b, fuerte) { return '<tr><td>' + a + '</td><td style="text-align:right;' + (fuerte ? "font-weight:700" : "") + '">' + b + '</td></tr>'; };
+    const recibos = (detalle || []).map(function (d) {
+      return '<section class="recibo">' +
+        '<h1>Recibo de nómina</h1>' +
+        '<p class="emp">' + escNom(empresa && empresa.nombre ? empresa.nombre : "") + (empresa && empresa.rfc ? " · RFC " + escNom(empresa.rfc) : "") + '</p>' +
+        '<table class="datos">' + fila("Empleado", escNom(d.nombre)) + (d.puesto ? fila("Puesto", escNom(d.puesto)) : "") +
+          fila("Periodo", periodo + (periodicidad ? " (" + escNom(periodicidad) + ")" : "")) + fila("Fecha de proceso", fmtFecha(nomina.created_at)) + '</table>' +
+        '<table class="importes"><thead><tr><th>Concepto</th><th style="text-align:right">Importe</th></tr></thead><tbody>' +
+          fila("Sueldo base", "$" + money(d.sueldo_base)) + fila("Otras percepciones", "$" + money(d.otras_percepciones)) +
+          fila("Deducciones (ISR, IMSS y otras)", "-$" + money(d.deducciones)) + fila("Neto pagado", "$" + money(d.neto), true) + '</tbody></table>' +
+        (d.notas ? '<p class="notas">Notas: ' + escNom(d.notas) + '</p>' : "") +
+        '<div class="firmas"><div>Recibí de conformidad</div><div>Por la empresa</div></div>' +
+        '<p class="pie">Recibo informativo generado por CONTATECK. No es un CFDI de nómina ni tiene validez fiscal por sí mismo.</p>' +
+      '</section>';
+    }).join("");
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Recibos de nómina</title><style>' +
+      'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}.recibo{padding:28px 36px;page-break-after:always}.recibo:last-child{page-break-after:auto}' +
+      'h1{font-size:20px;margin:0 0 4px}.emp{margin:0 0 14px;color:#444}table{width:100%;border-collapse:collapse;margin-bottom:14px}' +
+      '.datos td{padding:3px 0}.datos td:first-child{color:#555;width:30%}.importes th,.importes td{border-bottom:1px solid #bbb;padding:6px 4px;text-align:left}' +
+      '.notas{font-size:12px;color:#444}.firmas{display:flex;gap:40px;margin-top:70px}.firmas div{flex:1;border-top:1px solid #111;padding-top:4px;text-align:center;font-size:12px}' +
+      '.pie{margin-top:26px;font-size:10px;color:#666}' +
+      '</style></head><body>' + (recibos || '<p style="padding:24px">Esta nómina no tiene empleados.</p>') + '</body></html>';
+  }
+  /*RECIBO-FIN*/
+  async function imprimirRecibosNomina(id) {
+    const nomina = nominasCache.find(function (n) { return String(n.id) === String(id); });
+    if (!nomina) { toast("No se encontró la nómina. Recarga la página.", "warn"); return; }
+    let detalle = [];
+    try {
+      const resp = await fetch(backendUrl() + "/api/nominas/" + id + "/detalle", { headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN } });
+      const data = await resp.json();
+      if (!data.ok) { toast("No se pudo cargar el detalle: " + (data.error || "error"), "warn"); return; }
+      detalle = data.detalle || [];
+    } catch (e) { toast("Error al cargar el detalle: " + e.message, "warn"); return; }
+    // Se imprime desde un iframe oculto (no depende de ventanas emergentes).
+    const marco = document.createElement("iframe");
+    marco.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(marco);
+    marco.contentDocument.open(); marco.contentDocument.write(reciboNominaHtml(nomina, detalle, window.CONTATECK_EMPRESA_PG || {})); marco.contentDocument.close();
+    setTimeout(function () { marco.contentWindow.focus(); marco.contentWindow.print(); setTimeout(function () { document.body.removeChild(marco); }, 2000); }, 300);
   }
 
   // Modal de solo lectura (reutiliza clases .modal). Distinto del de

@@ -53,7 +53,9 @@ await ok('NO se oculta ninguno de los botones de lectura (ver, PDF, historial, d
   const dash = leer('dashboard.html');
   assert.ok(dash.includes('data-dash-exportar') && dash.includes('data-dash-imprimir'), 'el Dashboard debe tener Exportar e Imprimir');
   for (const a of ['data-dash-exportar', 'data-dash-imprimir']) assert.ok(!ocultos.has(a), '"' + a + '" no debe quedar oculto');
-  assert.ok(/data-soon="[^"]*imbrado[^"]*"/.test(dash), 'ya no hay avisos de timbrado en dashboard.html: revisar el selector');
+  // OT-0062: ya no hay botones de timbrado "en una fase siguiente" (el timbrado masivo se quitó y la nómina ofrece recibos);
+  // el selector del CSS por valor queda inofensivo.
+  assert.ok(!/data-soon="[^"]*imbrado[^"]*"/.test(dash), 'no debe volver a haber avisos de timbrado "siguiente fase"');
 });
 
 await ok('cada atributo de la lista existe en el código (sin erratas)', () => {

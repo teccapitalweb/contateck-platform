@@ -51,11 +51,11 @@ ok('el Dashboard ofrece Exportar (Excel) e Imprimir / PDF funcionando, y ya no h
   assert.ok(/@media print[\s\S]*\.side[\s\S]*display: none/.test(css), 'la impresión oculta el menú y la barra');
 });
 
-ok('no quedan botones que digan "siguiente fase" salvo el timbrado de nómina, que está pendiente de decisión aparte', () => {
+ok('no queda ningún botón de "siguiente fase": ni timbrado masivo ni timbrado de nómina (la nómina ofrece cálculo, historial y recibos)', () => {
   const pendientes = [...html.matchAll(/data-soon="([^"]*)"/g)].map((m) => m[1]);
-  assert.equal(pendientes.length, 1, 'solo debe quedar el aviso del timbrado de nómina: ' + JSON.stringify(pendientes));
-  assert.match(pendientes[0], /CFDI Nómina/);
-  assert.ok(!html.includes('Timbrado masivo'), 'el botón de timbrado masivo se quitó');
+  assert.equal(pendientes.length, 0, 'no debe quedar ningún aviso "siguiente fase": ' + JSON.stringify(pendientes));
+  assert.ok(!html.includes('Timbrado masivo') && !html.includes('Timbrar nómina'));
+  assert.ok(html.includes('Cálculo, historial y recibos') && !html.includes('Cálculo y timbrado'));
 });
 
 ok('SAT y Fiscal no muestra botones deshabilitados: explica que las declaraciones se presentan en el portal del SAT y aquí se registra', () => {
@@ -82,8 +82,34 @@ ok('invitaciones: "Enviar por correo" arma el mensaje con el enlace, el correo y
   assert.ok(!/contrase[ñn]a: /i.test(m.cuerpo), 'el correo nunca lleva contraseñas');
 });
 
+ok('recibos de nómina: uno por empleado, con periodo, importes y neto; todo texto se escapa; aclara que no es un CFDI', () => {
+  const nom = leer('nomina.js');
+  const a = nom.indexOf('/*RECIBO-INICIO*/'), b = nom.indexOf('/*RECIBO-FIN*/');
+  assert.ok(a > 0 && b > a, 'no se encontró el generador de recibos');
+  const ctx = vm.createContext({
+    money: (n) => Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    fmtFecha: (f) => (f ? String(f).slice(0, 10).split('-').reverse().join('/') : '—'),
+    PERIODO_ETIQUETAS: { quincenal: 'Quincenal', mensual: 'Mensual' },
+  });
+  vm.runInContext(nom.slice(a, b) + '\nthis.recibo = reciboNominaHtml; this.esc = escNom;', ctx);
+  const html1 = ctx.recibo({ fecha_inicio: '2026-11-01', fecha_fin: '2026-11-15', periodicidad: 'quincenal', created_at: '2026-11-16' },
+    [{ nombre: 'Ana <b>Pérez</b>', puesto: 'Contadora', sueldo_base: 7500, otras_percepciones: 100, deducciones: 850.5, neto: 6749.5, notas: '<img src=x onerror=alert(1)>' }, { nombre: 'Beto', sueldo_base: 5000, otras_percepciones: 0, deducciones: 400, neto: 4600 }],
+    { nombre: 'Empresa "Demo" C', rfc: 'DEMO030303C03' });
+  assert.equal((html1.match(/class="recibo"/g) || []).length, 2, 'un recibo por empleado');
+  assert.ok(html1.includes('Ana &lt;b&gt;Pérez&lt;/b&gt;') && !html1.includes('<b>Pérez</b>'), 'nombres escapados');
+  assert.ok(!html1.includes('<img src=x') && html1.includes('&lt;img src=x'), 'las notas se escapan');
+  assert.ok(html1.includes('Empresa &quot;Demo&quot; C') && html1.includes('RFC DEMO030303C03'));
+  assert.ok(html1.includes('01/11/2026 al 15/11/2026 (Quincenal)'));
+  assert.ok(html1.includes('$7,500.00') && html1.includes('-$850.50') && html1.includes('$6,749.50') && html1.includes('Neto pagado'));
+  assert.ok(html1.includes('No es un CFDI de nómina'));
+  assert.ok(ctx.recibo({}, [], {}).includes('no tiene empleados'));
+  assert.ok(nom.includes('data-hist-recibos') && nom.includes('imprimirRecibosNomina'));
+  // el detalle de la nómina tampoco pinta nombres sin escapar
+  assert.ok(nom.includes('escNom(d.nombre)') && !/"<tr><td>" \+ d\.nombre/.test(nom));
+});
+
 ok('las páginas cargan las versiones nuevas de los archivos cambiados (para saltar el caché)', () => {
-  for (const v of ['app.js?v=20', 'fiscal.js?v=6', 'invitaciones.js?v=3', 'styles.css?v=3']) assert.ok(html.includes(v), v);
+  for (const v of ['app.js?v=20', 'fiscal.js?v=6', 'invitaciones.js?v=3', 'styles.css?v=3', 'nomina.js?v=3']) assert.ok(html.includes(v), v);
 });
 
 console.log(`\n✔ ${pruebas} pruebas de interfaz pasaron\n`);
