@@ -51,10 +51,14 @@ ok('el Dashboard ofrece Exportar (Excel) e Imprimir / PDF funcionando, y ya no h
   assert.ok(/@media print[\s\S]*\.side[\s\S]*display: none/.test(css), 'la impresión oculta el menú y la barra');
 });
 
-ok('no queda ningún botón de "siguiente fase": ni timbrado masivo ni timbrado de nómina (la nómina ofrece cálculo, historial y recibos)', () => {
+ok('no queda ningún botón de "siguiente fase": el timbrado masivo tiene función real (OT-0063) y la nómina ofrece cálculo, historial y recibos', () => {
   const pendientes = [...html.matchAll(/data-soon="([^"]*)"/g)].map((m) => m[1]);
   assert.equal(pendientes.length, 0, 'no debe quedar ningún aviso "siguiente fase": ' + JSON.stringify(pendientes));
-  assert.ok(!html.includes('Timbrado masivo') && !html.includes('Timbrar nómina'));
+  assert.ok(!html.includes('Timbrar nómina'));
+  // OT-0063: el botón de Timbrado masivo existe, abre su ventana (data-fac-masivo) y NO es un aviso data-soon.
+  assert.ok(/<button[^>]*data-fac-masivo[^>]*>[\s\S]*?Timbrado masivo/.test(html) && !/data-soon=[^>]*Timbrado masivo/.test(html));
+  const fac = leer('facturacion.js');
+  assert.ok(fac.includes('[data-fac-masivo]') && fac.includes('function openMasivo()') && html.includes('facturacion-masiva-csv.js'), 'el botón debe estar conectado a su función');
   assert.ok(html.includes('Cálculo, historial y recibos') && !html.includes('Cálculo y timbrado'));
 });
 

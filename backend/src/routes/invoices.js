@@ -29,6 +29,7 @@ import { guardarCfdi, marcarCfdiCancelado, obtenerRolUsuario, listarCfdis, busca
 import { construirFactura, construirNotaCredito, construirREP, EMISOR_PRUEBA } from '../demo-data.js';
 import { generarPdfCfdi } from '../pdf-cfdi.js';
 import { validarFactura, validarConceptos, validarReceptor, validarCorreo, uuidValido } from '../validaciones.js';
+import { validarLote } from '../facturacionMasiva.js';
 
 export const invoicesRouter = Router();
 invoicesRouter.use(verifyAuth);
@@ -273,6 +274,15 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
   } finally {
     soltarCandado(clave);
   }
+});
+
+// ---------- TIMBRADO MASIVO · REVISIÓN PREVIA (OT-0063) ----------
+// No timbra ni gasta timbres: valida cada factura del lote con las mismas reglas que /facturar
+// y devuelve un resultado por factura. El panel timbra después cada una con POST /facturar.
+invoicesRouter.post('/facturar-masivo/validar', requireRolFacturacion, (req, res) => {
+  const r = validarLote((req.body || {}).facturas);
+  if (r.error) return res.status(400).json({ ok: false, error: r.error });
+  return res.json({ ok: true, ...r });
 });
 
 // ---------- NOTA DE CRÉDITO (CFDI de Egreso, tipo "E") ----------

@@ -752,7 +752,7 @@ html[data-rol="auditor"] :is(
   [data-v-nueva], [data-v-tomar], [data-v-conf], [data-v-rech], [data-v-rech-ok], [data-v-genpol], [data-v-guardar],
   /* Facturación (y los avisos "timbrado" de Nómina) */
   [data-config-empresa], [data-facturar], [data-correo-cfdi], [data-nc-cfdi], [data-rep-cfdi], [data-cancelar-cfdi],
-  [data-fac-timbrar], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
+  [data-fac-timbrar], [data-fac-masivo], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
   [data-perfil-editar], [data-perfil-nuevo], [data-perfil-guardar], [data-perfil-activar], [data-perfil-borrar], [data-soon*="imbrado"],
   /* Nómina */
   [data-nom-calcular], [data-pn-generar], [data-pn-aprobar], [data-pn-descartar],
