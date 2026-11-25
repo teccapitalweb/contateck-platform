@@ -24,3 +24,12 @@ Una cuenta inactiva **con** movimientos sigue entrando al XML, porque aparece en
 - Visor, `contabilidad.js?v=23`, XML del catálogo capturado en memoria (nombre `Catalogo_DEMO030303C03_202611.xml`, **no se guardó ningún archivo**): **25 cuentas** (antes 29); 0 `CodAgrup` con formato inválido; las 4 cuentas inactivas sin uso (`103`, `208`, `10003`, `bancos`) ya no salen; todos los `SubCtaDe` apuntan a una cuenta que está en el XML. Ejemplos: `102 → 102.01`, `151 → 156.01`, `209 → 208.01`, `402 → 702.04`, `602 → 603`, `603 → 602`.
 
 **No verificado:** el aviso de "faltan cuentas" con datos reales (Demo C ya tiene las 25 con código, así que el botón descargó); se cubre con la prueba. Tampoco se validó el XML contra el XSD del SAT en esta ronda (se hizo en OT-0040 con la versión anterior).
+
+## Validación contra el XSD oficial del SAT (25-nov-2026)
+Antes (OT-0031) la comparación con el XSD fue manual. Esta vez se validó con un **validador XSD real** (`xmllint-wasm`, instalado en una carpeta temporal fuera del repo).
+- **Esquema:** `CatalogoCuentas_1_3.xsd` leído del sitio del SAT (https://www.sat.gob.mx/esquemas/ContabilidadE/1_3/CatalogoCuentas/CatalogoCuentas_1_3.xsd) y copiado sin los textos de documentación, que no afectan la validación. Su `import` (`CatalogosParaEsqContE.xsd`, con el tipo `c_CodAgrup`) se sustituyó por un archivo local que enumera los **1,080 códigos** del catálogo del repo, generado a partir de ese mismo esquema del SAT en la OT-0031c.
+- **XML probado:** el catálogo real de Empresa Demo C (25 cuentas) tal como lo genera el botón de la pantalla.
+- **Resultado: VÁLIDO.**
+- **Controles negativos** (para comprobar que el validador de verdad rechaza): `CodAgrup="10003"` (el defecto que había antes), `CodAgrup="999.99"`, falta `Natur`, RFC mal formado y mes 13 → los cinco **INVÁLIDOS**, cada uno con el error esperado.
+
+**Límites:** no se descargó `CatalogosParaEsqContE.xsd` original, por eso se usó el enumerado del repo (derivado de él); no es la validación del sistema real del SAT, que además revisa el acuse, el sello y reglas que el XSD no expresa. La Balanza no se validó en esta ronda.
