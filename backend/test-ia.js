@@ -124,7 +124,7 @@ await ok('errores del proveedor (llave inválida, saturación, caída, red, resp
 
 await ok('solo hay herramientas de consulta, todas implementadas, y ninguna escribe', () => {
   const nombres = DEFINICION_HERRAMIENTAS.map((h) => h.name).sort();
-  assert.deepEqual(nombres, ['cuentas_por_cobrar_y_pagar', 'iva_del_periodo', 'obligaciones_fiscales', 'resumen_general', 'saldos_de_cuentas']);
+  assert.deepEqual(nombres, ['cfdis_sin_poliza', 'cuentas_por_cobrar_y_pagar', 'iva_del_periodo', 'obligaciones_fiscales', 'resumen_general', 'saldos_de_cuentas']);
   const reales = crearHerramientasReales('token', { clienteComoUsuario: () => null, obtenerDashboard: async () => ({}), obtenerCalendario: async () => ({}) });
   for (const n of nombres) assert.equal(typeof reales[n], 'function', n);
   assert.deepEqual(Object.keys(reales).sort(), nombres);
@@ -172,7 +172,7 @@ function supabaseFalso(respuestas) {
   const registro = [];
   const cliente = { from(tabla) {
     const q = { tabla, filtros: [] };
-    const b = { select(c) { q.select = c; return b; }, eq(c, v) { q.filtros.push(['eq', c, v]); return b; }, gte(c, v) { q.filtros.push(['gte', c, v]); return b; }, lt(c, v) { q.filtros.push(['lt', c, v]); return b; }, in(c, v) { q.filtros.push(['in', c, v]); return b; }, maybeSingle() { return b; },
+    const b = { select(c) { q.select = c; return b; }, eq(c, v) { q.filtros.push(['eq', c, v]); return b; }, gte(c, v) { q.filtros.push(['gte', c, v]); return b; }, lt(c, v) { q.filtros.push(['lt', c, v]); return b; }, in(c, v) { q.filtros.push(['in', c, v]); return b; }, neq(c, v) { q.filtros.push(['neq', c, v]); return b; }, not(c, o, v) { q.filtros.push(['not', c, o, v]); return b; }, maybeSingle() { return b; },
       then(res, rej) { registro.push(q); return Promise.resolve(respuestas[tabla] || { data: [], error: null }).then(res, rej); } };
     return b;
   } };
@@ -235,6 +235,27 @@ await ok('iva_del_periodo: usa las cuentas de IVA de la Configuración contable,
   assert.ok(!JSON.stringify(fallo).includes('secreto'));
 });
 
+await ok('cfdis_sin_poliza: lista folio, fecha e importe de las facturas vigentes sin póliza activa (corregida cuenta), sin nombres, con tope de 10', async () => {
+  const facturas = [
+    { uuid_sat: 'AAA-1', folio: 'CT-1', tipo: 'I', estatus: 'vigente', total: 100, fecha: '2026-11-01' },   // con póliza
+    { uuid_sat: 'BBB-2', folio: 'CT-2', tipo: 'I', estatus: 'vigente', total: 200.456, fecha: '2026-11-02' }, // sin póliza
+    { uuid_sat: 'CCC-3', folio: 'CT-3', tipo: 'I', estatus: 'vigente', total: 50, fecha: '2026-11-03' },   // póliza corregida: cuenta
+    ...Array.from({ length: 12 }, (_, i) => ({ uuid_sat: 'X' + i, folio: 'X-' + i, tipo: 'I', estatus: 'vigente', total: 1, fecha: '2026-11-04', receptor_nombre: 'NOMBRE PRIVADO' })),
+  ];
+  const polizas = [{ cfdi_uuid: 'aaa-1', estado: 'ok' }, { cfdi_uuid: 'CCC-3', estado: 'corregida' }];
+  const f = supabaseFalso({ cfdis: { data: facturas, error: null }, polizas: { data: polizas, error: null } });
+  const r = await crearHerramientasReales('t', { clienteComoUsuario: () => f.cliente }).cfdis_sin_poliza();
+  assert.equal(r.total, 13); assert.equal(r.facturas.length, 10);
+  assert.deepEqual(r.facturas[0], { folio: 'CT-2', fecha: '2026-11-02', total: 200.46, tipo: 'I' });
+  assert.ok(!JSON.stringify(r).includes('NOMBRE PRIVADO') && !JSON.stringify(r).includes('BBB-2'), 'ni nombres ni UUID');
+  const consultaCfdis = f.registro.find((q) => q.tabla === 'cfdis');
+  assert.ok(consultaCfdis.filtros.some((x) => x[0] === 'neq' && x[1] === 'estatus' && x[2] === 'cancelado'), 'se excluyen las canceladas');
+  const muchas = supabaseFalso({ cfdis: { data: Array.from({ length: 1000 }, () => ({ uuid_sat: 'u', estatus: 'vigente' })), error: null }, polizas: { data: [], error: null } });
+  assert.match((await crearHerramientasReales('t', { clienteComoUsuario: () => muchas.cliente }).cfdis_sin_poliza()).error, /demasiadas facturas/);
+  const mal = supabaseFalso({ cfdis: { data: null, error: { message: 'secreto' } }, polizas: { data: [], error: null } });
+  assert.ok(!JSON.stringify(await crearHerramientasReales('t', { clienteComoUsuario: () => mal.cliente }).cfdis_sin_poliza()).includes('secreto'));
+});
+
 await ok('límite de uso: bloquea al pasar el máximo por usuario y se libera cuando termina la ventana', () => {
   let t = 0; const permitir = crearLimitador({ max: 2, ventanaMs: 1000, ahora: () => t });
   assert.equal(permitir('ana'), true); assert.equal(permitir('ana'), true); assert.equal(permitir('ana'), false);
@@ -283,7 +304,7 @@ await ok('frontend: la IA arranca desactivada, se inicia al abrir la vista, y co
   const pg = fs.readFileSync(path.join(aqui, '..', 'frontend', 'postgres-crud.js'), 'utf8');
   assert.ok(pg.includes('"/api/ia/estado"') && pg.includes('"/api/ia/consultar"'));
   const html = fs.readFileSync(path.join(aqui, '..', 'frontend', 'dashboard.html'), 'utf8');
-  assert.ok(html.includes('app.js?v=14') && html.includes('postgres-crud.js?v=4'));
+  assert.ok(html.includes('app.js?v=15') && html.includes('postgres-crud.js?v=4'));
   assert.ok(!html.includes('>En desarrollo<'), 'la etiqueta "En desarrollo" ya no aplica');
   const css = fs.readFileSync(path.join(aqui, '..', 'frontend', 'styles.css'), 'utf8');
   assert.ok(!css.includes('data-ia'), 'el auditor (solo lectura) debe poder usar la IA: no se oculta');

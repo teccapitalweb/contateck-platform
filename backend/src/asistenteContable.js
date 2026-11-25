@@ -11,7 +11,7 @@
 // ============================================================
 import { hoyMexico } from './validacionesFiscal.js';
 import { normalizar } from './textoUtil.js';
-import { buscarConocimiento } from './baseConocimiento.js';
+import { buscarConocimiento, ENTRADAS } from './baseConocimiento.js';
 
 export const MAX_PREGUNTA_ASISTENTE = 300;
 
@@ -37,6 +37,7 @@ export const INTENCIONES = [
   { id: 'obligaciones', claves: ['obligacion', 'obligaciones', 'declaracion', 'declaraciones', 'vence', 'vencen', 'vencimiento', 'vencimientos', 'vencida', 'vencidas', 'sat', 'fecha limite', 'diot', 'impuestos pendientes', 'calendario fiscal'] },
   { id: 'resultado', claves: ['utilidad', 'resultado', 'ganancia', 'perdida', 'cuanto gane', 'estado de resultados', 'ganando', 'perdiendo'] },
   { id: 'ingresos_egresos', claves: ['ingreso', 'ingresos', 'egreso', 'egresos', 'vendi', 'ventas', 'facturado', 'facturacion', 'facturas emitidas', 'gaste', 'gastos', 'cuanto facture'] },
+  { id: 'sin_poliza', claves: ['sin poliza', 'sin contabilizar', 'no contabilizada', 'no contabilizadas', 'por contabilizar', 'pendientes de contabilizar', 'facturas sin poliza', 'cfdi sin poliza', 'no tienen poliza', 'no estan contabilizadas'] },
   { id: 'alertas', claves: ['alerta', 'alertas', 'pendiente', 'pendientes', 'revisar', 'problema', 'problemas', 'que debo atender', 'que debo revisar', 'que debo hacer', 'que tengo pendiente', 'atencion', 'urgente', 'resumen'] },
   { id: 'nomina', claves: ['nomina', 'empleados', 'sueldos', 'salarios', 'trabajadores', 'plantilla'] },
 ];
@@ -77,9 +78,41 @@ export function detectarPeriodo(pregunta, hoy = hoyMexico()) {
   for (let i = 0; i < MESES.length; i++) {
     if (t.includes(' ' + MESES[i] + ' ')) { const a = anioDicho || aHoy; return { anio: a, mes: i + 1, etiqueta: etiqueta(a, i + 1) }; }
   }
+  if (t.includes(' ano pasado ') || t.includes(' ano anterior ')) return { anio: aHoy - 1, etiqueta: `el año ${aHoy - 1}` };
   if (anioDicho) return { anio: anioDicho, etiqueta: `el año ${anioDicho}` };
   if (t.includes(' este ano ') || t.includes(' del ano ') || t.includes(' ejercicio ') || t.includes(' acumulado ')) return { anio: aHoy, etiqueta: `el año ${aHoy}` };
   return null;
+}
+
+/** Código de cuenta que menciona la pregunta ("la cuenta 102", "saldo de la 105"), o null. */
+export function detectarCuenta(pregunta) {
+  const t = normalizar(pregunta);
+  const m = /\bcuenta (?:numero |no |codigo )?([0-9]{2,8})\b/.exec(t) || /\bsaldo (?:de |en )?(?:la )?([0-9]{2,8})\b/.exec(t) || /\b(?:hay|tengo) en la ([0-9]{3,8})\b/.exec(t);
+  return m ? m[1] : null;
+}
+
+// ----- Faltas de ortografía: solo se intentan si la pregunta, tal cual, no se entendió -----
+const distancia1 = (a, b) => {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1) || (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2));
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : b.slice(i + 1) === a.slice(i);
+};
+let VOCABULARIO = null;
+function vocabulario() {
+  if (VOCABULARIO) return VOCABULARIO;
+  const v = new Set(MESES);
+  for (const frase of [...INTENCIONES.flatMap((i) => i.claves), ...ENTRADAS.flatMap((e) => e.claves)]) for (const w of frase.split(' ')) if (w.length >= 5) v.add(w);
+  return (VOCABULARIO = [...v]);
+}
+/** Corrige palabras con una letra de más, de menos o cambiada ("balnce" → "balance"). Devuelve el texto igual si no hay nada que corregir. */
+export function corregirTexto(pregunta) {
+  const voc = vocabulario(), conocidas = new Set(voc);
+  return normalizar(pregunta).trim().split(' ').map((w) => {
+    if (w.length < 5 || conocidas.has(w) || /^[0-9]+$/.test(w)) return w;
+    const c = voc.find((x) => x[0] === w[0] && distancia1(w, x));
+    return c || w;
+  }).join(' ');
 }
 
 // ---------------- Respuestas ----------------
@@ -234,6 +267,26 @@ const MANEJADORES = {
     return { respuesta: lineas.join('\n'), fuente: 'Dashboard' };
   },
 
+  async saldo_cuenta(p, per, h) {
+    const codigo = detectarCuenta(p);
+    const r = await h.saldos_de_cuentas({ ...(per ? { anio: per.anio, ...(per.mes ? { mes: per.mes } : {}) } : {}), prefijo: codigo });
+    if (!r || r.error) return { respuesta: ERROR_DATOS('el saldo de esa cuenta') };
+    const c = (r.cuentas || []).find((x) => String(x.codigo) === codigo);
+    const cuando = per ? per.etiqueta : 'acumulado';
+    if (!c) return { respuesta: `No encontré movimientos en la cuenta ${codigo} (${cuando}). Revisa que el código exista en el catálogo de cuentas.` };
+    const lineas = [`**${c.nombre} (${c.codigo})** — ${cuando}:`, `- Cargos (Debe): ${dinero(c.debe)}`, `- Abonos (Haber): ${dinero(c.haber)}`, `- **Saldo: ${dinero(c.saldo)}** (cuenta de naturaleza ${c.naturaleza})`];
+    if (c.saldo < 0) lineas.push('', NOTA_NEGATIVO);
+    return { respuesta: lineas.join('\n'), fuente: 'saldos de las cuentas' };
+  },
+
+  async sin_poliza(_p, _per, h) {
+    const r = await h.cfdis_sin_poliza();
+    if (!r || r.error) return { respuesta: ERROR_DATOS('las facturas sin póliza') };
+    if (!r.total) return { respuesta: 'Todas tus facturas emitidas vigentes ya tienen su póliza de causación.' };
+    const fila = (f) => `- ${f.folio || 'sin folio'} (${f.fecha || 's/f'}) · ${dinero(f.total)}`;
+    return { respuesta: [`Tienes **${r.total}** factura${r.total > 1 ? 's' : ''} emitida${r.total > 1 ? 's' : ''} vigente${r.total > 1 ? 's' : ''} sin póliza:`, ...(r.facturas || []).map(fila), '', 'Para contabilizarla: Contabilidad → Captura rápida → Venta → "Importar desde factura timbrada".'].join('\n'), fuente: 'facturas emitidas y pólizas' };
+  },
+
   async alertas(_p, _per, h) {
     const d = await h.resumen_general();
     if (!d || d.error) return { respuesta: ERROR_DATOS('las alertas') };
@@ -250,22 +303,48 @@ const MANEJADORES = {
   },
 };
 
+const limpiaHistorial = (h) => (Array.isArray(h) ? h : []).filter((x) => x && (x.rol === 'usuario' || x.rol === 'ia') && typeof x.texto === 'string').slice(-12);
+
+/** Qué entendió el asistente de un texto: { tipo: 'saber' | 'cuenta' | 'intencion', ... } o null. */
+function entender(texto) {
+  const saber = buscarConocimiento(texto);
+  if (saber) return { tipo: 'saber', saber };
+  const cuenta = detectarCuenta(texto);
+  if (cuenta) return { tipo: 'cuenta', cuenta, intencion: 'saldo_cuenta' };
+  const intencion = detectarIntencion(texto);
+  return intencion ? { tipo: 'intencion', intencion } : null;
+}
+
 /**
  * Contesta una pregunta. `herramientas` son las de solo lectura (crearHerramientasReales o simuladas).
+ * `historial` (opcional) son los mensajes anteriores [{ rol: 'usuario'|'ia', texto }]: permite contestar "¿y el mes pasado?".
  * Nunca lanza: regresa { ok, respuesta, intencion, fuente? } o { ok:false, error, codigo }.
  */
-export async function responderPorReglas({ pregunta }, { herramientas = {}, hoy = hoyMexico(), log = console } = {}) {
-  const p = typeof pregunta === 'string' ? pregunta.trim() : '';
+export async function responderPorReglas({ pregunta, historial }, { herramientas = {}, hoy = hoyMexico(), log = console } = {}) {
+  let p = typeof pregunta === 'string' ? pregunta.trim() : '';
   if (!p) return { ok: false, codigo: 'CONSULTA_INVALIDA', error: 'Escribe una pregunta.' };
   if (p.length > MAX_PREGUNTA_ASISTENTE) return { ok: false, codigo: 'CONSULTA_INVALIDA', error: `La pregunta es muy larga (máximo ${MAX_PREGUNTA_ASISTENTE} caracteres).` };
-  // Primero las preguntas de concepto ("¿qué es…?") y de guía ("¿cómo registro…?"): son respuestas fijas, sin datos de la empresa.
-  const saber = buscarConocimiento(p);
-  if (saber) {
+
+  let ent = entender(p);
+  let corregida = false;
+  if (!ent) { const c = corregirTexto(p); if (c.trim() !== normalizar(p).trim()) { const e2 = entender(c); if (e2) { ent = e2; p = c; corregida = true; } } }
+
+  // Seguimiento: "¿y el mes pasado?" repite la pregunta de datos anterior con el periodo nuevo.
+  let seguimiento = false;
+  if (!ent && detectarPeriodo(p, hoy) && normalizar(p).trim().split(' ').length <= 8) {
+    const previas = limpiaHistorial(historial).filter((x) => x.rol === 'usuario').reverse();
+    for (const prev of previas) { const e = entender(prev.texto); if (e && e.tipo !== 'saber') { ent = e; seguimiento = true; p = e.tipo === 'cuenta' ? prev.texto + ' ' + p : p; break; } }
+  }
+  if (!ent) return { ok: true, ...NO_ENTIENDO(p) };
+
+  // Concepto o guía: respuestas fijas, sin datos de la empresa.
+  if (ent.tipo === 'saber') {
+    const saber = ent.saber;
     const pista = saber.datos ? '\n\nPara ver el dato de tu empresa pregunta: "' + saber.datos + '"' : '';
     return { ok: true, intencion: 'conocimiento:' + saber.id, respuesta: saber.respuesta + pista, fuente: 'guía de CONTATECK' };
   }
-  const intencion = detectarIntencion(p);
-  if (!intencion) return { ok: true, ...NO_ENTIENDO(p) };
+
+  const intencion = ent.intencion;
   try {
     const periodo = detectarPeriodo(p, hoy);
     const r = await MANEJADORES[intencion](p, periodo, herramientas);
@@ -276,7 +355,7 @@ export async function responderPorReglas({ pregunta }, { herramientas = {}, hoy 
       const [primero, segundo] = intencion === 'por_cobrar' ? [r, r2] : [r2, r];
       return { ok: true, intencion: 'por_cobrar_y_pagar', respuesta: primero.respuesta + '\n' + segundo.respuesta, fuente: 'saldos de facturas emitidas y de proveedores' };
     }
-    return { ok: true, intencion, respuesta: r.respuesta, fuente: r.fuente || null };
+    return { ok: true, intencion, respuesta: r.respuesta, fuente: r.fuente || null, ...(corregida ? { corregida: true } : {}), ...(seguimiento ? { seguimiento: true } : {}) };
   } catch (e) {
     log.warn('[asistente] falló la intención', intencion);
     return { ok: true, intencion, respuesta: ERROR_DATOS('esos datos') };
