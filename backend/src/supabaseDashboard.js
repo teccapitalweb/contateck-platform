@@ -279,6 +279,7 @@ export async function obtenerDashboard(accessToken, log = console) {
       balanceGeneral: { totalActivo, totalPasivo, totalCapital, resultadoDelPeriodo, cuadra: cuadraBalance },
       composicionGastos,
       proximasObligacionesSat: (calendarioSat && calendarioSat.ok) ? (calendarioSat.proximas || []).slice(0, 5) : [],
+      obligacionesConfiguradas: (calendarioSat && calendarioSat.ok) ? (calendarioSat.configuradas || 0) : 0,
       // Explícito a propósito: el frontend debe mostrar "Próximamente",
       // nunca inventar un número aquí.
       pendientes: ['estimados_fiscales'],

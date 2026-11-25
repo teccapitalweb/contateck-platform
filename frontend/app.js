@@ -426,7 +426,9 @@
                 '</td><td>—</td><td><span class="pill ' + (vencida ? "pill--late" : "pill--pend") + '">' +
                 (vencida ? "Vencida" : "Pendiente") + '</span></td></tr>';
             }).join("")
-          : '<tr><td colspan="5">' + proximamente("Sin obligaciones fiscales configuradas todavía.") + '</td></tr>';
+          : '<tr><td colspan="5">' + proximamente(datos.obligacionesConfiguradas > 0
+            ? "No tienes obligaciones pendientes por presentar."
+            : "Sin obligaciones fiscales configuradas todavía (SAT y Fiscal → + Obligación).") + '</td></tr>';
       }
     }
     window.renderDashboardReal = renderDashboardReal;
