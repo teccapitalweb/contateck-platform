@@ -23,3 +23,8 @@ Al probarlo salieron 15 formas de preguntar que no se reconocían ("cómo hago u
 - Son **textos fijos escritos a mano**, generales a propósito; no son asesoría fiscal. Las fechas (día 17) y tasas (16%) son las generales y cada empresa puede tener casos distintos: la guía recomienda confirmarlo con el contador.
 - Reconoce palabras clave: una pregunta muy distinta a las previstas no se contesta (lo dice). No mantiene contexto entre preguntas.
 - Quien cambie una pantalla o un rol debe actualizar la guía; las pruebas ayudan pero no cubren todo el texto.
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`, backend reiniciado, director de Demo C)
+- `npm run test:ci`: pasan las 8 suites (**112 pruebas**: 24 + 14 + 10 + 3 + 13 + 7 + 19 + 22).
+- En el chat real (escribiendo en la caja y enviando): "¿Qué es el IVA?" → explicación con la sugerencia de preguntar el dato; "¿Cómo registro una venta?" → pantalla, roles y estados; "¿Quién puede cerrar un periodo?" → Contabilidad → Periodos → Cerrar periodo (contador, admin o director); "¿Cómo va el IVA este año?" → sigue contestando con los datos ($41.38 trasladado, $27.59 acreditable, $13.79 a cargo); "¿Eres una IA?" → dice que no lo es. Hay 9 sugerencias en pantalla.
+**No verificado:** el chat con los roles contador y auditor, y su aspecto en celular. Los textos de concepto no los ha revisado un contador.
