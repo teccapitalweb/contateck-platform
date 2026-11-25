@@ -18,3 +18,9 @@ Además el panel decía "25 de 25 cuentas con código" mientras el XML llevaba 2
 
 ## Decisión que queda
 Una cuenta inactiva **con** movimientos sigue entrando al XML, porque aparece en la Balanza. Si la contadora prefiere otra regla, es un ajuste en `cuentasParaXmlCatalogo()`.
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`, director, Empresa Demo C)
+- `npm run test:ci`: pasan las 6 suites (23 + 14 + 10 + 3 + 13 + 7).
+- Visor, `contabilidad.js?v=23`, XML del catálogo capturado en memoria (nombre `Catalogo_DEMO030303C03_202611.xml`, **no se guardó ningún archivo**): **25 cuentas** (antes 29); 0 `CodAgrup` con formato inválido; las 4 cuentas inactivas sin uso (`103`, `208`, `10003`, `bancos`) ya no salen; todos los `SubCtaDe` apuntan a una cuenta que está en el XML. Ejemplos: `102 → 102.01`, `151 → 156.01`, `209 → 208.01`, `402 → 702.04`, `602 → 603`, `603 → 602`.
+
+**No verificado:** el aviso de "faltan cuentas" con datos reales (Demo C ya tiene las 25 con código, así que el botón descargó); se cubre con la prueba. Tampoco se validó el XML contra el XSD del SAT en esta ronda (se hizo en OT-0040 con la versión anterior).
