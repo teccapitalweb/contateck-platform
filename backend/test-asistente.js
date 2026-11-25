@@ -85,7 +85,7 @@ const herramientas = (extra = {}) => ({
   },
   async cuentas_por_cobrar_y_pagar() { return { por_cobrar_clientes: { facturas_con_saldo: 2, importe_total: 150.5 }, por_pagar_proveedores: { facturas_con_saldo: 0, importe_total: 0 } }; },
   async iva_del_periodo() { return { periodo: '2026-11', trasladado: 160, acreditable: 100, resultado: 60 }; },
-  async cfdis_sin_poliza() { return { total: 2, facturas: [{ folio: 'CT-29', fecha: '2026-11-08', total: 142.68, tipo: 'I' }, { folio: null, fecha: '2026-11-10', total: 50, tipo: 'I' }] }; },
+  async cfdis_sin_poliza() { return { total: 2, facturas: [{ folio: 'CT-29', fecha: '2026-11-08T11:10:21+00:00', total: 142.68, tipo: 'I' }, { folio: null, fecha: '2026-11-10', total: 50, tipo: 'I' }] }; },
   async obligaciones_fiscales() { return { proximas: [
     { obligacion: 'IVA mensual', periodo: 'octubre 2026', fecha_limite: '2026-11-17', dias_restantes: -8 },
     { obligacion: 'DIOT', periodo: 'octubre 2026', fecha_limite: '2026-11-30', dias_restantes: 5 },

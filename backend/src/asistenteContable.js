@@ -283,7 +283,7 @@ const MANEJADORES = {
     const r = await h.cfdis_sin_poliza();
     if (!r || r.error) return { respuesta: ERROR_DATOS('las facturas sin póliza') };
     if (!r.total) return { respuesta: 'Todas tus facturas emitidas vigentes ya tienen su póliza de causación.' };
-    const fila = (f) => `- ${f.folio || 'sin folio'} (${f.fecha || 's/f'}) · ${dinero(f.total)}`;
+    const fila = (f) => `- ${f.folio || 'sin folio'} (${f.fecha ? String(f.fecha).slice(0, 10) : 's/f'}) · ${dinero(f.total)}`;
     return { respuesta: [`Tienes **${r.total}** factura${r.total > 1 ? 's' : ''} emitida${r.total > 1 ? 's' : ''} vigente${r.total > 1 ? 's' : ''} sin póliza:`, ...(r.facturas || []).map(fila), '', 'Para contabilizarla: Contabilidad → Captura rápida → Venta → "Importar desde factura timbrada".'].join('\n'), fuente: 'facturas emitidas y pólizas' };
   },
 
