@@ -51,3 +51,21 @@ Debe devolver `revisa_rol = true` y una línea con los roles permitidos en las d
 - Se dieron de baja (baja suave, `activo = false`, reversible con "reactivar") las 3 cuentas de prueba sin movimientos ni uso en la configuración contable: `103` "bancos", `10003` "ban" y `bancos` "banco". Las hizo el director desde el visor con la función de eliminar cuenta del propio sistema.
 - Después: el catálogo activo pasó de 28 a 25 cuentas, el Balance sigue cuadrando y la configuración contable no cambió.
 - **No se tocaron** (decisión pendiente del usuario): las pólizas sin partidas `DEMO-D-00003` ($3,200) y `E-00005` ($200), porque anularlas no se puede deshacer y crea pólizas de reversa nuevas; las pólizas repetidas `E-00009` a `E-00012` ($51.04); el salario diario de 16.67 de una empleada dada de baja.
+
+## Prueba final con los 3 roles (25-nov-2026, `integracion-local` en `2831c4d`, Empresa Demo C)
+Solo lectura. Antes hubo que **reanudar el proyecto `contateck-dev`**: Supabase lo había pausado por inactividad (la pantalla de inicio de sesión mostraba "Sin conexión. Revisa tu internet." porque el nombre del proyecto dejó de resolver). Al reanudarlo los datos estaban completos (4 empresas, 112 cuentas, 54 pólizas, 12 CFDI).
+
+| Rol | Rutas de lectura | Dashboard | Botones de escritura |
+|---|---|---|---|
+| Director | 24 de 26 bien (2 piden parámetro: `pagos-cliente`, `pagos-proveedor`) | Balance cuadra; alerta "1 CFDI vigente sin póliza contable"; "Ingresos − egresos (pólizas)" −$1,104.16 | Todos visibles: Contabilidad (47), Facturación (7), Nómina (7), Ventas (1), SAT y Fiscal (+ Obligación, Editar, Desactivar, Eliminar…) |
+| Contador | 22 de 26 (403 correcto en `equipo` e `invitaciones`) | Igual | Contabilidad, Facturación y Ventas como el director. Nómina: solo "Timbrar nómina" (sin Calcular ni Empleado). SAT y Fiscal: + Declaración, + Documento, Marcar presentada, Regresar a pendiente; sin + Obligación, Editar, Desactivar, Cargar comunes ni Eliminar |
+| Auditor (`demo.auditor@…`) | 22 de 26 (mismo 403 y mismos 2 parámetros) | Igual | **Ninguno visible** en las 7 vistas (≈63 presentes en el DOM, 0 visibles). Siguen: pestañas de Contabilidad, Ver venta, Simulador fiscal, Ver acuse, Exportar |
+
+Hallazgos:
+- El hallazgo "el contador ve Calcular en Nómina" ya **no se reproduce**: no ve Calcular ni Empleado.
+- Al contador le sigue apareciendo "Timbrar nómina" (queda por decidir si debe verlo; `crear_nomina` exige rh, admin o director).
+- La tarjeta de catálogo del Dashboard cuenta **29** cuentas y las activas son 25 (cuenta también las dadas de baja).
+- Una ráfaga de 26 consultas tardó 4 a 8 s justo después de reanudar el proyecto; sin cambios de código.
+- La cuenta de auditor existía (invitación aceptada el 13-nov) pero no se conocía su contraseña; se recuperó desde Supabase.
+
+**No verificado:** escrituras (no se hicieron), el parpadeo inicial antes de que se oculten los botones del auditor, y el caché con datos cambiados por otra persona a la vez.
