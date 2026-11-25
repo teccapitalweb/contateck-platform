@@ -29,6 +29,28 @@ export function obtenerClienteAdmin() {
   return supabaseAdmin;
 }
 
+// OT-0056 · Multiempresa: qué empresa tiene ACTIVA cada persona, para avisarle a una pestaña
+// desactualizada que ya cambió de empresa en otra (si no, esa pestaña seguiría mostrando la
+// empresa vieja mientras la base ya trabaja con la nueva). Caché corta; nunca lanza.
+const cacheEmpresaActual = new Map(); // userId -> { empresaId, t }
+const TTL_EMPRESA_MS = 3000;
+
+export function olvidarEmpresaActual(userId) { cacheEmpresaActual.delete(userId); }
+
+export async function empresaActualDe(userId) {
+  if (!supabaseAdmin || !userId) return null;
+  const hit = cacheEmpresaActual.get(userId);
+  if (hit && Date.now() - hit.t < TTL_EMPRESA_MS) return hit.empresaId;
+  try {
+    const { data } = await supabaseAdmin.from('perfiles').select('empresa_id').eq('id', userId).maybeSingle();
+    const empresaId = (data && data.empresa_id) || null;
+    cacheEmpresaActual.set(userId, { empresaId, t: Date.now() });
+    return empresaId;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Middleware: exige (o no) un access_token de Supabase Auth en el header.
 //   Authorization: Bearer <access_token>
 //
@@ -64,12 +86,27 @@ export async function verifyAuth(req, res, next) {
     if (error || !data?.user) throw error || new Error('Usuario no encontrado');
     req.user = { uid: data.user.id, email: data.user.email };
     req.token = token; // OT-0011: necesario para escribir en Postgres respetando RLS
-    next();
   } catch (err) {
     if (config.requireAuth) {
       return res.status(401).json({ ok: false, error: 'Token inválido o expirado.' });
     }
     req.user = null;
-    next();
+    return next();
   }
+
+  // OT-0056: el panel manda la empresa que está mostrando (X-Empresa-Id). Si la persona ya
+  // cambió de empresa en otra pestaña, se rechaza con 409 para que esta pestaña se recargue
+  // en vez de seguir mostrando (y escribiendo en) una empresa que ya no es la activa.
+  const empresaPanel = req.headers['x-empresa-id'];
+  if (empresaPanel && req.user) {
+    const actual = await empresaActualDe(req.user.uid);
+    if (actual && String(empresaPanel).toLowerCase() !== String(actual).toLowerCase()) {
+      return res.status(409).json({
+        ok: false,
+        codigo: 'EMPRESA_CAMBIO',
+        error: 'Cambiaste de empresa en otra pestaña o ventana. Vamos a recargar para mostrar la empresa correcta.',
+      });
+    }
+  }
+  next();
 }

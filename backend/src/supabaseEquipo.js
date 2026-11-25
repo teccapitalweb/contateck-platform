@@ -43,12 +43,43 @@ export async function listarEquipo(accessToken, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
+  // OT-0056: con multiempresa, alguien de mi empresa puede estar trabajando AHORA en otra (su perfil
+  // activo apunta a la otra). El equipo se lee de las membresías de mi empresa para que no desaparezca
+  // de la lista (y se le pueda dar de baja). Si la tabla aún no existe, se usa el modo anterior.
+  const miEmpresa = await miEmpresaId(supabase, accessToken);
+  if (miEmpresa) {
+    const { data: ms, error: errMs } = await supabase
+      .from('usuario_empresas')
+      .select('user_id, activo, created_at, roles ( id, nombre ), perfiles ( nombre, email, empresa_id )')
+      .eq('empresa_id', miEmpresa);
+    if (!errMs) {
+      const equipo = (ms || []).map((m) => ({
+        id: m.user_id,
+        nombre: m.perfiles ? m.perfiles.nombre : null,
+        email: m.perfiles ? m.perfiles.email : null,
+        activo: m.activo,
+        created_at: m.created_at,
+        roles: m.roles,
+        enOtraEmpresa: !!(m.perfiles && m.perfiles.empresa_id && m.perfiles.empresa_id !== miEmpresa),
+      })).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
+      return { ok: true, equipo };
+    }
+    log.warn('[postgres] listarEquipo (membresías, uso el modo anterior):', errMs.message);
+  }
+
   const { data, error } = await supabase
     .from('perfiles')
     .select('id, nombre, email, activo, created_at, roles ( id, nombre )')
     .order('nombre', { ascending: true });
   if (error) { log.warn('[postgres] listarEquipo:', error.message); return { ok: false, error: error.message }; }
   return { ok: true, equipo: data || [] };
+}
+
+// Empresa ACTIVA de quien llama (null si no se puede leer).
+async function miEmpresaId(supabase, accessToken) {
+  const { data, error } = await supabase.from('perfiles').select('empresa_id').eq('id', idDeToken(accessToken)).maybeSingle();
+  if (error || !data) return null;
+  return data.empresa_id;
 }
 
 // OT-mejoras-ventas: versión ligera de listarEquipo — SIN el candado de
@@ -87,11 +118,22 @@ const ROLES_PROTEGIDOS = ['admin', 'director'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Una persona de la empresa (RLS ya limita a la misma empresa): id, activo y nombre de su rol.
-async function leerMiembro(supabase, miembroId) {
+async function leerMiembro(supabase, miembroId, miEmpresa) {
+  // OT-0056: primero la membresía en MI empresa (vale aunque esa persona esté trabajando en otra ahora).
+  if (miEmpresa) {
+    const { data: m, error: errM } = await supabase
+      .from('usuario_empresas')
+      .select('user_id, activo, roles ( nombre ), perfiles ( empresa_id )')
+      .eq('user_id', miembroId).eq('empresa_id', miEmpresa).maybeSingle();
+    if (!errM) {
+      if (!m) return { error: 'No encontré a esa persona en tu empresa.' };
+      return { miembro: { id: m.user_id, activo: m.activo !== false, rol: m.roles && m.roles.nombre, enOtraEmpresa: !!(m.perfiles && m.perfiles.empresa_id && m.perfiles.empresa_id !== miEmpresa) } };
+    }
+  }
   const { data, error } = await supabase.from('perfiles').select('id, activo, roles ( nombre )').eq('id', miembroId).maybeSingle();
   if (error) return { error: error.message };
   if (!data) return { error: 'No encontré a esa persona en tu empresa.' };
-  return { miembro: { id: data.id, activo: data.activo !== false, rol: data.roles && data.roles.nombre } };
+  return { miembro: { id: data.id, activo: data.activo !== false, rol: data.roles && data.roles.nombre, enOtraEmpresa: false } };
 }
 
 // ¿Quedaría al menos otro director activo además de `excluirId`?
@@ -119,7 +161,8 @@ export async function cambiarEstadoMiembro(accessToken, miembroId, activo, log =
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  const objetivo = await leerMiembro(supabase, miembroId);
+  const miEmpresa = await miEmpresaId(supabase, accessToken);
+  const objetivo = await leerMiembro(supabase, miembroId, miEmpresa);
   if (objetivo.error) return { ok: false, error: objetivo.error };
   const rolObjetivo = objetivo.miembro.rol;
 
@@ -131,6 +174,15 @@ export async function cambiarEstadoMiembro(accessToken, miembroId, activo, log =
     if (otro.error) { log.warn('[postgres] cambiarEstadoMiembro (directores):', otro.error); return { ok: false, error: 'No se pudo comprobar que quede otro director activo.' }; }
     if (!otro.quedaOtro) return { ok: false, error: 'Es el único director activo: antes de darlo de baja, asigna a otra persona como director.' };
   }
+
+  // OT-0056: la baja/reactivación va por la función de la base, que actúa sobre la membresía de MI
+  // empresa aunque la persona esté trabajando en otra en este momento (si no, no se le podría quitar
+  // el acceso mientras no esté aquí). Si esa función aún no existe, se usa el modo anterior.
+  const { data: viaRpc, error: errRpc } = await supabase.rpc('membresia_cambiar_estado', { p_user_id: miembroId, p_activo: activo });
+  if (!errRpc) return { ok: true, miembro: { id: miembroId, activo: !!(viaRpc && viaRpc.activo) } };
+  if (errRpc.code === 'P0001') return { ok: false, error: errRpc.message };
+  if (objetivo.miembro.enOtraEmpresa) { log.warn('[postgres] cambiarEstadoMiembro (rpc):', errRpc.message); return { ok: false, error: 'No se pudo actualizar a la persona.' }; }
+  log.warn('[postgres] membresia_cambiar_estado no disponible, uso el modo anterior:', errRpc.message);
 
   const { data, error } = await supabase.from('perfiles').update({ activo }).eq('id', miembroId).select().single();
   if (error) { log.warn('[postgres] cambiarEstadoMiembro:', error.message); return { ok: false, error: 'No se pudo actualizar a la persona.' }; }
@@ -151,8 +203,11 @@ export async function cambiarRolMiembro(accessToken, miembroId, nuevoRolId, log 
   const { data: rolNuevo } = await supabase.from('roles').select('id, nombre').eq('id', nuevoRolId).maybeSingle();
   if (!rolNuevo) return { ok: false, error: 'Ese rol no existe.' };
 
-  const objetivo = await leerMiembro(supabase, miembroId);
+  const objetivo = await leerMiembro(supabase, miembroId, await miEmpresaId(supabase, accessToken));
   if (objetivo.error) return { ok: false, error: objetivo.error };
+  if (objetivo.miembro.enOtraEmpresa) {
+    return { ok: false, error: 'Esa persona está trabajando en otra empresa en este momento; podrás cambiarle el rol cuando vuelva a esta. Si lo que necesitas es quitarle el acceso, usa "Dar de baja".' };
+  }
 
   if (objetivo.miembro.rol === 'director' && objetivo.miembro.activo && rolNuevo.nombre !== 'director') {
     const otro = await quedaOtroDirectorActivo(supabase, miembroId);

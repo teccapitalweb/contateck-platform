@@ -50,8 +50,36 @@ if (!configured) {
       const original = window.fetch.bind(window);
       const BASE = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
       let renovando = null;
+      // OT-0056 · Multiempresa: cada llamada al backend dice qué empresa está mostrando esta pestaña
+      // (cabecera X-Empresa-Id). Si la persona ya cambió de empresa en otra pestaña, el backend responde
+      // 409 EMPRESA_CAMBIO y aquí se recarga, en vez de seguir mostrando/escribiendo en la empresa vieja.
+      // Solo se manda cuando el backend avisó (multiempresa:true en /api/perfil): un backend anterior
+      // rechazaría la cabecera nueva en el preflight de CORS. Solo con encabezados en objeto plano.
+      let avisandoCambio = false;
+      function conEmpresa(input, init) {
+        const emp = window.CONTATECK_MULTIEMPRESA && window.CONTATECK_EMPRESA_PG && window.CONTATECK_EMPRESA_PG.id;
+        const u = typeof input === "string" ? input : (input && input.url) || "";
+        const h = init && init.headers;
+        if (!emp || !u.startsWith(BASE) || !h || typeof h !== "object" || typeof h.get === "function" || Array.isArray(h)) return init;
+        return Object.assign({}, init, { headers: Object.assign({}, h, { "X-Empresa-Id": emp }) });
+      }
+      function avisarCambioDeEmpresa(resp) {
+        if (avisandoCambio) return;
+        resp.clone().json().then((j) => {
+          if (!j || j.codigo !== "EMPRESA_CAMBIO" || avisandoCambio) return;
+          avisandoCambio = true;
+          const b = document.createElement("div");
+          b.setAttribute("role", "alert");
+          b.style.cssText = "position:fixed;left:50%;top:1rem;transform:translateX(-50%);z-index:9999;max-width:90vw;padding:.8rem 1.1rem;border-radius:10px;background:#1b2338;color:#fff;border:1px solid #6E8BFF;box-shadow:0 10px 40px rgba(0,0,0,.5);font-size:.9rem";
+          b.textContent = j.error || "Cambiaste de empresa en otra pestaña. Recargando…";
+          document.body.appendChild(b);
+          setTimeout(() => window.location.reload(), 1800);
+        }).catch(() => { /* respuesta sin cuerpo: no es el aviso */ });
+      }
       window.fetch = async function (input, init) {
+        init = conEmpresa(input, init);
         const resp = await original(input, init);
+        if (resp.status === 409) avisarCambioDeEmpresa(resp);
         if (resp.status !== 401) return resp;
         const url = typeof input === "string" ? input : (input && input.url) || "";
         const h = init && init.headers;
@@ -130,6 +158,7 @@ if (!configured) {
 
         if (perfilData.ok && perfilData.fuente === "postgres" && perfilData.empresa) {
           window.CONTATECK_EMPRESA_PG = perfilData.empresa;
+          window.CONTATECK_MULTIEMPRESA = perfilData.multiempresa === true; // OT-0056
           window.CONTATECK_PERFIL_PG = perfilData.perfil;
           // OT-0042: el rol queda en <html data-rol="…"> para que styles.css oculte, al auditor
           // (rol de solo lectura), los botones que escriben. El servidor y la base los rechazan igual.

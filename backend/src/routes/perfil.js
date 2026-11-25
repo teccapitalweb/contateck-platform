@@ -29,5 +29,7 @@ perfilRouter.get('/perfil', async (req, res) => {
     return res.json({ ok: true, fuente: 'local', empresa: null, perfil: null });
   }
 
-  res.json({ ok: true, fuente: 'postgres', ...datos });
+  // OT-0056: multiempresa:true le dice al panel que este backend entiende X-Empresa-Id
+  // (un backend viejo rechazaría la cabecera nueva en el preflight de CORS).
+  res.json({ ok: true, fuente: 'postgres', multiempresa: true, ...datos });
 });
