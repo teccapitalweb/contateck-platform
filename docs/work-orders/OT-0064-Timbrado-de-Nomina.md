@@ -31,5 +31,8 @@ Con el SQL aplicado se capturó una empleada de prueba desde el formulario real 
 
 **Corrección encontrada en la prueba (OT-0064b):** el historial mostraba el periodo un día corrido (31/10 a 29/11 en vez de 01/11 a 30/11) porque una fecha sin hora se leía como UTC. Ya está corregido y con prueba (zona horaria de México).
 
+## Pulidos tras la prueba real (OT-0064c)
+Una prueba real con una empresa y 4 empleados mostró dos detalles, ya corregidos con pruebas: (1) el motivo del rechazo del proveedor se veía como JSON crudo; ahora se extrae el mensaje real y el RFC que no está en el listado del SAT (NOM9) se explica en palabras ("El RFC del empleado no está inscrito en el SAT"). (2) La fecha de pago del CFDI era la de timbrado recortada al fin del periodo; ahora es el **día en que se aprobó y pagó la nómina** (hora de México), sin salirse del periodo ni pasar de hoy, porque el sistema no guarda otra fecha de pago. El proveedor aceptó el CFDI con esa fecha.
+
 ## No verificado
 La impresión del recibo con UUID en el diálogo del navegador y la descarga del XML con un clic (se comprobó el contenido del archivo, no el guardado).
