@@ -49,11 +49,13 @@ await ok('NO se oculta ninguno de los botones de lectura (ver, PDF, historial, d
     'data-provhist-abrir', 'data-provhist-det', 'data-provhist-comprobante', 'data-hist-ver', 'data-simfiscal',
     'data-sat-xml-cat', 'data-sat-xml-bal', 'data-sat-csv-cat', 'data-fis-ver-doc', 'data-soon', 'data-cont-mayor',
   ]) assert.ok(!ocultos.has(a), 'se está ocultando un botón de lectura: ' + a);
-  // "Exportar" usa data-soon pero NO es un timbrado: el selector por valor no debe alcanzarlo
+  // OT-0060: "Exportar" e "Imprimir" del Dashboard ya funcionan (data-dash-exportar / data-dash-imprimir): son lecturas y el auditor las conserva
   const dash = leer('dashboard.html');
-  const exportar = /data-soon="([^"]*xportaci[^"]*)"/.exec(dash);
-  assert.ok(exportar && !/imbrado/.test(exportar[1]), '"Exportar" no debe quedar oculto');
-  assert.ok(/data-soon="[^"]*imbrado[^"]*"/.test(dash), 'ya no hay avisos de timbrado en dashboard.html: revisar el selector');
+  assert.ok(dash.includes('data-dash-exportar') && dash.includes('data-dash-imprimir'), 'el Dashboard debe tener Exportar e Imprimir');
+  for (const a of ['data-dash-exportar', 'data-dash-imprimir']) assert.ok(!ocultos.has(a), '"' + a + '" no debe quedar oculto');
+  // OT-0062: ya no hay botones de timbrado "en una fase siguiente" (el timbrado masivo se quitó y la nómina ofrece recibos);
+  // el selector del CSS por valor queda inofensivo.
+  assert.ok(!/data-soon="[^"]*imbrado[^"]*"/.test(dash), 'no debe volver a haber avisos de timbrado "siguiente fase"');
 });
 
 await ok('cada atributo de la lista existe en el código (sin erratas)', () => {

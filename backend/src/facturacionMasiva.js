@@ -1,5 +1,5 @@
 // ============================================================
-//  CONTATECK · Backend · Timbrado masivo (OT-0061)
+//  CONTATECK · Backend · Timbrado masivo (OT-0063)
 //
 //  El timbrado masivo NO es un camino nuevo al PAC: el panel timbra cada factura del lote
 //  con el mismo POST /api/facturar de siempre (mismas validaciones, mismo candado contra

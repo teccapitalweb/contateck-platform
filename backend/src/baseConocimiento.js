@@ -145,7 +145,7 @@ export const ENTRADAS = [
   },
   {
     id: 'nomina', tipo: 'concepto', titulo: 'Nómina', claves: ['nomina', 'prenomina', 'imss', 'subsidio al empleo'],
-    respuesta: 'La **nómina** es el pago de sueldos a los empleados. En CONTATECK, **Nómina → Calcular** calcula el **ISR** (con subsidio) y el **IMSS** de los trabajadores y guarda el historial. El **timbrado del CFDI de nómina todavía no está disponible** en la plataforma.',
+    respuesta: 'La **nómina** es el pago de sueldos a los empleados. En CONTATECK, **Nómina → Calcular** calcula el **ISR** (con subsidio) y el **IMSS** de los trabajadores y guarda el historial. Después puedes **imprimir los recibos de nómina** de cada periodo desde el historial. El **timbrado del CFDI de nómina no forma parte de la plataforma**: se hace con el proveedor de timbrado; los recibos de CONTATECK son informativos.',
   },
   {
     id: 'obligaciones_fiscales', tipo: 'concepto', titulo: 'Obligaciones fiscales', claves: ['obligaciones fiscales', 'obligacion fiscal', 'declaracion', 'declaraciones', 'calendario fiscal'],
@@ -245,7 +245,7 @@ export const ENTRADAS = [
   },
   {
     id: 'guia_nomina', tipo: 'guia', titulo: 'Calcular la nómina', claves: ['calcular la nomina', 'calculo la nomina', 'hacer la nomina', 'hago la nomina', 'procesar la nomina', 'pagar la nomina', 'dar de alta un empleado', 'agregar un empleado', 'doy de alta un empleado', 'doy de alta empleados', 'alta de empleados', 'agrego un empleado'],
-    respuesta: 'En **Nómina**: **"Empleado"** para dar de alta personal y **"Calcular"** para calcular el ISR y el IMSS del periodo y guardar la nómina (pueden rh, admin y director). El **timbrado del CFDI de nómina todavía no está disponible**.',
+    respuesta: 'En **Nómina**: **"Empleado"** para dar de alta personal y **"Calcular"** para calcular el ISR y el IMSS del periodo y guardar la nómina (pueden rh, admin y director). Desde el historial de nóminas, **"Recibos"** imprime un recibo informativo por empleado. El **timbrado del CFDI de nómina no forma parte de la plataforma**.',
   },
   {
     id: 'guia_sesion', tipo: 'guia', titulo: 'Sesión y tema', claves: ['cerrar sesion', 'salir del sistema', 'cierro sesion', 'cambiar el tema', 'modo oscuro', 'modo claro', 'cambiar a modo oscuro', 'cambio el tema', 'cambio a modo oscuro', 'cambiar el color', 'cambio el modo'],

@@ -276,7 +276,7 @@ invoicesRouter.post('/facturar', requireRolFacturacion, async (req, res) => {
   }
 });
 
-// ---------- TIMBRADO MASIVO · REVISIÓN PREVIA (OT-0061) ----------
+// ---------- TIMBRADO MASIVO · REVISIÓN PREVIA (OT-0063) ----------
 // No timbra ni gasta timbres: valida cada factura del lote con las mismas reglas que /facturar
 // y devuelve un resultado por factura. El panel timbra después cada una con POST /facturar.
 invoicesRouter.post('/facturar-masivo/validar', requireRolFacturacion, (req, res) => {

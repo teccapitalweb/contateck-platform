@@ -1,6 +1,6 @@
-# OT-0061 · Timbrado masivo (Facturación)
+# OT-0063 · Timbrado masivo (Facturación)
 
-**Rama:** `feature/OT-0061-timbrado-masivo-nomina` (sale de `integracion-local` en `9f05822`). Solo local, sin push.
+**Rama:** `feature/OT-0063-timbrado-masivo-nomina` (sale de `integracion-local` en `9f05822`). Solo local, sin push.
 
 ## Qué había
 El botón "Timbrado masivo" de Facturación solo mostraba "El timbrado masivo ante el PAC requiere backend — siguiente fase". El timbrado de **una** factura ya funcionaba (`POST /api/facturar`, Fiscalapi en pruebas).

@@ -1,5 +1,5 @@
 // ============================================================
-//  CONTATECK · OT-0061 · Pruebas del timbrado masivo (lector de CSV + revisión previa)
+//  CONTATECK · OT-0063 · Pruebas del timbrado masivo (lector de CSV + revisión previa)
 //  Sin red y sin base: no timbra nada. Uso:  cd backend && node test-facturacion-masiva.js
 // ============================================================
 import assert from 'assert';

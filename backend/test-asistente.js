@@ -313,7 +313,7 @@ await ok('los roles que dicen las guías coinciden con los del código (ventas, 
 
 await ok('los textos no prometen lo que el sistema no hace: ISR sin cálculo y timbrado de nómina no disponible', () => {
   const t = (id) => ENTRADAS.find((e) => e.id === id).respuesta;
-  assert.match(t('isr'), /no lo calcula por ti/); assert.match(t('nomina'), /no está disponible/); assert.match(t('guia_nomina'), /no está disponible/);
+  assert.match(t('isr'), /no lo calcula por ti/); assert.match(t('nomina'), /no forma parte de la plataforma/); assert.match(t('guia_nomina'), /no forma parte de la plataforma/); assert.match(t('guia_nomina'), /Recibos/);
   assert.match(t('soy_ia'), /No soy inteligencia artificial/);
   const ayuda = textoAyuda(); assert.match(ayuda, /¿Qué es el IVA\?/); assert.match(ayuda, /¿Cómo registro una venta\?/);
 });

@@ -1520,7 +1520,7 @@
   // ---- Conectar el botón "Timbrar CFDI" del módulo de Facturación ----
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-facturar]")) { e.preventDefault(); open(); }
-    if (e.target.closest("[data-fac-masivo]")) { e.preventDefault(); openMasivo(); } // OT-0061
+    if (e.target.closest("[data-fac-masivo]")) { e.preventDefault(); openMasivo(); } // OT-0063
     const cancelTrigger = e.target.closest("[data-cancelar-cfdi]");
     if (cancelTrigger) {
       e.preventDefault();
@@ -1803,7 +1803,7 @@
   });
 
   // ============================================================
-  // TIMBRADO MASIVO (OT-0061)
+  // TIMBRADO MASIVO (OT-0063)
   // Sube un CSV (plantilla descargable), se revisa TODO en el servidor sin gastar timbres
   // (POST /api/facturar-masivo/validar) y, tras una confirmación explícita, cada factura válida
   // se timbra una por una con el mismo POST /api/facturar del formulario individual: mismas

@@ -1,5 +1,5 @@
 // ============================================================
-//  CONTATECK · OT-0061 · Prueba de la RUTA POST /api/facturar-masivo/validar
+//  CONTATECK · OT-0063 · Prueba de la RUTA POST /api/facturar-masivo/validar
 //  Backend real en memoria contra un Supabase FALSO en localhost (sin red, sin PAC, sin timbres).
 //  Uso:  cd backend && node test-facturacion-masiva-ruta.js
 // ============================================================
