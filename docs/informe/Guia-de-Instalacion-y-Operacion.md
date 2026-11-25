@@ -47,7 +47,7 @@ Abre `login.html`. Al cambiar un archivo JS, súbele el número de versión en e
 ## 6. Pruebas
 ```bash
 cd backend
-npm run test:ci      # 9 suites, 122 pruebas, sin red, sin llaves y sin base de datos
+npm run test:ci      # 9 suites, 123 pruebas, sin red, sin llaves y sin base de datos
 ```
 Suites sueltas: `test:fiscal`, `test:lectura`, `test:login`, `test:ia`, `test:asistente`, `test:canceladas`. Las pruebas de aislamiento con base real (`test-aislamiento-empresas.js`, `test-rls-aislamiento.js`…) necesitan credenciales de prueba y no forman parte de `test:ci`. En GitHub, `.github/workflows/pruebas.yml` corre `test:ci` en cada push.
 

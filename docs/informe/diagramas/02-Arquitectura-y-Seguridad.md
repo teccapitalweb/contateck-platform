@@ -71,4 +71,4 @@ flowchart TD
 | Frontend (HTML/JS) | GitHub Pages | Flujo de GitHub Actions al subir a la rama `dev` (`.github/workflows/pages.yml`) |
 | Backend (Node.js ≥ 22) | Railway | Variables de entorno en Railway; ver `backend/.env.example` |
 | Base de datos, Auth y Storage | Supabase (proyecto `contateck-dev` para desarrollo) | Scripts en `database/`; el plan gratuito pausa el proyecto tras días sin uso |
-| Pruebas automáticas | GitHub Actions (`.github/workflows/pruebas.yml`) y `npm run test:ci` | 9 suites, 122 pruebas, sin red ni llaves |
+| Pruebas automáticas | GitHub Actions (`.github/workflows/pruebas.yml`) y `npm run test:ci` | 9 suites, 123 pruebas, sin red ni llaves |
