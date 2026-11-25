@@ -624,7 +624,7 @@
       const enviar = document.querySelector("[data-ia-send]");
       const navIA = document.querySelector('.nav-item[data-view="ia"]');
       const historial = [];
-      const SUGERENCIAS = ["¿Cómo va el Balance General?", "¿Cuánto hay en bancos y caja?", "¿Cuánto me deben mis clientes y cuánto debo a proveedores?", "¿Cómo va el IVA este mes?", "¿Qué obligaciones fiscales vencen pronto?", "¿Cuánto gané este mes?", "¿Tengo alertas pendientes?"];
+      const SUGERENCIAS = ["¿Cómo va el Balance General?", "¿Cuánto hay en bancos y caja?", "¿Cuánto me deben mis clientes y cuánto debo a proveedores?", "¿Cómo va el IVA este mes?", "¿Qué obligaciones fiscales vencen pronto?", "¿Cuánto gané este mes?", "¿Tengo alertas pendientes?", "¿Qué es el IVA?", "¿Cómo registro una venta?"];
       const AV = '<span class="msg__av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4l1.4 4L17 9.5l-3.6 1.5L12 15l-1.4-4L7 9.5 10.6 8z"/></svg></span>';
       let iniciada = false, ocupada = false;
 

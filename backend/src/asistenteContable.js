@@ -10,19 +10,14 @@
 //  Reglas: solo lectura; sin RFC ni nombres de personas; no inventa: si no entiende o no hay datos, lo dice.
 // ============================================================
 import { hoyMexico } from './validacionesFiscal.js';
+import { normalizar } from './textoUtil.js';
+import { buscarConocimiento } from './baseConocimiento.js';
 
 export const MAX_PREGUNTA_ASISTENTE = 300;
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-/** Minúsculas, sin acentos ni signos, con espacios simples. */
-export function normalizar(texto) {
-  return ' ' + String(texto == null ? '' : texto)
-    .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9ñ]+/g, ' ')
-    .trim() + ' ';
-}
+export { normalizar };
 
 export const dinero = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(n) || 0);
 const num = (n) => Number(n) || 0;
@@ -97,6 +92,7 @@ const SUGERENCIAS = [
   '¿Cuánto gané este mes?',
   '¿Tengo alertas pendientes?',
 ];
+const SUGERENCIAS_GENERALES = ['¿Qué es el IVA?', '¿Qué es una póliza?', '¿Cómo registro una venta?', '¿Cómo cierro un periodo?'];
 
 export function textoAyuda() {
   return [
@@ -104,6 +100,9 @@ export function textoAyuda() {
     '',
     'Puedes preguntarme, por ejemplo:',
     ...SUGERENCIAS.map((s) => '- ' + s),
+    '',
+    'También explico lo básico y cómo se usa el sistema:',
+    ...SUGERENCIAS_GENERALES.map((s) => '- ' + s),
     '',
     'Entiendo preguntas con palabras como balance, bancos, clientes, proveedores, IVA, obligaciones, utilidad, ingresos, alertas y nómina, y meses como "octubre" o "el mes pasado". Si no entiendo algo, te lo digo.',
   ].join('\n');
@@ -116,6 +115,7 @@ const NO_ENTIENDO = (pregunta) => ({
     '',
     'Prueba con:',
     ...SUGERENCIAS.map((s) => '- ' + s),
+    ...SUGERENCIAS_GENERALES.map((s) => '- ' + s),
   ].join('\n'),
   pregunta_normalizada: normalizar(pregunta).trim(),
 });
@@ -258,6 +258,12 @@ export async function responderPorReglas({ pregunta }, { herramientas = {}, hoy 
   const p = typeof pregunta === 'string' ? pregunta.trim() : '';
   if (!p) return { ok: false, codigo: 'CONSULTA_INVALIDA', error: 'Escribe una pregunta.' };
   if (p.length > MAX_PREGUNTA_ASISTENTE) return { ok: false, codigo: 'CONSULTA_INVALIDA', error: `La pregunta es muy larga (máximo ${MAX_PREGUNTA_ASISTENTE} caracteres).` };
+  // Primero las preguntas de concepto ("¿qué es…?") y de guía ("¿cómo registro…?"): son respuestas fijas, sin datos de la empresa.
+  const saber = buscarConocimiento(p);
+  if (saber) {
+    const pista = saber.datos ? '\n\nPara ver el dato de tu empresa pregunta: "' + saber.datos + '"' : '';
+    return { ok: true, intencion: 'conocimiento:' + saber.id, respuesta: saber.respuesta + pista, fuente: 'guía de CONTATECK' };
+  }
   const intencion = detectarIntencion(p);
   if (!intencion) return { ok: true, ...NO_ENTIENDO(p) };
   try {
