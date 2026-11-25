@@ -40,3 +40,40 @@ export function alertaCfdiSinPoliza(cfdis, polizas) {
     accion: { vista: 'contabilidad' },
   };
 }
+
+/**
+ * OT-0051 · Pagos confirmados sobre facturas que nunca se contabilizaron (sin póliza de causación).
+ * El cobro o el pago ya movió Bancos, pero la factura no tiene su póliza (Clientes/Ventas/IVA o Gastos/IVA/Proveedores),
+ * así que Clientes o Proveedores quedan con saldo de naturaleza inversa y el Balance se distorsiona.
+ *  - pagosCliente:    filas de `pagos_cliente` confirmadas (cfdi_id).
+ *  - cfdisEmitidos:   filas de `cfdis` (id, uuid_sat) sin cancelados; un pago sobre un CFDI que no está aquí no se cuenta.
+ *  - polizasConCfdi:  filas de `polizas` con cfdi_uuid (cfdi_uuid, estado).
+ *  - pagosProveedor:  filas de `pagos_proveedor` confirmadas (cfdi_proveedor_id).
+ *  - cfdisProveedor:  filas de `cfdis_proveedor` (id, poliza_causacion_id).
+ * Regresa null si alguna lista llega al tope de la consulta (podría venir incompleta).
+ */
+export function pagosSinCausacion({ pagosCliente, cfdisEmitidos, polizasConCfdi, pagosProveedor, cfdisProveedor }) {
+  const lista = (x) => (Array.isArray(x) ? x : []);
+  const pc = lista(pagosCliente), ce = lista(cfdisEmitidos), po = lista(polizasConCfdi), pp = lista(pagosProveedor), cp = lista(cfdisProveedor);
+  if ([pc, ce, po, pp, cp].some((l) => l.length >= TOPE_FILAS_CONSULTA)) return null;
+  const contabilizados = new Set(po.filter((p) => p && p.cfdi_uuid && p.estado === 'ok').map((p) => String(p.cfdi_uuid).trim().toLowerCase()));
+  const uuidDe = new Map(ce.filter((c) => c && c.id && c.uuid_sat).map((c) => [c.id, String(c.uuid_sat).trim().toLowerCase()]));
+  const cobros = pc.filter((p) => p && uuidDe.has(p.cfdi_id) && !contabilizados.has(uuidDe.get(p.cfdi_id))).length;
+  const causacionDe = new Map(cp.filter((c) => c && c.id).map((c) => [c.id, c.poliza_causacion_id]));
+  const proveedores = pp.filter((p) => p && causacionDe.has(p.cfdi_proveedor_id) && !causacionDe.get(p.cfdi_proveedor_id)).length;
+  return { cobros, proveedores, total: cobros + proveedores };
+}
+
+/** Alerta del Dashboard, o null si no hay nada que avisar. */
+export function alertaPagosSinCausacion(datos) {
+  const r = pagosSinCausacion(datos);
+  if (!r || r.total === 0) return null;
+  const n = r.total;
+  const partes = [r.cobros ? `${r.cobros} cobro${r.cobros > 1 ? 's' : ''}` : '', r.proveedores ? `${r.proveedores} pago${r.proveedores > 1 ? 's' : ''} a proveedor` : ''].filter(Boolean).join(' y ');
+  return {
+    tipo: 'warn',
+    titulo: `${n} pago${n > 1 ? 's' : ''} confirmado${n > 1 ? 's' : ''} sobre facturas sin póliza de causación`,
+    texto: `${partes}: ya movieron Bancos, pero la factura nunca se contabilizó, así que Clientes o Proveedores quedan con saldo inverso y el Balance se distorsiona. Contabiliza primero la factura.`,
+    accion: { vista: 'contabilidad' },
+  };
+}
