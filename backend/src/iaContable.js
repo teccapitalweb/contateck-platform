@@ -65,6 +65,18 @@ export const DEFINICION_HERRAMIENTAS = [
     },
   },
   {
+    name: 'iva_del_periodo',
+    description: 'IVA trasladado (cobrado a clientes) e IVA acreditable (pagado a proveedores) de un mes o de todo el ejercicio, con las cuentas de IVA de la Configuración contable, y la diferencia (a cargo si es positiva, a favor si es negativa). Es una cifra de referencia, no la declaración.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        anio: { type: 'integer', description: 'Año (por ejemplo 2026). Si se omite, se usa todo el ejercicio.' },
+        mes: { type: 'integer', minimum: 1, maximum: 12, description: 'Mes 1 a 12. Solo se usa junto con anio.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'obligaciones_fiscales',
     description: 'Próximas obligaciones fiscales pendientes de presentar (nombre, periodo, fecha límite y días restantes; los días son negativos si ya vencieron).',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
@@ -118,7 +130,31 @@ export function agruparSaldos(partidas, { prefijo = '', max = 60 } = {}) {
     debe: redondea(x.debe), haber: redondea(x.haber),
     saldo: redondea(x.naturaleza === 'deudora' ? x.debe - x.haber : x.haber - x.debe),
   })).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'es', { numeric: true }));
-  return { cuentas: filas.slice(0, max), total_de_cuentas: filas.length, recortado: filas.length > max };
+  const totales = {};
+  for (const f of filas) { const d = String(f.codigo)[0]; totales[d] = redondea((totales[d] || 0) + f.saldo); }
+  return { cuentas: filas.slice(0, max), total_de_cuentas: filas.length, recortado: filas.length > max, totales_por_digito: totales };
+}
+
+/** Saldos por cuenta con las pólizas activas (con el cliente de Supabase del usuario, así que aplica RLS). */
+async function saldosPorCuenta(supabase, entrada = {}, prefijo = '') {
+  let q = supabase.from('poliza_partidas')
+    .select('debe, haber, cuentas_contables(codigo, nombre, naturaleza), polizas!inner(estado, fecha)')
+    .eq('polizas.estado', 'ok');
+  const anio = Number.isInteger(entrada.anio) ? entrada.anio : null;
+  const mes = Number.isInteger(entrada.mes) && entrada.mes >= 1 && entrada.mes <= 12 ? entrada.mes : null;
+  if (anio && mes) {
+    const ini = `${anio}-${String(mes).padStart(2, '0')}-01`;
+    const sig = mes === 12 ? `${anio + 1}-01-01` : `${anio}-${String(mes + 1).padStart(2, '0')}-01`;
+    q = q.gte('polizas.fecha', ini).lt('polizas.fecha', sig);
+  } else if (anio) {
+    q = q.gte('polizas.fecha', `${anio}-01-01`).lt('polizas.fecha', `${anio + 1}-01-01`);
+  }
+  const { data, error } = await q;
+  if (error) return { error: 'No se pudieron leer los saldos.' };
+  const r = agruparSaldos(data, { prefijo });
+  if ((data || []).length >= 1000) r.aviso = 'La consulta llegó al tope de 1,000 partidas: los saldos pueden estar incompletos.';
+  r.periodo = anio ? (mes ? `${anio}-${String(mes).padStart(2, '0')}` : String(anio)) : 'todo el ejercicio';
+  return r;
 }
 
 export function crearHerramientasReales(token, deps = {}) {
@@ -132,25 +168,28 @@ export function crearHerramientasReales(token, deps = {}) {
     async saldos_de_cuentas(entrada = {}) {
       const supabase = clienteDe(token);
       if (!supabase) return { error: 'Postgres no está configurado en el backend.' };
-      let q = supabase.from('poliza_partidas')
-        .select('debe, haber, cuentas_contables(codigo, nombre, naturaleza), polizas!inner(estado, fecha)')
-        .eq('polizas.estado', 'ok');
-      const anio = Number.isInteger(entrada.anio) ? entrada.anio : null;
-      const mes = Number.isInteger(entrada.mes) && entrada.mes >= 1 && entrada.mes <= 12 ? entrada.mes : null;
-      if (anio && mes) {
-        const ini = `${anio}-${String(mes).padStart(2, '0')}-01`;
-        const sig = mes === 12 ? `${anio + 1}-01-01` : `${anio}-${String(mes + 1).padStart(2, '0')}-01`;
-        q = q.gte('polizas.fecha', ini).lt('polizas.fecha', sig);
-      } else if (anio) {
-        q = q.gte('polizas.fecha', `${anio}-01-01`).lt('polizas.fecha', `${anio + 1}-01-01`);
+      const prefijo = typeof entrada.prefijo === 'string' && /^[0-9]{1,6}$/.test(entrada.prefijo) ? entrada.prefijo : '';
+      const s = await saldosPorCuenta(supabase, entrada, prefijo);
+      return s.error ? { error: s.error } : s;
+    },
+    async iva_del_periodo(entrada = {}) {
+      const supabase = clienteDe(token);
+      if (!supabase) return { error: 'Postgres no está configurado en el backend.' };
+      const { data: cfg, error: e1 } = await supabase.from('configuracion_contable').select('cuenta_iva_trasladado_id, cuenta_iva_acreditable_id').maybeSingle();
+      if (e1) return { error: 'No se pudo leer la Configuración contable.' };
+      if (!cfg || !cfg.cuenta_iva_trasladado_id || !cfg.cuenta_iva_acreditable_id) {
+        return { error: 'Faltan las cuentas de IVA trasladado y acreditable en la Configuración contable (Contabilidad → Configuración contable).' };
       }
-      const { data, error } = await q;
-      if (error) return { error: 'No se pudieron leer los saldos.' };
-      const prefijo = typeof entrada.prefijo === 'string' && /^\d{1,6}$/.test(entrada.prefijo) ? entrada.prefijo : '';
-      const r = agruparSaldos(data, { prefijo });
-      if ((data || []).length >= 1000) r.aviso = 'La consulta llegó al tope de 1,000 partidas: los saldos pueden estar incompletos.';
-      r.periodo = anio ? (mes ? `${anio}-${String(mes).padStart(2, '0')}` : String(anio)) : 'todo el ejercicio';
-      return r;
+      const { data: cuentas, error: e2 } = await supabase.from('cuentas_contables').select('id, codigo').in('id', [cfg.cuenta_iva_trasladado_id, cfg.cuenta_iva_acreditable_id]);
+      if (e2 || !cuentas) return { error: 'No se pudieron leer las cuentas de IVA.' };
+      const codigoDe = (id) => (cuentas.find((c) => c.id === id) || {}).codigo;
+      const cT = codigoDe(cfg.cuenta_iva_trasladado_id), cA = codigoDe(cfg.cuenta_iva_acreditable_id);
+      if (!cT || !cA) return { error: 'No se encontraron las cuentas de IVA configuradas.' };
+      const s = await saldosPorCuenta(supabase, entrada);
+      if (s.error) return { error: s.error };
+      const saldoDe = (codigo) => Math.abs((s.cuentas.find((c) => c.codigo === codigo) || {}).saldo || 0);
+      const trasladado = redondea(saldoDe(cT)), acreditable = redondea(saldoDe(cA));
+      return { periodo: s.periodo, trasladado, acreditable, resultado: redondea(trasladado - acreditable), nota: 'Cifra de referencia calculada con las pólizas; no es la declaración.', ...(s.aviso ? { aviso: s.aviso } : {}) };
     },
     async obligaciones_fiscales() {
       const r = await cal(token);
