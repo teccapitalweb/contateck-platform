@@ -17,7 +17,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
 import { obtenerCalendario, obtenerAlertasDocumentos } from './supabaseFiscal.js';
-import { alertaCfdiSinPoliza } from './alertasContables.js';
+import { alertaCfdiSinPoliza, alertaPagosSinCausacion } from './alertasContables.js';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -61,7 +61,7 @@ export async function obtenerDashboard(accessToken, log = console) {
   const desde6Meses = inicioMesesAtras(6);
 
   try {
-    const [cfdisMes, cfdis6Meses, polizasMes, gastos6Meses, empleados, cuentas, partidas, calendarioSat, alertasDocs, cfdisParaPoliza, polizasConCfdi] = await Promise.all([
+    const [cfdisMes, cfdis6Meses, polizasMes, gastos6Meses, empleados, cuentas, partidas, calendarioSat, alertasDocs, cfdisParaPoliza, polizasConCfdi, pagosCli, pagosProv, cfdisProv] = await Promise.all([
       supabase.from('cfdis').select('total, tipo, estatus, fecha, cancelled_at, created_at')
         .gte('created_at', desdeMesActual),
       supabase.from('cfdis').select('total, tipo, estatus, created_at')
@@ -85,8 +85,12 @@ export async function obtenerDashboard(accessToken, log = console) {
       obtenerCalendario(accessToken, log, supabase),
       obtenerAlertasDocumentos(supabase, log),
       // OT-0045: CFDI emitidos vigentes y pólizas ligadas a un CFDI, para avisar de los que no se contabilizaron.
-      supabase.from('cfdis').select('uuid_sat, tipo, estatus').neq('estatus', 'cancelado').not('uuid_sat', 'is', null),
+      supabase.from('cfdis').select('id, uuid_sat, tipo, estatus').neq('estatus', 'cancelado').not('uuid_sat', 'is', null),
       supabase.from('polizas').select('cfdi_uuid, estado').not('cfdi_uuid', 'is', null),
+      // OT-0051: pagos confirmados y facturas de proveedor, para avisar de pagos sobre facturas sin póliza de causación.
+      supabase.from('pagos_cliente').select('cfdi_id').eq('estado', 'confirmado'),
+      supabase.from('pagos_proveedor').select('cfdi_proveedor_id').eq('estado', 'confirmado'),
+      supabase.from('cfdis_proveedor').select('id, poliza_causacion_id'),
     ]);
 
     if (cfdisMes.error) throw cfdisMes.error;
@@ -173,6 +177,14 @@ export async function obtenerDashboard(accessToken, log = console) {
     if (!cfdisParaPoliza.error && !polizasConCfdi.error) {
       const sinPoliza = alertaCfdiSinPoliza(cfdisParaPoliza.data, polizasConCfdi.data);
       if (sinPoliza) alertas.push(sinPoliza);
+    }
+    // OT-0051: igual, si alguna consulta falla no se avisa ni se rompe el Dashboard.
+    if (!cfdisParaPoliza.error && !polizasConCfdi.error && !pagosCli.error && !pagosProv.error && !cfdisProv.error) {
+      const sinCausacion = alertaPagosSinCausacion({
+        pagosCliente: pagosCli.data, cfdisEmitidos: cfdisParaPoliza.data, polizasConCfdi: polizasConCfdi.data,
+        pagosProveedor: pagosProv.data, cfdisProveedor: cfdisProv.data,
+      });
+      if (sinCausacion) alertas.push(sinCausacion);
     }
 
     // ---- Balance General y Composición de gastos (aritmética real) ----

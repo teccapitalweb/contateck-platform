@@ -530,4 +530,31 @@ await ok('alerta de CFDI sin póliza: cuenta solo vigentes timbrados sin póliza
   assert.match(d, /!cfdisParaPoliza\.error && !polizasConCfdi\.error/);
 });
 
+// OT-0051: alerta por pagos confirmados sobre facturas sin póliza de causación.
+await ok('alerta de pagos sin causación: cobros y pagos a proveedor sobre facturas no contabilizadas, y sin falsos avisos', async () => {
+  const { pagosSinCausacion, alertaPagosSinCausacion, TOPE_FILAS_CONSULTA } = await import('./src/alertasContables.js');
+  const cfdis = [{ id: 'c1', uuid_sat: 'AAA-1' }, { id: 'c2', uuid_sat: 'BBB-2' }];
+  const polizas = [{ cfdi_uuid: 'aaa-1', estado: 'ok' }, { cfdi_uuid: 'BBB-2', estado: 'anulada' }];
+  const base = {
+    pagosCliente: [{ cfdi_id: 'c1' }, { cfdi_id: 'c2' }, { cfdi_id: 'c2' }, { cfdi_id: 'cancelado-no-listado' }],
+    cfdisEmitidos: cfdis, polizasConCfdi: polizas,
+    pagosProveedor: [{ cfdi_proveedor_id: 'p1' }, { cfdi_proveedor_id: 'p2' }, { cfdi_proveedor_id: 'p2' }, { cfdi_proveedor_id: 'desconocido' }],
+    cfdisProveedor: [{ id: 'p1', poliza_causacion_id: 'pz1' }, { id: 'p2', poliza_causacion_id: null }],
+  };
+  // c1 tiene póliza activa (no cuenta); c2 solo una anulada (2 cobros cuentan); el pago sobre un CFDI que no está en la lista (cancelado) no cuenta.
+  assert.deepEqual(pagosSinCausacion(base), { cobros: 2, proveedores: 2, total: 4 });
+  const a = alertaPagosSinCausacion(base);
+  assert.equal(a.tipo, 'warn'); assert.equal(a.accion.vista, 'contabilidad');
+  assert.match(a.titulo, /^4 pagos confirmados sobre facturas sin póliza de causación/);
+  assert.match(a.texto, /2 cobros y 2 pagos a proveedor/);
+  assert.match(alertaPagosSinCausacion({ ...base, pagosCliente: [{ cfdi_id: 'c2' }], pagosProveedor: [] }).titulo, /^1 pago confirmado sobre facturas/);
+  assert.equal(alertaPagosSinCausacion({ ...base, pagosCliente: [{ cfdi_id: 'c1' }], pagosProveedor: [{ cfdi_proveedor_id: 'p1' }] }), null);   // todo contabilizado
+  assert.equal(alertaPagosSinCausacion({}), null);                                                                                           // sin datos
+  const muchos = Array.from({ length: TOPE_FILAS_CONSULTA }, (_, i) => ({ cfdi_id: 'x' + i }));
+  assert.equal(pagosSinCausacion({ ...base, pagosCliente: muchos }), null);                                                                    // lista posiblemente truncada
+  const d = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'src', 'supabaseDashboard.js'), 'utf8');
+  assert.ok(d.includes('alertaPagosSinCausacion({'));
+  assert.ok(d.includes('!pagosCli.error && !pagosProv.error && !cfdisProv.error'));
+});
+
 console.log(`\n✔ ${pruebas} pruebas del módulo SAT y Fiscal pasaron\n`);
