@@ -12,6 +12,7 @@ import { faltantesEmpleado, desgloseRenglon, construirCfdiNomina, antiguedadSema
 import { timbrarNomina } from './src/timbradoNomina.js';
 import { columnaFaltante } from './src/supabaseNominas.js';
 
+process.env.TZ = 'America/Mexico_City';   // la zona horaria de los usuarios: ahí el periodo se veía un día corrido
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 const leer = (...p) => fs.readFileSync(path.join(aqui, ...p), 'utf8').replace(/\r\n/g, '\n');
 let pruebas = 0;
@@ -231,7 +232,18 @@ await ok('frontend: el resultado y el detalle escapan todo; el recibo timbrado m
   for (const k of ['cp_fiscal', 'clave_entidad', 'tipo_contrato', 'tipo_jornada', 'riesgo_puesto']) assert.ok(fs2.includes('k: "' + k + '"'), k);
   assert.ok(fs2.includes('Object.assign({') && fs2.includes('}, fiscales)'), 'los datos fiscales solo viajan si se capturaron');
   assert.ok(leer('src', 'supabaseCrud.js').includes("'cp_fiscal', 'tipo_contrato', 'tipo_jornada', 'riesgo_puesto', 'clave_entidad'"));
-  assert.ok(leer('..', 'frontend', 'dashboard.html').includes('nomina.js?v=4') && leer('..', 'frontend', 'dashboard.html').includes('data-firestore.js?v=15'));
+  assert.ok(leer('..', 'frontend', 'dashboard.html').includes('nomina.js?v=5') && leer('..', 'frontend', 'dashboard.html').includes('data-firestore.js?v=15'));
+});
+
+await ok('fechas del historial: una fecha sin hora no se corre un día en la zona horaria de México', () => {
+  const nom = leer('..', 'frontend', 'nomina.js');
+  const a = nom.indexOf('function fmtFecha'), b = nom.indexOf('const PERIODO_ETIQUETAS');
+  assert.ok(a > 0 && b > a);
+  const cx = vm.createContext({});
+  vm.runInContext(nom.slice(a, b) + '\nthis.f = fmtFecha;', cx);
+  assert.equal(cx.f('2026-11-01'), '01/11/2026'); assert.equal(cx.f('2026-11-30'), '30/11/2026'); assert.equal(cx.f('2026-01-01'), '01/01/2026');
+  assert.equal(cx.f(null), '—'); assert.equal(cx.f('texto raro'), 'texto raro');
+  assert.match(cx.f('2026-11-16T18:00:00Z'), /^\d{2}\/\d{2}\/2026$/, 'una fecha con hora se sigue mostrando');
 });
 
 console.log(`\n✔ ${pruebas} pruebas de timbrado de nómina pasaron\n`);

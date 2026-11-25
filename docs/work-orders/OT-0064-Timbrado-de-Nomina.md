@@ -26,5 +26,10 @@ Con el ambiente de pruebas del proveedor (`test.fiscalapi.com`, emisor de prueba
 ## Pruebas
 `backend/test-nomina-cfdi.js` (15 pruebas, en `npm run test:ci`): datos faltantes del empleado, desglose con y sin subsidio (y subsidio mayor al ISR), el CFDI armado campo por campo, orquestación del lote (ya timbrados, errores de datos, errores del proveedor, UUID sin anotar), orden de validaciones de la ruta, SQL aditivo y frontend con todo texto escapado. Se ajustaron las pruebas del asistente y de interfaz.
 
+## Verificado en vivo (Demo C, DEV, ambiente de pruebas del proveedor)
+Con el SQL aplicado se capturó una empleada de prueba desde el formulario real (con sus datos fiscales), se procesó una nómina mensual (2026-11-01 a 2026-11-30) y se dio "Timbrar" desde el historial: **la empleada con datos quedó timbrada** (UUID en el resultado y en el detalle; el XML descargado es tipo N con total igual al neto, 9,557.09) y **el empleado sin datos fiscales se informó como error** con la lista exacta de lo que falta, sin llamar al proveedor. El desglose (ISR bruto 729.02, subsidio 535.65, ISR retenido 193.37, IMSS 249.54) quedó guardado.
+
+**Corrección encontrada en la prueba (OT-0064b):** el historial mostraba el periodo un día corrido (31/10 a 29/11 en vez de 01/11 a 30/11) porque una fecha sin hora se leía como UTC. Ya está corregido y con prueba (zona horaria de México).
+
 ## No verificado
-Timbrar desde el panel con sesión real (falta aplicar el SQL), la descarga del XML desde el navegador y la impresión del recibo con UUID.
+La impresión del recibo con UUID en el diálogo del navegador y la descarga del XML con un clic (se comprobó el contenido del archivo, no el guardado).
