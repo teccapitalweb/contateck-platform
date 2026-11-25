@@ -12,7 +12,9 @@
     "test:ia": "node test-ia.js",
     "test:asistente": "node test-asistente.js",
     "test:canceladas": "node test-facturas-canceladas.js",
-    "test:ci": "node test-fiscal.js && node test-solo-lectura-y-cache.js && node test-aislamiento-logica.js && node test-endurecimiento-logica.js && node test-storage-empresa.js && node test-login-mensajes.js && node test-ia.js && node test-asistente.js && node test-facturas-canceladas.js"
+    "test:interfaz": "node test-interfaz.js",
+    "test:indicadores": "node test-indicadores.js",
+    "test:ci": "node test-fiscal.js && node test-solo-lectura-y-cache.js && node test-aislamiento-logica.js && node test-endurecimiento-logica.js && node test-storage-empresa.js && node test-login-mensajes.js && node test-ia.js && node test-asistente.js && node test-facturas-canceladas.js && node test-interfaz.js && node test-indicadores.js"
   },
   "keywords": [],
   "author": "",

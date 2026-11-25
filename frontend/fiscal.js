@@ -230,18 +230,13 @@
     // El perfil se espera ANTES de pintar: los botones de alta dependen del rol.
     await Promise.all([cargarTodo(), esperarPerfil()]);
     if (mio !== renderSeq) return; // otra carga más nueva ya pintó
-    const noDisp = "No disponible todavía: requiere la e.firma del contribuyente";
     root.innerHTML = `
       <div class="page-head">
         <div><h1>SAT y Fiscal</h1><p>Bitácora de obligaciones, declaraciones y documentos</p></div>
-        <div class="page-head__actions">
-          <button class="btn btn--ghost" disabled aria-disabled="true" title="${noDisp}" style="opacity:.55;cursor:not-allowed">${ICO_DESC}Descargar XML del SAT · no disponible</button>
-          <button class="btn btn--primary" disabled aria-disabled="true" title="${noDisp}" style="opacity:.55;cursor:not-allowed">${ICO_PRES}Presentar declaración · no disponible</button>
-        </div>
       </div>
       <div class="alerts" style="margin-bottom:1.2rem"><div class="alert alert--info"><div class="alert__body">
         <b>Aquí se lleva la bitácora, no se presenta ante el SAT.</b>
-        <p>La descarga masiva de XML y la presentación electrónica requieren e.firma y todavía no están disponibles: presenta en el portal del SAT y registra aquí la fecha y el acuse. Los XML de Contabilidad Electrónica (catálogo y balanza) se generan en Contabilidad → SAT / Declaraciones.</p>
+        <p>Las declaraciones se presentan en el portal del SAT con tu e.firma: presenta allá y registra aquí la fecha y el acuse. Los XML de Contabilidad Electrónica (catálogo y balanza) se generan en Contabilidad → SAT / Declaraciones.</p>
       </div></div></div>
 
       <div class="card" style="margin-bottom:1.2rem">
