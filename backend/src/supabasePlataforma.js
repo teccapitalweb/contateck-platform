@@ -69,6 +69,15 @@ export async function resumenPlataforma() {
   return { ok: true, resumen: { empresas, usuarios, polizas, cfdis, invitacionesPendientes: invitaciones, movimientos7dias: actividad7d } };
 }
 
+// OT-0056: con multiempresa, quien trabaja en otra empresa sigue siendo de esta. Se cuenta por
+// membresía (usuario_empresas); si esa tabla aún no existe se usa perfiles, como antes.
+async function personasPorEmpresa(sb) {
+  const { data, error } = await sb.from('usuario_empresas').select('user_id, empresa_id, activo');
+  if (!error) return (data || []).map((m) => ({ id: m.user_id, empresa_id: m.empresa_id, activo: m.activo }));
+  const { data: perfiles } = await sb.from('perfiles').select('id, empresa_id, activo');
+  return perfiles || [];
+}
+
 export async function listarEmpresas() {
   const sb = obtenerClienteAdmin();
   if (!sb) return sinCliente();
@@ -78,7 +87,7 @@ export async function listarEmpresas() {
     .order('created_at', { ascending: true });
   if (error) return { ok: false, status: 500, error: 'No se pudieron leer las empresas.' };
 
-  const { data: perfiles } = await sb.from('perfiles').select('id, empresa_id, activo');
+  const perfiles = await personasPorEmpresa(sb);
   const accesos = await ultimosAccesos(sb);
 
   const filas = await Promise.all((empresas || []).map(async (e) => {
@@ -107,12 +116,24 @@ export async function listarUsuariosEmpresa(empresaId) {
   const sb = obtenerClienteAdmin();
   if (!sb) return sinCliente();
   if (!UUID.test(String(empresaId || ''))) return { ok: false, status: 400, error: 'Empresa no válida.' };
-  const { data, error } = await sb
-    .from('perfiles')
-    .select('id, nombre, email, activo, created_at, roles(nombre)')
+  // OT-0056: por membresía (incluye a quien hoy trabaja en otra empresa); sin la tabla, por perfiles como antes.
+  let data = null;
+  const { data: ms, error: errMs } = await sb
+    .from('usuario_empresas')
+    .select('user_id, activo, created_at, roles(nombre), perfiles(nombre, email)')
     .eq('empresa_id', empresaId)
     .order('created_at', { ascending: true });
-  if (error) return { ok: false, status: 500, error: 'No se pudieron leer los usuarios.' };
+  if (!errMs) {
+    data = (ms || []).map((m) => ({ id: m.user_id, nombre: m.perfiles?.nombre, email: m.perfiles?.email, activo: m.activo, created_at: m.created_at, roles: m.roles }));
+  } else {
+    const r = await sb
+      .from('perfiles')
+      .select('id, nombre, email, activo, created_at, roles(nombre)')
+      .eq('empresa_id', empresaId)
+      .order('created_at', { ascending: true });
+    if (r.error) return { ok: false, status: 500, error: 'No se pudieron leer los usuarios.' };
+    data = r.data;
+  }
   const accesos = await ultimosAccesos(sb);
   return {
     ok: true,

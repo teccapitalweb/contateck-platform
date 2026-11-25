@@ -108,6 +108,18 @@ await run(`update perfiles set activo=true where id='${A2}'`);
 await run(`update usuario_empresas set activo=true where user_id='${A2}' and empresa_id='${EA}'`);
 try { await db.exec(`set role anon;`); await db.query(`select cambiar_empresa('${EA}')`); ok(false, 'anon NO debe poder ejecutar'); } catch (e) { ok(/permission denied/.test(e.message), 'anon no puede ejecutar cambiar_empresa'); } finally { await db.exec('reset role;'); }
 
+// dado de baja en la empresa ACTIVA: aun asi puede pasar a otra donde tiene acceso (el panel lo hace solo)
+await run(`update perfiles set empresa_id='${EB}', rol_id='${R_CON}' where id='${A1}'`).catch(() => {});
+await run(`update usuario_empresas set activo=true where user_id='${A1}' and empresa_id='${EA}'`);
+await run(`update perfiles set activo=false where id='${A1}'`);
+r = await db.query(`select empresa_id, activo from perfiles where id='${A1}'`);
+const enActual = r.rows[0].empresa_id;
+const otra = enActual === EA ? EB : EA;
+r = await as(A1, `select auth_empresa_id() e`); ok(r.rows[0].e === null, 'dado de baja en su empresa activa: auth_empresa_id() = null (sin acceso)');
+r = await as(A1, `select * from mis_empresas()`); ok(r.rows.length === 2, 'aun asi mis_empresas() le lista sus empresas');
+r = await as(A1, `select cambiar_empresa('${otra}') as r`); ok(r.rows[0].r.cambio === true, 'cambiar_empresa a la otra con acceso funciona estando dado de baja en la activa');
+r = await as(A1, `select auth_empresa_id() e`); ok(r.rows[0].e === otra, 'ya tiene acceso en la otra empresa');
+
 await run(fs.readFileSync(REPO + 'OT-0056-multiempresa-rollback.sql', 'utf8'));
 r = await db.query(`select to_regclass('usuario_empresas') t`); ok(r.rows[0].t === null, 'rollback quita la tabla');
 ok((await err(A1, `update perfiles set empresa_id='${EB}' where id='${A1}'`))?.includes('No se puede cambiar la empresa'), 'tras el rollback la proteccion de OT-0038 sigue');

@@ -152,6 +152,26 @@ if (!configured) {
         // "sin perfil" y "Postgres no configurado", así que no sirve para
         // esta decisión.
         if (onbData.ok && (onbData.tienePerfil === false || onbData.activo === false)) {
+          // OT-0056: si le dieron de baja en la empresa que tenía activa pero pertenece a otra con acceso,
+          // se le cambia a esa en vez de mandarla a una pantalla sin salida. Una sola vez por minuto (sin ciclos).
+          if (onbData.tienePerfil !== false && onbData.activo === false) {
+            try {
+              const previo = Number(sessionStorage.getItem("ct_auto_empresa") || 0);
+              if (Date.now() - previo > 60000) {
+                sessionStorage.setItem("ct_auto_empresa", String(Date.now()));
+                const lista = await fetch(BACKEND + "/api/empresas", { headers: authHeader }).then((r) => r.json());
+                const otra = lista && lista.ok && (lista.empresas || []).find((e) => e.acceso && !e.activa);
+                if (otra) {
+                  const cambio = await fetch(BACKEND + "/api/empresas/cambiar", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, authHeader), body: JSON.stringify({ empresaId: otra.id }) }).then((r) => r.json());
+                  if (cambio && cambio.ok) {
+                    sessionStorage.setItem("ct_aviso_empresa", "Tu acceso a la empresa anterior está dado de baja. Entraste a " + otra.nombre + ".");
+                    window.location.reload();
+                    return;
+                  }
+                }
+              }
+            } catch (e) { /* sin otra empresa o sin conexión: sigue el camino de siempre */ }
+          }
           window.location.replace("onboarding.html");
           return;
         }
@@ -159,6 +179,18 @@ if (!configured) {
         if (perfilData.ok && perfilData.fuente === "postgres" && perfilData.empresa) {
           window.CONTATECK_EMPRESA_PG = perfilData.empresa;
           window.CONTATECK_MULTIEMPRESA = perfilData.multiempresa === true; // OT-0056
+          try { // aviso de una sola vez tras un cambio automático de empresa
+            const aviso = sessionStorage.getItem("ct_aviso_empresa");
+            if (aviso) {
+              sessionStorage.removeItem("ct_aviso_empresa");
+              const b = document.createElement("div");
+              b.setAttribute("role", "status");
+              b.style.cssText = "position:fixed;left:50%;top:1rem;transform:translateX(-50%);z-index:9999;max-width:90vw;padding:.8rem 1.1rem;border-radius:10px;background:#1b2338;color:#fff;border:1px solid #6E8BFF;box-shadow:0 10px 40px rgba(0,0,0,.5);font-size:.9rem";
+              b.textContent = aviso;
+              document.body.appendChild(b);
+              setTimeout(() => b.remove(), 7000);
+            }
+          } catch (e) { /* solo es un aviso */ }
           window.CONTATECK_PERFIL_PG = perfilData.perfil;
           // OT-0042: el rol queda en <html data-rol="…"> para que styles.css oculte, al auditor
           // (rol de solo lectura), los botones que escriben. El servidor y la base los rechazan igual.
