@@ -524,6 +524,9 @@
   // ============================================================
   function fmtFecha(iso) {
     if (!iso) return "—";
+    // Una fecha sin hora (AAAA-MM-DD) NO pasa por Date: en México se leería como el día anterior (zona horaria).
+    const solo = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+    if (solo) return solo[3] + "/" + solo[2] + "/" + solo[1];
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
     return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
