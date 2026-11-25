@@ -20,3 +20,8 @@ La sesión de Ventas y Pagos revisó `database/OT-0051-pagos-exigir-causacion-PR
 
 ## Pendiente de verificar
 Que las copias de las dos funciones coincidan con las reales de DEV el día que se aplique: se leyeron con `pg_get_functiondef` el 25-nov-2026 (versión atómica con `for no key update`), y Ventas y Pagos confirma que coinciden con su `OT-0029-confirmacion-atomica.sql`.
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`, backend reiniciado)
+- `npm run test:ci`: pasan las 6 suites (24 + 14 + 10 + 3 + 13 + 7).
+- Director, Empresa Demo C: las dos alertas siguen igual con la regla nueva ("1 CFDI vigente sin póliza contable" y "6 pagos confirmados sobre facturas sin póliza de causación"); en estos datos no hay pólizas corregidas con UUID, así que no cambian las cifras.
+**No verificado:** el caso de una póliza corregida con datos reales (solo por prueba automática); el SQL propuesto sigue sin ejecutarse ni probarse.
