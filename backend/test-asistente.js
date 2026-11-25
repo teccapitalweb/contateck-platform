@@ -163,7 +163,7 @@ await ok('una pregunta que menciona clientes y proveedores contesta las dos cosa
 
 await ok('aclara qué cubre cada cifra: el IVA de un mes es el movimiento del mes, y sin movimientos sugiere preguntar por el año', async () => {
   const iva = await preguntar('¿Cómo va el IVA este mes?', herramientas());
-  assert.match(iva.respuesta, /Es el movimiento de noviembre de 2026/); assert.match(iva.respuesta, /saldo acumulado/);
+  assert.match(iva.respuesta, /Es el movimiento de noviembre de 2026/); assert.match(iva.respuesta, /saldo del año/);
   const vacio = await preguntar('¿Cuánto gané este mes?', herramientas({ async saldos_de_cuentas() { return { cuentas: [], totales_por_digito: {} }; } }));
   assert.match(vacio.respuesta, /¿cuánto gané este año\?/);
 });
