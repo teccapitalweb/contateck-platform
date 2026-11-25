@@ -47,7 +47,8 @@ create index if not exists idx_usuario_empresas_empresa on public.usuario_empres
 
 alter table public.usuario_empresas enable row level security;
 -- Sin políticas de insert/update/delete: solo funciones SECURITY DEFINER y service role.
-revoke insert, update, delete on public.usuario_empresas from anon, authenticated;
+revoke all on public.usuario_empresas from anon, authenticated;
+grant select on public.usuario_empresas to authenticated;
 
 -- ¿Pertenece p_user a MI empresa activa? (SECURITY DEFINER: se usa dentro de políticas.)
 create or replace function public.auth_es_miembro(p_user uuid)
