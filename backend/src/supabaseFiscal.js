@@ -442,5 +442,6 @@ export async function obtenerCalendario(accessToken, log = console, clienteExist
     })
     .sort((a, b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento));
 
-  return { ok: true, proximas };
+  // OT-0059: cuántas obligaciones hay activas, para distinguir "no hay ninguna configurada" de "no hay nada pendiente".
+  return { ok: true, proximas, configuradas: obligaciones.filter((o) => o.activa !== false).length };
 }

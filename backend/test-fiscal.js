@@ -560,4 +560,22 @@ await ok('alerta de pagos sin causación: cobros y pagos a proveedor sobre factu
   assert.ok(d.includes('!pagosCli.error && !pagosProv.error && !cfdisProv.error'));
 });
 
+// OT-0059: el Dashboard distingue "no hay obligaciones configuradas" de "no hay nada pendiente".
+await ok('calendario: cuenta las obligaciones activas y el Dashboard lo usa para no decir "sin obligaciones configuradas" cuando solo no hay pendientes', async () => {
+  const { obtenerCalendario } = await import('./src/supabaseFiscal.js');
+  const falso = (obl, decl) => ({ from(tabla) { const r = { data: tabla === 'obligaciones_fiscales' ? obl : decl, error: null }; const b = { select() { return b; }, then(res, rej) { return Promise.resolve(r).then(res, rej); } }; return b; } });
+  const obligaciones = [{ id: 'o1', nombre: 'IVA mensual', activa: true }, { id: 'o2', nombre: 'Vieja', activa: false }];
+  // una sola declaración y ya presentada: no hay nada pendiente, pero sí hay 1 obligación activa
+  const r = await obtenerCalendario('t', { warn() {} }, falso(obligaciones, [{ id: 'd1', obligacion_id: 'o1', periodo: 'Julio 2026', fecha_vencimiento: '2026-08-17', estado: 'presentada', notas: '' }]));
+  assert.equal(r.ok, true); assert.deepEqual(r.proximas, []); assert.equal(r.configuradas, 1);
+  const sin = await obtenerCalendario('t', { warn() {} }, falso([], []));
+  assert.equal(sin.configuradas, 0);
+  const pendiente = await obtenerCalendario('t', { warn() {} }, falso(obligaciones, [{ id: 'd2', obligacion_id: 'o1', periodo: 'Octubre 2026', fecha_vencimiento: '2026-11-17', estado: 'pendiente', notas: '' }]));
+  assert.equal(pendiente.proximas.length, 1); assert.equal(pendiente.configuradas, 1);
+  const dash = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'src', 'supabaseDashboard.js'), 'utf8');
+  assert.ok(dash.includes('obligacionesConfiguradas: (calendarioSat && calendarioSat.ok)'));
+  const app = codigo('app.js');
+  assert.ok(app.includes('datos.obligacionesConfiguradas > 0') && app.includes('No tienes obligaciones pendientes por presentar.'));
+});
+
 console.log(`\n✔ ${pruebas} pruebas del módulo SAT y Fiscal pasaron\n`);
