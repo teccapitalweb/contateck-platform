@@ -69,3 +69,9 @@ Hallazgos:
 - La cuenta de auditor existía (invitación aceptada el 13-nov) pero no se conocía su contraseña; se recuperó desde Supabase.
 
 **No verificado:** escrituras (no se hicieron), el parpadeo inicial antes de que se oculten los botones del auditor, y el caché con datos cambiados por otra persona a la vez.
+
+## Decisión sobre nómina y el rol contador (25-nov-2026)
+El usuario decidió **dejarlo como está**: solo rh, admin y director procesan nómina (pantalla `nomina.js` y función `crear_nomina` coinciden); el contador solo consulta el historial. Separa las funciones de contabilidad y de pago de sueldos.
+- No se cambia el SQL ni el código.
+- El botón "Timbrar nómina" (aviso "requiere backend — siguiente fase") **se deja visible** para todos los roles; no se oculta.
+- Si más adelante el contador debe procesar nómina: agregar `contador` a `crear_nomina`, a las políticas INSERT de `nominas` y `nomina_detalle` y a `ROLES_PROCESAN` en `nomina.js`, con pruebas (una OT aparte). Alternativa más simple: darle el rol admin o director.
