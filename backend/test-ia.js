@@ -199,14 +199,15 @@ await ok('saldos_de_cuentas: usa solo pólizas activas, filtra por mes y por pre
   assert.match((await crearHerramientasReales('t', { clienteComoUsuario: () => null }).saldos_de_cuentas({})).error, /Postgres no está configurado/);
 });
 
-await ok('cuentas por cobrar y pagar: solo cuenta saldos mayores a cero y no entrega nombres; obligaciones: solo 4 campos y 10 filas', async () => {
-  const f = supabaseFalso({ cfdis_saldo: { data: [{ saldo_pendiente: 100.5 }, { saldo_pendiente: 0 }, { saldo_pendiente: 50 }], error: null }, cfdis_proveedor_saldo: { data: [{ saldo_pendiente: 27.84 }, { saldo_pendiente: -5 }], error: null } });
+await ok('cuentas por cobrar y pagar: solo cuenta saldos mayores a cero de facturas no canceladas y no entrega nombres; obligaciones: solo 4 campos y 10 filas', async () => {
+  const f = supabaseFalso({ cfdis_saldo: { data: [{ saldo_pendiente: 100.5, estatus: 'vigente' }, { saldo_pendiente: 0, estatus: 'vigente' }, { saldo_pendiente: 50, estatus: 'vigente' }, { saldo_pendiente: 232, estatus: 'cancelado' }], error: null }, cfdis_proveedor_saldo: { data: [{ saldo_pendiente: 27.84, estatus: 'vigente' }, { saldo_pendiente: -5, estatus: 'vigente' }, { saldo_pendiente: 90, estatus: 'cancelado' }], error: null } });
   const h = crearHerramientasReales('t', {
     clienteComoUsuario: () => f.cliente,
     obtenerCalendario: async () => ({ ok: true, proximas: Array.from({ length: 14 }, (_, i) => ({ obligacion: 'IVA ' + i, periodo: 'octubre 2026', fechaVencimiento: '2026-11-17', diasRestantes: -8, secreto: 'x', declaracionId: 'uuid' })) }),
   });
   assert.deepEqual(await h.cuentas_por_cobrar_y_pagar(), { por_cobrar_clientes: { facturas_con_saldo: 2, importe_total: 150.5 }, por_pagar_proveedores: { facturas_con_saldo: 1, importe_total: 27.84 } });
-  assert.ok(f.registro.every((q) => q.select === 'saldo_pendiente'), 'solo se pide el saldo, ningún dato personal');
+  assert.ok(f.registro.every((q) => q.select === 'saldo_pendiente, estatus'), 'solo se pide el saldo y el estatus, ningún dato personal');
+  // una factura cancelada con saldo (232 y 90) no cuenta como deuda: ya no suma en los totales de arriba
   const o = await h.obligaciones_fiscales();
   assert.equal(o.proximas.length, 10); assert.deepEqual(Object.keys(o.proximas[0]), ['obligacion', 'periodo', 'fecha_limite', 'dias_restantes']);
   const malo = crearHerramientasReales('t', { obtenerCalendario: async () => ({ ok: false, error: 'sin permiso' }) });

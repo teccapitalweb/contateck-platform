@@ -147,6 +147,27 @@ await ok('ingresos y egresos, alertas y nómina: no llama utilidad a ingresos me
   assert.match((await preguntar('¿Cuántos empleados tengo?', herramientas())).respuesta, /\*\*1\*\* empleado activo[\s\S]*\$15,000\.00/);
 });
 
+await ok('una pregunta que menciona clientes y proveedores contesta las dos cosas, en ese orden, con una sola intención combinada', async () => {
+  const dos = await preguntar('¿Cuánto me deben mis clientes y cuánto debo a proveedores?', herramientas({
+    async cuentas_por_cobrar_y_pagar() { return { por_cobrar_clientes: { facturas_con_saldo: 1, importe_total: 42.68 }, por_pagar_proveedores: { facturas_con_saldo: 3, importe_total: 27.84 } }; },
+  }));
+  assert.equal(dos.intencion, 'por_cobrar_y_pagar');
+  const i = dos.respuesta.indexOf('te deben'), j = dos.respuesta.indexOf('Debes');
+  assert.ok(i >= 0 && j > i, 'primero lo que te deben y luego lo que debes');
+  assert.match(dos.respuesta, /\$42\.68/); assert.match(dos.respuesta, /\$27\.84\*\* a proveedores en 3 facturas/);
+  const solo = await preguntar('¿Cuánto me deben?', herramientas());
+  assert.equal(solo.intencion, 'por_cobrar'); assert.ok(!/Debes/.test(solo.respuesta));
+  const soloPagar = await preguntar('¿Cuánto debo?', herramientas());
+  assert.equal(soloPagar.intencion, 'por_pagar'); assert.ok(!/te deben/.test(soloPagar.respuesta));
+});
+
+await ok('aclara qué cubre cada cifra: el IVA de un mes es el movimiento del mes, y sin movimientos sugiere preguntar por el año', async () => {
+  const iva = await preguntar('¿Cómo va el IVA este mes?', herramientas());
+  assert.match(iva.respuesta, /Es el movimiento de noviembre de 2026/); assert.match(iva.respuesta, /saldo acumulado/);
+  const vacio = await preguntar('¿Cuánto gané este mes?', herramientas({ async saldos_de_cuentas() { return { cuentas: [], totales_por_digito: {} }; } }));
+  assert.match(vacio.respuesta, /¿cuánto gané este año\?/);
+});
+
 await ok('ayuda y lo que no entiende: da ejemplos y no inventa respuesta', async () => {
   const a = await preguntar('hola', herramientas());
   assert.equal(a.intencion, 'ayuda'); assert.equal(a.respuesta, textoAyuda()); assert.match(a.respuesta, /Balance General/);

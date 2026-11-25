@@ -44,6 +44,12 @@ export const INTENCIONES = [
   { id: 'nomina', claves: ['nomina', 'empleados', 'sueldos', 'salarios', 'trabajadores', 'plantilla'] },
 ];
 
+function puntosDeIntencion(pregunta, id) {
+  const t = normalizar(pregunta);
+  const it = INTENCIONES.find((x) => x.id === id);
+  return it ? it.claves.reduce((a, c) => a + (t.includes(' ' + c + ' ') ? c.split(' ').length : 0), 0) : 0;
+}
+
 /** Devuelve la intención ganadora o null si ninguna palabra clave coincide. */
 export function detectarIntencion(pregunta) {
   const t = normalizar(pregunta);
@@ -179,7 +185,7 @@ const MANEJADORES = {
       `- IVA trasladado (cobrado a tus clientes): ${dinero(r.trasladado)}`,
       `- IVA acreditable (pagado a proveedores): ${dinero(r.acreditable)}`,
       r.resultado > 0 ? `- Resultado: **${dinero(r.resultado)} a cargo** (por pagar al SAT).` : r.resultado < 0 ? `- Resultado: **${dinero(-r.resultado)} a favor**.` : '- Resultado: $0.00.',
-      '', AVISO_VALIDAR,
+      '', 'Es el movimiento de ' + (periodo.etiqueta || 'el periodo') + '. Para el saldo acumulado pregunta, por ejemplo, "¿cómo va el IVA este año?".', AVISO_VALIDAR,
     ];
     return { respuesta: lineas.join('\n'), fuente: 'cuentas de IVA según la Configuración contable' };
   },
@@ -204,7 +210,7 @@ const MANEJADORES = {
     const costos = tot['5'] != null ? tot['5'] : sumaPorPrefijo(r.cuentas, '5');
     const gastos = tot['6'] != null ? tot['6'] : sumaPorPrefijo(r.cuentas, '6');
     const resultado = redondea(ingresos - costos - gastos);
-    if (!ingresos && !costos && !gastos) return { respuesta: `No hay movimientos de ingresos, costos ni gastos en ${periodo.etiqueta}.` };
+    if (!ingresos && !costos && !gastos) return { respuesta: `No hay movimientos de ingresos, costos ni gastos en ${periodo.etiqueta}. Para ver el acumulado pregunta, por ejemplo, "¿cuánto gané este año?".` };
     const lineas = [
       `**Resultado de ${periodo.etiqueta}** (con las cuentas de ingresos, costos y gastos):`,
       `- Ingresos: ${dinero(ingresos)}`, `- Costos: ${dinero(costos)}`, `- Gastos: ${dinero(gastos)}`,
@@ -253,7 +259,15 @@ export async function responderPorReglas({ pregunta }, { herramientas = {}, hoy 
   const intencion = detectarIntencion(p);
   if (!intencion) return { ok: true, ...NO_ENTIENDO(p) };
   try {
-    const r = await MANEJADORES[intencion](p, detectarPeriodo(p, hoy), herramientas);
+    const periodo = detectarPeriodo(p, hoy);
+    const r = await MANEJADORES[intencion](p, periodo, herramientas);
+    // "¿Cuánto me deben mis clientes y cuánto debo a proveedores?" menciona las dos: se contestan las dos.
+    const par = { por_cobrar: 'por_pagar', por_pagar: 'por_cobrar' }[intencion];
+    if (par && puntosDeIntencion(p, par) > 0) {
+      const r2 = await MANEJADORES[par](p, periodo, herramientas);
+      const [primero, segundo] = intencion === 'por_cobrar' ? [r, r2] : [r2, r];
+      return { ok: true, intencion: 'por_cobrar_y_pagar', respuesta: primero.respuesta + '\n' + segundo.respuesta, fuente: 'saldos de facturas emitidas y de proveedores' };
+    }
     return { ok: true, intencion, respuesta: r.respuesta, fuente: r.fuente || null };
   } catch (e) {
     log.warn('[asistente] falló la intención', intencion);
