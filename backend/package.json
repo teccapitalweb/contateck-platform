@@ -8,7 +8,8 @@
     "test": "node test-local.js",
     "test:fiscal": "node test-fiscal.js",
     "test:lectura": "node test-solo-lectura-y-cache.js",
-    "test:login": "node test-login-mensajes.js",
+    "test:login": "node test-login-mensajes.js && node test-ia.js",
+    "test:ia": "node test-ia.js",
     "test:ci": "node test-fiscal.js && node test-solo-lectura-y-cache.js && node test-aislamiento-logica.js && node test-endurecimiento-logica.js && node test-storage-empresa.js && node test-login-mensajes.js"
   },
   "keywords": [],

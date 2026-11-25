@@ -54,6 +54,16 @@ export const config = {
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   },
 
+  // ---- IA Contable (OT-0053) ----
+  // La llave es SECRETA: solo en el backend (.env o variables de Railway), nunca en el frontend ni en el repositorio.
+  // Sin llave la IA queda desactivada y el resto del sistema funciona igual.
+  ia: {
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+    model: process.env.IA_MODEL || 'claude-haiku-5-5',
+    maxTokens: parseInt(process.env.IA_MAX_TOKENS || '1024', 10),
+    maxPorHora: parseInt(process.env.IA_MAX_POR_HORA || '20', 10), // consultas por usuario y por hora
+  },
+
   // ---- Seguridad ----
   // Si es true, TODA petición a /api/* exige un idToken de Firebase válido.
   // Déjalo en false para la primera prueba de timbrado; ponlo en true para producción.

@@ -20,6 +20,7 @@ import { configContableRouter } from './src/routes/configContable.js';
 import { invoicesRouter } from './src/routes/invoices.js';
 import { demoRouter } from './src/routes/demo.js';
 import { dashboardRouter } from './src/routes/dashboard.js';
+import { iaRouter } from './src/routes/ia.js';
 import { ventasRouter } from './src/routes/ventas.js';
 import { empleadosRouter } from './src/routes/empleados.js';
 import { fiscalRouter } from './src/routes/fiscal.js';
@@ -51,6 +52,7 @@ app.get('/', (_req, res) => {
 app.get('/health', (_req, res) => res.json({ ok: true }));
 // ---- API ----
 app.use('/api', invoicesRouter);
+app.use('/api', iaRouter);
 app.use('/api', perfilRouter);
 app.use('/api', catalogoRouter);
 app.use('/api', operacionRouter);

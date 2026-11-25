@@ -77,6 +77,9 @@ window.CTPostgres = (function () {
     obtenerPartidasPoliza: function (polizaId) { return llamar("GET", "/api/polizas-completas/" + polizaId + "/partidas"); },
     guardarConfigContable: function (body) { return llamar("PUT", "/api/config-contable", body); },
     leerConfigContable: function () { return llamar("GET", "/api/config-contable"); },
+    // OT-0053: IA Contable (solo lectura). estado = si está configurada y si el rol puede usarla.
+    estadoIA: function () { return llamar("GET", "/api/ia/estado"); },
+    consultarIA: function (pregunta, historial) { return llamar("POST", "/api/ia/consultar", { pregunta: pregunta, historial: historial }); },
     registrarPagoCliente: function (body) { return llamar("POST", "/api/pagos-cliente", body); },
     listarPagosCfdi: function (cfdiId) { return llamar("GET", "/api/pagos-cliente?cfdiId=" + encodeURIComponent(cfdiId)); },
     confirmarPagoCliente: function (pagoId) { return llamar("POST", "/api/pagos-cliente/" + pagoId + "/confirmar"); },

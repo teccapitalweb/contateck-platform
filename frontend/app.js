@@ -613,24 +613,81 @@
 
     /* ---------- Módulo 02 · SAT y Fiscal: ver fiscal.js ---------- */
 
-    /* ---------- Módulo 15 · IA Contable ---------- */
-    // OT-0035: la IA Contable queda MARCADA como "en desarrollo". Antes era una demo: mostraba
-    // una conversación de ejemplo con cifras inventadas ($205,140 de IVA trasladado, "14 CFDI
-    // por validar") junto a los datos reales de la empresa y contestaba siempre el mismo
-    // texto fijo, lo que daba la impresión de ser una IA funcionando. Ahora no finge nada:
-    // no hay conversación de ejemplo, ni sugerencias, ni envío. Cuando exista la IA real
-    // (decisión pendiente: llave de API, costo, alcance y privacidad), se reconecta aquí.
+    /* ---------- Módulo 15 · IA Contable (OT-0053) ---------- */
+    // Chat real de SOLO LECTURA: el backend consulta los datos de la empresa con el permiso del propio usuario y se los
+    // da a la IA como herramientas. Se inicia al abrir la vista (no al cargar el panel, para no sumar peticiones).
+    // El texto del usuario se pinta con textContent y el de la IA se escapa antes de dar formato: nada de HTML ajeno.
     const chatLog = document.querySelector("[data-ia-chat]");
     if (chatLog) {
-      chatLog.innerHTML = '<div class="msg msg--ai"><span class="msg__av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4l1.4 4L17 9.5l-3.6 1.5L12 15l-1.4-4L7 9.5 10.6 8z"/></svg></span>' +
-        '<div class="msg__bubble"><b>La IA Contable está en desarrollo.</b><br>Todavía no responde preguntas ni consulta tus datos. ' +
-        'Mientras tanto, tu información la ves en el Dashboard, en Contabilidad y en SAT y Fiscal.</div></div>';
       const chipHost = document.querySelector("[data-ia-acciones]");
-      if (chipHost) chipHost.style.display = "none";
       const input = document.querySelector("[data-ia-input]");
-      if (input) { input.disabled = true; input.placeholder = "Disponible próximamente"; }
       const enviar = document.querySelector("[data-ia-send]");
-      if (enviar) { enviar.disabled = true; enviar.style.opacity = ".4"; enviar.style.cursor = "not-allowed"; }
+      const navIA = document.querySelector('.nav-item[data-view="ia"]');
+      const historial = [];
+      const SUGERENCIAS = ["¿Cómo va el Balance General?", "¿Cuánto hay en bancos?", "¿Qué obligaciones fiscales vencen pronto?", "¿Cuánto me deben mis clientes y cuánto debo a proveedores?"];
+      const AV = '<span class="msg__av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4l1.4 4L17 9.5l-3.6 1.5L12 15l-1.4-4L7 9.5 10.6 8z"/></svg></span>';
+      let iniciada = false, ocupada = false;
+
+      const escIA = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); };
+      // Formato mínimo y seguro: negritas con ** y saltos de línea; todo lo demás queda como texto.
+      const formatea = function (t) { return escIA(t).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>"); };
+      const burbuja = function (rol, html, esTexto) {
+        const m = document.createElement("div");
+        m.className = "msg " + (rol === "me" ? "msg--me" : "msg--ai");
+        m.innerHTML = (rol === "me" ? '<span class="msg__av">Tú</span>' : AV) + '<div class="msg__bubble"></div>';
+        const b = m.querySelector(".msg__bubble");
+        if (esTexto) b.textContent = html; else b.innerHTML = html;
+        chatLog.appendChild(m); chatLog.scrollTop = chatLog.scrollHeight;
+        return b;
+      };
+      const bloquear = function (mensaje) {
+        chatLog.innerHTML = ""; burbuja("ai", "<b>IA Contable</b><br>" + escIA(mensaje));
+        if (chipHost) chipHost.style.display = "none";
+        if (input) { input.disabled = true; input.placeholder = "No disponible"; }
+        if (enviar) { enviar.disabled = true; enviar.style.opacity = ".4"; enviar.style.cursor = "not-allowed"; }
+      };
+      const preguntar = async function (texto) {
+        const pregunta = String(texto || "").trim();
+        if (!pregunta || ocupada) return;
+        ocupada = true; if (input) input.value = ""; if (enviar) enviar.disabled = true;
+        burbuja("me", pregunta, true);
+        const espera = burbuja("ai", "<i>Consultando tus datos…</i>");
+        let r;
+        try { r = await window.CTPostgres.consultarIA(pregunta, historial.slice(-12)); } catch (e) { r = { ok: false, error: "No se pudo conectar con el servidor." }; }
+        if (r && r.ok) {
+          espera.innerHTML = formatea(r.respuesta);
+          historial.push({ rol: "usuario", texto: pregunta }, { rol: "ia", texto: r.respuesta });
+        } else {
+          espera.textContent = (r && r.error) || "No se pudo obtener una respuesta.";
+        }
+        chatLog.scrollTop = chatLog.scrollHeight;
+        ocupada = false; if (enviar) enviar.disabled = false; if (input) input.focus();
+      };
+      const iniciar = async function () {
+        if (iniciada) return; iniciada = true;
+        for (let i = 0; i < 40 && !window.CONTATECK_SUPABASE_TOKEN; i++) await new Promise(function (r) { setTimeout(r, 150); });
+        const e = await window.CTPostgres.estadoIA();
+        if (!e || !e.ok) { iniciada = false; bloquear("No se pudo comprobar el estado de la IA. Recarga la página e inténtalo de nuevo."); return; }
+        if (!e.rolPermitido) { bloquear("Tu rol no tiene acceso a la IA Contable."); return; }
+        if (!e.disponible) { bloquear("La IA Contable todavía no está activada en el servidor (falta configurar la llave del proveedor). El resto del sistema funciona con normalidad."); return; }
+        chatLog.innerHTML = "";
+        burbuja("ai", "<b>Hola, soy tu asistente contable.</b><br>Consulto los datos de tu empresa (solo lectura): saldos, Balance General, obligaciones fiscales y cuentas por cobrar y pagar. No puedo modificar nada. Verifica las cifras importantes antes de decidir.");
+        if (chipHost) {
+          chipHost.innerHTML = "";
+          SUGERENCIAS.forEach(function (s) {
+            const c = document.createElement("button"); c.type = "button"; c.className = "chip"; c.textContent = s;
+            c.addEventListener("click", function () { preguntar(s); }); chipHost.appendChild(c);
+          });
+          chipHost.style.display = "";
+        }
+        if (input) { input.disabled = false; input.placeholder = "Pregúntale algo a tu asistente contable…"; }
+        if (enviar) { enviar.disabled = false; enviar.style.opacity = ""; enviar.style.cursor = ""; }
+      };
+      // Estado inicial seguro: desactivada hasta comprobar que está disponible.
+      bloquear("Cargando…");
+      if (enviar) enviar.addEventListener("click", function () { preguntar(input && input.value); });
+      if (input) input.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); preguntar(input.value); } });
+      if (navIA) navIA.addEventListener("click", iniciar);
     }
   }
 
