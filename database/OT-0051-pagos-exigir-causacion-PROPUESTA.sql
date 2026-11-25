@@ -13,8 +13,14 @@
 --      Apagada = todo funciona exactamente igual que hoy (nadie se queda sin poder cobrar).
 --   2. Con la opción ENCENDIDA, confirmar_pago_cliente y confirmar_pago_proveedor rechazan el pago si la factura no tiene
 --      una póliza de causación activa:
---        · Cobro: póliza con estado 'ok' cuyo cfdi_uuid sea el uuid_sat de la factura emitida.
---        · Pago a proveedor: cfdis_proveedor.poliza_causacion_id apunta a una póliza con estado 'ok'.
+--        · Cobro: póliza con estado 'ok', 'corregida' o 'correccion' cuyo cfdi_uuid sea el uuid_sat de la factura emitida
+--          (sin distinguir mayúsculas). Si la factura no tiene uuid_sat no se bloquea.
+--        · Pago a proveedor: cfdis_proveedor.poliza_causacion_id apunta a una póliza con uno de esos estados.
+--      Una póliza 'anulada' NO cuenta: el CFDI queda "sin contabilizar" y crear_poliza_completa no deja volver a
+--      registrarlo (CFDI_DUPLICADO ignora el estado), así que ese caso queda bloqueado sin salida: decidirlo con la contadora.
+--      Dos revisiones hechas por la sesión de Ventas y Pagos (25-nov-2026): las copias de las funciones parten de la versión
+--      ATÓMICA (bloqueo for no key update), que es la que ya está en DEV; y las pólizas que genera Ventas no llevan cfdi_uuid,
+--      por eso el mensaje de error del cobro avisa de no duplicar un ingreso ya registrado por ese camino.
 --
 --  POR QUÉ OPCIONAL: bloquear o no es una decisión contable (base devengado o base flujo de efectivo; empresas que
 --  contabilizan al cobrar). Mientras no la tome la contadora de cada empresa, el sistema solo avisa (alerta del Dashboard).
@@ -24,8 +30,11 @@
 --  por si cambiaron (son del módulo de Ventas y Pagos).
 --  Para encender la opción en una empresa (después de aplicar):
 --    update configuracion_contable set exigir_causacion_pagos = true where empresa_id = '<id de la empresa>';
---  Para deshacer todo: poner la opción en false (o volver a crear las funciones sin el bloque) y, si se quiere,
---    alter table configuracion_contable drop column exigir_causacion_pagos;
+--  Para deshacer, EN ESTE ORDEN: 1) poner la opción en false; 2) volver a crear las dos funciones sin el bloque OT-0051;
+--  3) solo entonces, si se quiere: alter table configuracion_contable drop column exigir_causacion_pagos;
+--  (si se borra la columna ANTES de recrear las funciones, TODA confirmación de pagos falla: la columna ya no existe).
+--  Al probar con la opción encendida, usa facturas que sí tengan causación: test-confirmacion-concurrente.js elige una
+--  factura cualquiera con saldo y, sin causación, las dos confirmaciones fallarían por este motivo y no probarían la carrera.
 -- ============================================================
 
 alter table public.configuracion_contable
@@ -83,13 +92,20 @@ begin
   -- OT-0051: si la empresa lo exige, la factura debe tener su póliza de causación activa.
   select coalesce(exigir_causacion_pagos, false) into v_exigir
     from configuracion_contable where empresa_id = v_empresa_id;
+  -- (revisión de Ventas y Pagos, 25-nov-2026): se compara sin distinguir mayúsculas; cuentan las pólizas 'ok', 'corregida'
+  -- y 'correccion' (corregir una póliza deja la original como 'corregida' y la reversa y la nueva no copian el UUID);
+  -- una factura sin uuid_sat no se bloquea porque no hay con qué comprobarla.
   if coalesce(v_exigir, false) and not exists (
        select 1
          from cfdis c
-         join polizas pz on pz.empresa_id = c.empresa_id and pz.cfdi_uuid = c.uuid_sat and pz.estado = 'ok'
         where c.id = v_pago.cfdi_id and c.empresa_id = v_empresa_id
+          and (c.uuid_sat is null
+               or exists (select 1 from polizas pz
+                           where pz.empresa_id = c.empresa_id
+                             and lower(pz.cfdi_uuid) = lower(c.uuid_sat)
+                             and pz.estado in ('ok', 'corregida', 'correccion')))
      ) then
-    raise exception 'La factura todavía no está contabilizada (no tiene póliza de causación). Contabilízala primero y luego confirma el cobro.';
+    raise exception 'La factura todavía no está contabilizada (no tiene póliza de causación). Contabilízala antes de confirmar el cobro; si el ingreso ya se registró desde Ventas, no lo registres otra vez: avisa a tu contador para no duplicarlo.';
   end if;
 
   -- 3) Saldo ACTUAL, ya con el bloqueo (incluye lo que otra persona
@@ -188,7 +204,7 @@ begin
   if coalesce(v_exigir, false) and not exists (
        select 1
          from cfdis_proveedor cp
-         join polizas pz on pz.id = cp.poliza_causacion_id and pz.estado = 'ok'
+         join polizas pz on pz.id = cp.poliza_causacion_id and pz.estado in ('ok', 'corregida', 'correccion')
         where cp.id = v_pago.cfdi_proveedor_id and cp.empresa_id = v_empresa_id
      ) then
     raise exception 'La factura del proveedor todavía no está contabilizada (no tiene póliza de causación). Contabilízala primero y luego confirma el pago.';
