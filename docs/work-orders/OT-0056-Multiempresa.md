@@ -75,3 +75,7 @@ Cinco consultas SELECT, sin escribir nada. Resultado:
 - Hay 4 empresas y 9 perfiles, ninguno inactivo, y `usuario_empresas` no existe todavía: el respaldo inicial crearía 9 membresías.
 
 Conclusión: el SQL se puede aplicar tal cual. Sigue sin aplicarse: falta la revisión de Jorge.
+
+## 8. Aplicado en DEV (2026-11-25)
+
+`OT-0056-multiempresa.sql` se corrió en el SQL Editor de DEV (Success). Verificado con consultas de solo lectura: 9 membresías para 9 perfiles (ninguno sin membresía); triggers `perfiles_proteger_campos` (ya con la excepción) y `perfiles_sincronizar_membresia`; políticas `perfiles_select_empresa`, `perfiles_select_membresia`, `perfiles_update_gestion_equipo`, `perfiles_update_propio`; las 4 funciones nuevas; RLS activo en `usuario_empresas`; `authenticated` solo puede leerla (sin insert/update/delete), `anon` no la ve ni ejecuta `cambiar_empresa`. Falta la prueba con una cuenta de dos empresas en el panel real.
