@@ -204,12 +204,13 @@ export function crearHerramientasReales(token, deps = {}) {
       const supabase = clienteDe(token);
       if (!supabase) return { error: 'Postgres no está configurado en el backend.' };
       const [cobrar, pagar] = await Promise.all([
-        supabase.from('cfdis_saldo').select('saldo_pendiente'),
-        supabase.from('cfdis_proveedor_saldo').select('saldo_pendiente'),
+        supabase.from('cfdis_saldo').select('saldo_pendiente, estatus'),
+        supabase.from('cfdis_proveedor_saldo').select('saldo_pendiente, estatus'),
       ]);
       if (cobrar.error || pagar.error) return { error: 'No se pudieron leer los saldos pendientes.' };
       const suma = (filas) => {
-        const con = (filas || []).filter((f) => Number(f.saldo_pendiente) > 0);
+        // Las vistas de saldos incluyen las facturas CANCELADAS (con su saldo): no son una deuda real y no se cuentan.
+        const con = (filas || []).filter((f) => f.estatus !== 'cancelado' && Number(f.saldo_pendiente) > 0);
         return { facturas_con_saldo: con.length, importe_total: redondea(con.reduce((a, f) => a + Number(f.saldo_pendiente), 0)) };
       };
       return { por_cobrar_clientes: suma(cobrar.data), por_pagar_proveedores: suma(pagar.data) };
