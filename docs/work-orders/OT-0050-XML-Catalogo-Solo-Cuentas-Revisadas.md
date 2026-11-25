@@ -33,3 +33,12 @@ Antes (OT-0031) la comparación con el XSD fue manual. Esta vez se validó con u
 - **Controles negativos** (para comprobar que el validador de verdad rechaza): `CodAgrup="10003"` (el defecto que había antes), `CodAgrup="999.99"`, falta `Natur`, RFC mal formado y mes 13 → los cinco **INVÁLIDOS**, cada uno con el error esperado.
 
 **Límites:** no se descargó `CatalogosParaEsqContE.xsd` original, por eso se usó el enumerado del repo (derivado de él); no es la validación del sistema real del SAT, que además revisa el acuse, el sello y reglas que el XSD no expresa. La Balanza no se validó en esta ronda.
+
+## Validación de la Balanza contra el XSD oficial (25-nov-2026)
+Mismo método que el catálogo: `BalanzaComprobacion_1_3.xsd` leído de www.sat.gob.mx (copiado sin los textos de documentación; este esquema no importa otros) y `xmllint-wasm` en una carpeta temporal.
+- **XML probado:** la Balanza real de Empresa Demo C, noviembre de 2026, capturada de la pantalla en memoria (`Balanza_DEMO030303C03_202611.xml`; no se guardó ningún archivo): 19 cuentas, `TipoEnvio="N"`.
+- **Resultado: VÁLIDO.**
+- **Controles negativos, los 6 INVÁLIDOS con el error esperado:** importe con 3 decimales, falta `SaldoFin`, `TipoEnvio="X"`, mes 14, importe con coma de miles (`1,448.00`) y `Version="1.2"`.
+- **Cuadre** (lo que el XSD no revisa): Debe total = Haber total = 2,232.16.
+
+**Límites:** igual que el catálogo (no es el sistema real del SAT; no revisa sello, acuse ni reglas fuera del XSD). Además, que el XML sea válido **no** significa que los saldos sean correctos: en Demo C hay saldos con signo inverso (caja `101` −1,000.00, clientes `105` −448.00, proveedores `201` −552.16) que vienen de pagos registrados sin póliza de causación (hallazgo 1 de `Reporte-Prueba-Completa-Modulos-2026-11-13.md`). La Balanza del SAT admite saldos de naturaleza inversa, pero conviene que la contadora los revise antes de enviar una empresa real.
