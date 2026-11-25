@@ -16,3 +16,8 @@ Uno no lo era: en la tarjeta **Próximas obligaciones SAT** decía "Sin obligaci
 
 ## Pendiente
 Las tarjetas "Indicadores fiscales" siguen en "Próximamente" aunque ya existe una cifra de referencia de IVA (se puede mostrar si se decide; el ISR sigue pendiente de definición fiscal).
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`, backend reiniciado, director de Demo C)
+- Tarjeta "Próximas obligaciones SAT": ahora dice **"No tienes obligaciones pendientes por presentar."** y, al verla, se vio que el rótulo "Próximamente" no cuadraba con ese mensaje; se añadió `sinPendientes()` (OT-0059b, `app.js?v=17`) para que ese caso no lleve el rótulo. "Próximamente" se conserva solo cuando de verdad no hay obligaciones configuradas.
+- La tarjeta "Indicadores fiscales" sigue en "Próximamente" a propósito (alcance futuro que se va a mostrar en el informe).
+- `npm run test:ci`: 9 suites, **123 pruebas**.
