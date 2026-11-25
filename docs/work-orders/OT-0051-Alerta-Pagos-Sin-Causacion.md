@@ -24,3 +24,10 @@ Para **impedir** el problema y no solo avisarlo: una opción por empresa, **apag
 ## Límites
 - La alerta avisa del síntoma, no corrige los saldos ya registrados: para Demo C hay que contabilizar las facturas o anular los pagos, decisión de quien lleve su contabilidad.
 - Un pago a proveedor cuya póliza de causación quedó **anulada** no se detecta (solo se mira que exista el vínculo).
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`, backend reiniciado)
+- `npm run test:ci`: pasan las 6 suites (24 + 14 + 10 + 3 + 13 + 7).
+- Director, Empresa Demo C: `/api/dashboard` responde `ok` con la alerta nueva: **"6 pagos confirmados sobre facturas sin póliza de causación"** (1 cobro y 5 pagos a proveedor), amarilla, hacia Contabilidad, y se ve en pantalla. Convive con "1 CFDI vigente sin póliza contable".
+- Por qué 6 y no 7: de los 2 cobros de Demo C, uno es sobre el CFDI **cancelado** `CT` y la alerta no lo cuenta a propósito (comprobado en la base: 1 cobro sobre cancelado, 1 sobre vigente, los dos sin causación). Un cobro confirmado sobre una factura cancelada es otro problema (hallazgo 2 del reporte: cobro contra CFDI cancelado), que esta alerta no cubre.
+
+**No verificado:** la alerta con los roles contador y auditor; el SQL propuesto (no se ejecutó ni se probó: es una propuesta para revisar con quien lleve la contabilidad y con la sesión de Ventas y Pagos).
