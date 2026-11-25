@@ -7,8 +7,9 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 
 ## 0. Antes de empezar (5 minutos)
 1. Arranca el backend (`npm start` en `backend/`) y sirve el `frontend/` (por ejemplo con Live Server). Comprueba que el proyecto de Supabase no esté pausado.
-2. Ten a mano las cuentas de **director**, **contador**, **auditor** y, si ya las creaste, **rh** y **vendedor** (ver `Pasos-para-crear-las-cuentas-rh-y-vendedor` al final de este documento).
-3. Abre en otra pestaña `docs/informe/diagramas/` por si quieres enseñar la arquitectura.
+2. **Procesa una nómina en Empresa Demo C** (Nómina → Calcular → aprobar) para que el historial tenga una y se vean los **Recibos** (hoy el historial está vacío). Es un dato de prueba.
+3. Ten a mano las cuentas de **director**, **contador**, **auditor** y, si ya las creaste, **rh** y **vendedor** (ver `Pasos-para-crear-las-cuentas-rh-y-vendedor` al final de este documento).
+4. Abre en otra pestaña `docs/informe/diagramas/` por si quieres enseñar la arquitectura.
 
 ## 1. Guion de la demostración
 

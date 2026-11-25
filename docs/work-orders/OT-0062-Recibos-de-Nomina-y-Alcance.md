@@ -21,3 +21,8 @@ Para una versión futura, el camino técnico está identificado: ampliar la capt
 
 ## No verificado
 La impresión real (diálogo del navegador y su vista previa): se probó el HTML generado, no la salida de la impresora.
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`, backend reiniciado, director de Demo C)
+- `npm run test:ci`: **11 suites, 137 pruebas**, todas pasan.
+- En pantalla: el encabezado de Nómina dice "Cálculo, historial y recibos" y los botones son **Simulador fiscal** y **Calcular**; ya no hay "Timbrar nómina".
+- **No verificado en pantalla:** el botón **Recibos** y la impresión, porque Empresa Demo C **todavía no tiene ninguna nómina pagada** (el historial está vacío). Para verlo hay que procesar una nómina en Demo C (Nómina → Calcular → aprobar), que sirve también para las capturas 22 a 24 del informe. El generador de recibos sí se probó con su código real.
