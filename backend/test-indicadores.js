@@ -86,6 +86,7 @@ await ok('frontend: la tarjeta pide los indicadores aparte, escapa los textos y 
   const h = ctx.pintar({ ok: true, iva: { periodo: 'noviembre de 2026', trasladado: 160, acreditable: 100, resultado: 60 }, isr: { disponible: true, anio: 2026, base: 2500, estimado: 750 }, nota: 'Cifras de referencia' });
   assert.match(h, /IVA trasladado \(noviembre de 2026\)<\/span><b>\$160\.00/); assert.match(h, /IVA a cargo<\/span><b>\$60\.00/); assert.match(h, /ISR estimado 2026<\/span><b>\$750\.00/); assert.match(h, /Es un estimado/);
   assert.match(ctx.pintar({ ok: true, iva: { periodo: 'x', trasladado: 0, acreditable: 50, resultado: -50 }, isr: { disponible: false, motivo: '<script>alert(1)</script>' } }), /IVA a favor<\/span><b>\$50\.00[\s\S]*&lt;script&gt;/);
+  assert.match(ctx.pintar({ ok: true, iva: { periodo: 'x', trasladado: 5, acreditable: 5, resultado: 0 }, isr: { disponible: false, motivo: 'm' } }), /Diferencia del mes<\/span><b>\$0/);   // sin diferencia: no dice "a favor"
   assert.match(ctx.pintar({ ok: true, restringido: true }), /roles de contabilidad/);
   assert.match(ctx.pintar({ ok: false }), /No se pudieron calcular/);
   assert.match(ctx.pintar({ ok: true, iva: { error: 'x', detalle: 'Faltan las cuentas de IVA' }, isr: { disponible: false, motivo: 'm' } }), /Faltan las cuentas de IVA/);
