@@ -110,6 +110,13 @@ const SCHEMAS = {
       { k: "curp", label: "CURP", type: "text", ph: "Opcional", mask: "alfa", max: 18 },
       { k: "nss", label: "NSS (IMSS)", type: "text", ph: "Opcional", mask: "num", max: 11 },
       { k: "cuenta_bancaria", label: "Cuenta bancaria / CLABE", type: "text", ph: "Opcional", mask: "num", max: 18 },
+      // OT-0064: datos fiscales para timbrar el CFDI de nómina (opcionales; sin ellos el empleado se paga igual,
+      // pero su nómina no se puede timbrar). Solo se guardan cuando se capturan.
+      { k: "cp_fiscal", label: "Código postal fiscal", type: "text", ph: "Para timbrar nómina", mask: "num", max: 5 },
+      { k: "clave_entidad", label: "Entidad federativa (clave SAT)", type: "text", ph: "Ej. CMX, JAL, NLE", mask: "alfa", max: 3 },
+      { k: "tipo_contrato", label: "Tipo de contrato", type: "seg", opts: [{ v: "01", t: "Indeterminado" }, { v: "02", t: "Obra determinada" }, { v: "03", t: "Tiempo determinado" }] },
+      { k: "tipo_jornada", label: "Jornada", type: "seg", opts: [{ v: "01", t: "Diurna" }, { v: "02", t: "Nocturna" }, { v: "03", t: "Mixta" }] },
+      { k: "riesgo_puesto", label: "Riesgo del puesto", type: "seg", opts: [{ v: "1", t: "Clase I" }, { v: "2", t: "II" }, { v: "3", t: "III" }, { v: "4", t: "IV" }, { v: "5", t: "V" }] },
       // OT-nomina-p1: estados de ausencia temporal (incapacidad, maternidad,
       // permiso) — se guardan en minúsculas (consistente con "ok"/"baja" ya
       // existentes en la BD); la etiqueta visible es la bonita. La prenómina
@@ -132,7 +139,13 @@ const SCHEMAS = {
       // redondeo a 2 decimales se hace solo al final, en la prenómina.
       const DIVISORES = { mensual: 30, quincenal: 15, semanal: 7, diario: 1 };
       const diario = Math.round((monto / (DIVISORES[tipo] || 30)) * 1e6) / 1e6;
-      return {
+      // OT-0064: los datos fiscales de nómina solo viajan si se capturaron (así, sin el SQL aplicado en la base,
+      // guardar un empleado funciona igual que antes).
+      const fiscales = {};
+      const cp = soloNumeros(v.cp_fiscal); if (cp) fiscales.cp_fiscal = cp;
+      const ent = soloAlfanumerico(v.clave_entidad); if (ent) fiscales.clave_entidad = ent.toUpperCase();
+      ["tipo_contrato", "tipo_jornada", "riesgo_puesto"].forEach(function (k) { if (v[k]) fiscales[k] = String(v[k]); });
+      return Object.assign({
         nombre: v.nombre.trim(), puesto: v.puesto.trim(),
         sueldo: diario, sueldo_tipo: tipo, sueldo_monto_original: monto,
         departamento: (v.departamento || "").trim() || null,
@@ -140,7 +153,7 @@ const SCHEMAS = {
         rfc: soloAlfanumerico(v.rfc) || null, curp: soloAlfanumerico(v.curp) || null,
         nss: soloNumeros(v.nss) || null, cuenta_bancaria: soloNumeros(v.cuenta_bancaria) || null,
         estado: v.estado || "ok",
-      };
+      }, fiscales);
     },
     meta: () => ({ estado: "ok", createdAt: Date.now() }),
     fill: (o) => ({
@@ -149,6 +162,7 @@ const SCHEMAS = {
       sueldo_monto_original: o.sueldo_monto_original || o.sueldo,
       departamento: o.departamento,
       fecha_ingreso: o.fecha_ingreso, rfc: o.rfc, curp: o.curp, nss: o.nss, cuenta_bancaria: o.cuenta_bancaria,
+      cp_fiscal: o.cp_fiscal, clave_entidad: o.clave_entidad, tipo_contrato: o.tipo_contrato, tipo_jornada: o.tipo_jornada, riesgo_puesto: o.riesgo_puesto,
       estado: o.estado,
     }),
   },

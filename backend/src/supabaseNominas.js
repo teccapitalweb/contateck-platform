@@ -6,8 +6,9 @@
 //  como el propio usuario (RLS real vía las verificaciones dentro
 //  de la función RPC).
 //
-//  Control interno — NO timbra CFDI de nómina. El ISR/IMSS lo calcula el
-//  frontend (Motor Fiscal) y llega ya sumado en `deducciones` del detalle.
+//  El ISR/IMSS lo calcula el frontend (Motor Fiscal); llega sumado en `deducciones` y, desde OT-0064,
+//  también desglosado (ISR bruto/retenido, subsidio, IMSS, otras) para poder timbrar el CFDI de nómina
+//  (ambiente de pruebas del PAC; ver nominaCfdi.js y timbradoNomina.js).
 // ============================================================
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
@@ -137,14 +138,74 @@ export async function detalleNomina(accessToken, nominaId, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
 
-  const { data, error } = await supabase
-    .from('nomina_detalle')
-    .select('nombre, puesto, salario_diario, sueldo_base, otras_percepciones, deducciones, neto, notas')
-    .eq('nomina_id', nominaId)
-    .order('nombre', { ascending: true });
+  const BASE = 'nombre, puesto, salario_diario, sueldo_base, otras_percepciones, deducciones, neto, notas';
+  // OT-0064: con el SQL aplicado también viene el UUID del timbre; sin él se usan las columnas de siempre.
+  let { data, error } = await supabase
+    .from('nomina_detalle').select('id, ' + BASE + ', cfdi_uuid, cfdi_fiscalapi_id').eq('nomina_id', nominaId).order('nombre', { ascending: true });
+  if (error && columnaFaltante(error)) {
+    ({ data, error } = await supabase.from('nomina_detalle').select(BASE).eq('nomina_id', nominaId).order('nombre', { ascending: true }));
+  }
   if (error) {
     log.warn('[postgres] detalleNomina:', error.message);
     return { ok: false, error: error.message };
   }
   return { ok: true, detalle: data || [] };
+}
+
+// OT-0064: la base puede no tener todavía las columnas/funciones del SQL de timbrado de nómina.
+export function columnaFaltante(error) {
+  const m = String((error && (error.message || '')) + ' ' + String((error && error.code) || ''));
+  return /42703|42883|PGRST202|PGRST204|does not exist|schema cache|Could not find/i.test(m);
+}
+const MENSAJE_SIN_SQL = 'Falta aplicar en la base el SQL de timbrado de nómina (database/OT-0064-timbrado-nomina-PROPUESTA.sql).';
+
+// Lee lo necesario para timbrar: la nómina, su detalle completo y los datos fiscales de los empleados.
+// Todo con el token del usuario (RLS limita a su empresa).
+export async function leerParaTimbrar(accessToken, nominaId, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { data: nomina, error: e1 } = await supabase
+    .from('nominas').select('id, periodicidad, fecha_inicio, fecha_fin, dias, estado').eq('id', nominaId).maybeSingle();
+  if (e1) { log.warn('[postgres] leerParaTimbrar nomina:', e1.message); return { ok: false, error: 'No se pudo leer la nómina.' }; }
+  if (!nomina) return { ok: true, nomina: null, detalle: [], empleados: [] };
+  const { data: detalle, error: e2 } = await supabase
+    .from('nomina_detalle')
+    .select('id, empleado_id, nombre, puesto, sueldo_base, otras_percepciones, deducciones, neto, sdi, isr_bruto, isr_retenido, subsidio, imss, otras_deducciones, cfdi_uuid')
+    .eq('nomina_id', nominaId).order('nombre', { ascending: true });
+  if (e2) {
+    log.warn('[postgres] leerParaTimbrar detalle:', e2.message);
+    return { ok: false, error: columnaFaltante(e2) ? MENSAJE_SIN_SQL : 'No se pudo leer el detalle de la nómina.' };
+  }
+  const ids = [...new Set((detalle || []).map((d) => d.empleado_id).filter(Boolean))];
+  let empleados = [];
+  if (ids.length) {
+    const { data: emps, error: e3 } = await supabase
+      .from('empleados')
+      .select('id, nombre, puesto, departamento, fecha_ingreso, rfc, curp, nss, cuenta_bancaria, cp_fiscal, tipo_contrato, tipo_jornada, riesgo_puesto, clave_entidad')
+      .in('id', ids);
+    if (e3) {
+      log.warn('[postgres] leerParaTimbrar empleados:', e3.message);
+      return { ok: false, error: columnaFaltante(e3) ? MENSAJE_SIN_SQL : 'No se pudieron leer los datos de los empleados.' };
+    }
+    empleados = emps || [];
+  }
+  return { ok: true, nomina, detalle: detalle || [], empleados };
+}
+
+// Id del CFDI en el PAC de un renglón ya timbrado (para bajar su XML). RLS: solo de la empresa del usuario.
+export async function idPacDeRenglon(accessToken, detalleId, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { data, error } = await supabase.from('nomina_detalle').select('cfdi_uuid, cfdi_fiscalapi_id, nombre').eq('id', detalleId).maybeSingle();
+  if (error) { log.warn('[postgres] idPacDeRenglon:', error.message); return { ok: false, error: columnaFaltante(error) ? MENSAJE_SIN_SQL : 'No se pudo leer el renglón.' }; }
+  return { ok: true, renglon: data || null };
+}
+
+// Anota el UUID de un renglón ya timbrado (función SECURITY DEFINER de la base).
+export async function registrarTimbre(accessToken, detalleId, { uuid, fiscalapiId }, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+  const { error } = await supabase.rpc('registrar_timbre_nomina', { p_detalle_id: detalleId, p_uuid: uuid, p_fiscalapi_id: fiscalapiId });
+  if (error) { log.warn('[postgres] registrar_timbre_nomina:', error.message); return { ok: false, error: columnaFaltante(error) ? MENSAJE_SIN_SQL : error.message }; }
+  return { ok: true };
 }

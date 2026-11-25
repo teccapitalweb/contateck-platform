@@ -31,7 +31,10 @@ const TABLAS = {
   // cuenta_bancaria son sensibles — el rol auditor nunca los ve
   // (columnas ocultas en supabaseEmpleados.js, no aquí).
   empleados: {
-    campos: ['nombre', 'puesto', 'departamento', 'fecha_ingreso', 'sueldo', 'sueldo_tipo', 'sueldo_monto_original', 'rfc', 'curp', 'nss', 'cuenta_bancaria', 'estado'],
+    campos: ['nombre', 'puesto', 'departamento', 'fecha_ingreso', 'sueldo', 'sueldo_tipo', 'sueldo_monto_original', 'rfc', 'curp', 'nss', 'cuenta_bancaria', 'estado',
+      // OT-0064: datos fiscales para el CFDI de nómina (la base los tiene tras aplicar OT-0064-timbrado-nomina-PROPUESTA.sql;
+      // el formulario solo los manda cuando se capturan, así que sin el SQL los empleados se guardan igual que siempre).
+      'cp_fiscal', 'tipo_contrato', 'tipo_jornada', 'riesgo_puesto', 'clave_entidad'],
     permiteEliminar: false,
   }, // soft-delete
   polizas: { campos: ['folio', 'tipo', 'fecha', 'concepto', 'monto', 'estado'], permiteEliminar: false }, // nunca se borra
