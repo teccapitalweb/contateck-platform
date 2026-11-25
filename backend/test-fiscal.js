@@ -520,6 +520,9 @@ await ok('alerta de CFDI sin póliza: cuenta solo vigentes timbrados sin póliza
   assert.equal(a.tipo, 'warn'); assert.equal(a.accion.vista, 'contabilidad'); assert.match(a.titulo, /^2 CFDI vigentes sin póliza/);
   assert.match(alertaCfdiSinPoliza([cf[1]], []).titulo, /^1 CFDI vigente sin póliza/);
   assert.equal(alertaCfdiSinPoliza([cf[0]], po), null);                                  // todo contabilizado
+  // OT-0052: una póliza CORREGIDA (la original conserva su UUID; la reversa y la nueva no) sigue contando como contabilizada.
+  assert.deepEqual(cfdisSinPoliza([{ uuid_sat: 'EEE-5', estatus: 'vigente' }], [{ cfdi_uuid: 'eee-5', estado: 'corregida' }, { cfdi_uuid: null, estado: 'reversa' }, { cfdi_uuid: null, estado: 'correccion' }]), []);
+  assert.equal(cfdisSinPoliza([{ uuid_sat: 'EEE-5', estatus: 'vigente' }], [{ cfdi_uuid: 'EEE-5', estado: 'anulada' }]).length, 1);
   assert.equal(alertaCfdiSinPoliza(undefined, undefined), null);                          // sin datos
   const muchos = Array.from({ length: TOPE_FILAS_CONSULTA }, (_, i) => ({ uuid_sat: 'U' + i, estatus: 'vigente' }));
   assert.equal(cfdisSinPoliza(muchos, []), null);                                         // lista posiblemente truncada: no se arriesga un falso aviso
