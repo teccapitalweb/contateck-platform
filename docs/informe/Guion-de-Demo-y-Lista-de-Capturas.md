@@ -21,13 +21,13 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 | 5 | **Ventas**: lista, detalle, estados (pendiente, en revisión, confirmado). | Quien registra no valida: separación de funciones. |
 | 6 | **Facturación**: lista de CFDI, "Timbrar CFDI", PDF/XML, "Me pagó un cliente". | Timbrado con un proveedor autorizado (Fiscalapi, ambiente de pruebas). |
 | 7 | **Cuentas por pagar** (Contabilidad): facturas de proveedor y pagos. | Mismo flujo de registro y confirmación que los cobros. |
-| 8 | **Nómina**: empleados, "Calcular", historial, Simulador fiscal. Muestra el botón **"Timbrar nómina"**. | El cálculo de ISR e IMSS funciona; el **timbrado de nómina es alcance futuro** (el botón lo dice). |
+| 8 | **Nómina**: empleados, "Calcular", historial y **"Recibos"** (imprime un recibo por empleado), Simulador fiscal. | El cálculo de ISR e IMSS funciona y cada nómina genera sus recibos. El timbrado del CFDI de nómina queda fuera del alcance (ver OT-0062). |
 | 9 | **SAT y Fiscal**: calendario, declaraciones, documentos, DIOT, IVA, "Descargar XML Catálogo" y "Balanza". | XML generado según el esquema oficial del SAT y validado con un validador XSD. |
 | 10 | **Asistente contable**: pregunta "¿Cómo va el Balance General?", "¿Cuánto hay en bancos y caja?", "¿Cómo va el IVA este año?", "¿y el año pasado?", "¿Qué es una póliza?", "¿Cómo registro una venta?", "¿Eres una IA?". | Responde con los datos reales y explica lo básico; **no es IA** y no cuesta por consulta; la IA queda preparada y apagada. |
 | 11 | **Equipo**: invitaciones y roles. | 6 roles; el rol define qué se puede hacer dentro de la empresa. |
 | 12 | **Cambia de rol**: entra como **contador** (menos botones), **auditor** (ningún botón de escritura) y, si están, **rh** y **vendedor**. | Control de acceso en pantalla, en el servidor y en la base de datos. |
 | 13 | **Seguridad y pruebas**: abre `npm run test:ci` y deja que termine (9 suites, 123 pruebas). | Pruebas automáticas sin red ni llaves; cada cambio tiene su orden de trabajo. |
-| 14 | **Alcance futuro**: enseña las tarjetas "Próximamente" y la lista de límites. | Qué queda para el equipo: timbrado de nómina, ISR provisional, IA real, validación contable de los criterios fiscales. |
+| 14 | **Alcance y límites**: enseña los indicadores fiscales del Dashboard y la lista de límites. | Qué queda para el equipo: timbrado de CFDI de nómina, ISR provisional exacto, conexión con IA real y la validación contable de los criterios fiscales. |
 
 ## 2. Lista de capturas para el informe
 
@@ -69,7 +69,7 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 | `21-nomina-empleados.png` | Empleados y resumen del periodo |
 | `22-nomina-calcular.png` | Cálculo de nómina (ISR e IMSS) |
 | `23-nomina-simulador.png` | Simulador fiscal |
-| `24-nomina-timbrar-proximamente.png` | Botón "Timbrar nómina" (alcance futuro) |
+| `24-nomina-recibos.png` | Historial de nóminas con el botón "Recibos" y la vista previa de impresión del recibo |
 
 ### E. SAT y Fiscal
 | Archivo | Qué mostrar |
@@ -108,17 +108,17 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 | `44-ordenes-de-trabajo.png` | Carpeta `docs/work-orders` con las órdenes de trabajo |
 | `45-supabase-rls.png` | Panel de Supabase con las tablas y RLS activo (opcional) |
 
-### I. Alcance futuro ("Próximamente")
+### I. Dashboard: exportar e indicadores
 | Archivo | Qué mostrar |
 |---|---|
-| `46-dashboard-indicadores-fiscales.png` | Tarjeta "Indicadores fiscales: Próximamente" |
-| `47-nomina-timbrar-proximamente.png` | Aviso del timbrado de nómina |
+| `46-dashboard-indicadores-fiscales.png` | Tarjeta "Indicadores fiscales" con el IVA del mes y el ISR estimado |
+| `47-dashboard-exportar.png` | Botones Exportar (Excel) e Imprimir / PDF, y el CSV abierto en Excel |
 
-**Total:** 47 capturas. Para el informe bastan unas 25 buenas; las demás sirven para la presentación.
+**Total:** 47 capturas (algunas, como `26-sat-documentos.png`, son opcionales). Para el informe bastan unas 25 buenas; las demás sirven para la presentación.
 
 ## 3. Preguntas que te pueden hacer (y la respuesta honesta)
 - **¿Usa inteligencia artificial?** No: es un asistente por reglas. La conexión con un modelo de IA ya está construida y apagada, para activarla más adelante con una llave.
-- **¿Por qué no timbra la nómina?** Quedó como alcance futuro: requiere el timbrado de CFDI de nómina con el proveedor y pruebas fiscales.
+- **¿Por qué no timbra la nómina?** El timbrado de CFDI de nómina está fuera del alcance: exige datos fiscales del empleado (código postal, régimen, tipo de contrato, jornada, riesgo…) y el desglose por clave del SAT que el sistema hoy no captura, y un error tendría efectos fiscales. El sistema calcula la nómina y genera recibos informativos; el camino técnico para una versión futura está documentado en la OT-0062.
 - **¿Los cálculos fiscales los validó un contador?** El IVA y la utilidad son cifras de referencia; el Código Agrupador se verificó contra el Anexo 24 oficial; los criterios por empresa deben validarse con un contador.
 - **¿Está en producción?** No: está en el ambiente de desarrollo (Supabase `contateck-dev`). Hay una lista de lo necesario para producción en la guía de operación.
 - **¿Cómo sabes que funciona?** 123 pruebas automáticas, una prueba manual con tres roles y la comparación del esquema real con el documentado.
