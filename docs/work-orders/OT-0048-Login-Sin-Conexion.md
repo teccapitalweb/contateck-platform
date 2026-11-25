@@ -22,3 +22,10 @@ El 25-nov-2026 el proyecto `contateck-dev` de Supabase estaba **pausado por inac
 ## Verificación
 - Pruebas en el checkout de integración, ver abajo.
 - **No verificado en el caso real:** no se provocó una caída real de Supabase ni se desconectó la red del navegador; el comportamiento se comprobó con el código real en un contexto simulado.
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`)
+- `npm run test:ci` en el checkout de integración: pasan las 6 suites (22 + 14 + 10 + 3 + 13 + 7).
+- Hubo que ajustar una prueba vieja de `test-fiscal.js` (OT-0039) que esperaba "Sin conexión" para `Failed to fetch`; ese caso ahora se prueba en `test-login-mensajes.js`.
+- Visor (`http://127.0.0.1:5510/login.html`, origen distinto para no tocar la sesión abierta): la página carga `auth-login.js?v=3`, trae los dos mensajes nuevos y no hay errores en la consola.
+
+**No verificado:** el mensaje en un fallo real (no se pausó Supabase ni se cortó la red del navegador). Solo se probó el código real en un contexto simulado.
