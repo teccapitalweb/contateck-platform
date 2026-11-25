@@ -63,6 +63,8 @@ export async function listarCfdisProveedorSaldo(accessToken, log = console) {
     .from('cfdis_proveedor_saldo')
     .select('cfdi_proveedor_id, folio, serie, emisor_nombre, emisor_rfc, fecha, metodo_pago, estatus, total, pagado, saldo_pendiente')
     .gt('saldo_pendiente', 0)
+    // OT-0057: una factura de proveedor cancelada no es una deuda por pagar (la vista de saldos la incluye).
+    .neq('estatus', 'cancelado')
     .order('fecha', { ascending: false })
     .limit(200);
   if (error) {
