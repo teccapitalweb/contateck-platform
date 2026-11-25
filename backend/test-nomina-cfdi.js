@@ -8,8 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { faltantesEmpleado, desgloseRenglon, construirCfdiNomina, antiguedadSemanas, PERIODICIDAD_SAT } from './src/nominaCfdi.js';
-import { timbrarNomina } from './src/timbradoNomina.js';
+import { faltantesEmpleado, desgloseRenglon, construirCfdiNomina, antiguedadSemanas, fechaDePago, PERIODICIDAD_SAT } from './src/nominaCfdi.js';
+import { timbrarNomina, mensajeDelPac } from './src/timbradoNomina.js';
 import { columnaFaltante } from './src/supabaseNominas.js';
 
 process.env.TZ = 'America/Mexico_City';   // la zona horaria de los usuarios: ahí el periodo se veía un día corrido
@@ -233,6 +233,30 @@ await ok('frontend: el resultado y el detalle escapan todo; el recibo timbrado m
   assert.ok(fs2.includes('Object.assign({') && fs2.includes('}, fiscales)'), 'los datos fiscales solo viajan si se capturaron');
   assert.ok(leer('src', 'supabaseCrud.js').includes("'cp_fiscal', 'tipo_contrato', 'tipo_jornada', 'riesgo_puesto', 'clave_entidad'"));
   assert.ok(leer('..', 'frontend', 'dashboard.html').includes('nomina.js?v=5') && leer('..', 'frontend', 'dashboard.html').includes('data-firestore.js?v=15'));
+});
+
+await ok('el motivo del rechazo del PAC se muestra limpio: se extrae el mensaje real y el RFC que no existe en el SAT (NOM9) se explica', () => {
+  const crudo = { ok: false, status: 400, message: 'Request failed with status code 400',
+    details: '{"data":null,"succeeded":false,"message":"NOM9-El atributo Comprobante.Receptor.Rfc debe estar en la lista de RFC inscritos no cancelados en el SAT.","details":null,"httpStatusCode":400}' };
+  const t = mensajeDelPac(crudo);
+  assert.match(t, /^El RFC del empleado no está inscrito en el SAT/); assert.ok(t.includes('(NOM9)') && !t.includes('{') && !t.includes('Request failed'));
+  const otro = mensajeDelPac({ message: 'Request failed with status code 400', details: '{"message":"NOM42-Falta algo","details":"Detalle del campo","httpStatusCode":400}' });
+  assert.equal(otro, 'NOM42-Falta algo Detalle del campo');
+  assert.equal(mensajeDelPac({ message: 'NOM42-algo', details: 'detalle' }), 'NOM42-algo detalle');
+  assert.equal(mensajeDelPac({ message: 'x', details: '{no es json' }), 'x {no es json');
+  assert.equal(mensajeDelPac({}), 'El PAC rechazó el timbrado.'); assert.equal(mensajeDelPac(null), 'El PAC rechazó el timbrado.');
+});
+
+await ok('fecha de pago del CFDI: el día en que se aprobó la nómina (hora de México), sin salirse del periodo ni pasar de hoy', () => {
+  const n = { fecha_inicio: '2026-11-01', fecha_fin: '2026-11-30' };
+  assert.equal(fechaDePago({ ...n, created_at: '2026-11-26T03:30:00Z' }, '2026-11-26'), '2026-11-25', 'las 21:30 del 25 en México, no el 26 en UTC');
+  assert.equal(fechaDePago({ ...n, created_at: '2026-10-20T18:00:00Z' }, '2026-11-26'), '2026-11-01', 'no antes del inicio del periodo');
+  assert.equal(fechaDePago({ ...n, created_at: '2026-12-20T18:00:00Z' }, '2026-11-26'), '2026-11-26', 'no después de hoy');
+  assert.equal(fechaDePago(n, '2026-11-26'), '2026-11-26', 'sin fecha de proceso: el fin del periodo recortado a hoy');
+  assert.equal(fechaDePago({ ...n, fecha_fin: '2026-11-15' }, '2026-11-26'), '2026-11-15');
+  const r = construirCfdiNomina(ctx({ nomina: { ...nomina, fecha_fin: '2026-11-30', created_at: '2026-11-20T18:00:00Z' }, fecha: '2026-11-25T10:00:00' }));
+  assert.equal(r.invoice.complement.payroll.paymentDate, '2026-11-20');
+  assert.ok(leer('src', 'supabaseNominas.js').includes("estado, created_at')"), 'la lectura para timbrar trae la fecha de proceso');
 });
 
 await ok('fechas del historial: una fecha sin hora no se corre un día en la zona horaria de México', () => {

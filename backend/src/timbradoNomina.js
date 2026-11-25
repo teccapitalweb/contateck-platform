@@ -14,6 +14,26 @@ import { construirCfdiNomina } from './nominaCfdi.js';
 
 const TOPE_RENGLONES = 500;
 
+// El PAC a veces devuelve su respuesta como JSON crudo dentro de `details` y un genérico "Request failed with
+// status code 400" en `message`. Se extrae el mensaje real y, para el rechazo más común (RFC que no existe en el
+// listado del SAT, NOM9), se explica en palabras del usuario.
+export function mensajeDelPac(r) {
+  let msg = String((r && r.message) || '');
+  let det = String((r && r.details) || '');
+  const crudo = [det, msg].find((s) => s.trim().startsWith('{'));
+  if (crudo) {
+    try {
+      const j = JSON.parse(crudo);
+      if (j && typeof j === 'object') { msg = String(j.message || ''); det = String(j.details || ''); }
+    } catch (e) { /* no era JSON: se deja el texto tal cual */ }
+  }
+  if (/^\s*NOM9\b|lista de RFC inscritos/i.test(msg + ' ' + det)) {
+    return 'El RFC del empleado no está inscrito en el SAT (el proveedor lo valida contra el listado de RFC vigentes). Revisa el RFC y el nombre del empleado. (NOM9)';
+  }
+  const texto = [msg, det].filter(Boolean).join(' ').trim();
+  return texto || 'El PAC rechazó el timbrado.';
+}
+
 // deps: {
 //   emisor, cpExpedicion, registroPatronal?, fecha(): string,
 //   timbrar(invoice): Promise<{ ok, status?, message?, details?, data? }>,
@@ -54,8 +74,7 @@ export async function timbrarNomina(datos, deps) {
     try { r = await deps.timbrar(c.invoice); }
     catch (e) { r = { ok: false, status: 500, message: 'No se pudo contactar al proveedor de timbrado.', details: '' }; }
     if (!r || !r.ok) {
-      const msg = ((r && r.message) || 'El PAC rechazó el timbrado.') + (r && r.details ? ' ' + r.details : '');
-      resultados.push({ ...base, estado: 'error', error: msg });
+      resultados.push({ ...base, estado: 'error', error: mensajeDelPac(r) });
       const st = Number(r && r.status);
       if (st === 401 || st === 403 || st >= 500) detenido = 'Se detuvo el lote por un error del proveedor de timbrado (' + st + ').';
       continue;
