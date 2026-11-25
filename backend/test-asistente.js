@@ -38,6 +38,7 @@ await ok('reconoce la intención de las preguntas frecuentes, con acentos, mayú
     resultado: ['¿Cuánto gané este mes?', 'cuál es mi utilidad', 'estoy ganando o perdiendo', 'resultado de octubre'],
     ingresos_egresos: ['¿Cuánto vendí este mes?', 'mis ingresos', 'cuánto facturé', 'cuánto gasté', 'egresos del mes'],
     alertas: ['¿Tengo alertas pendientes?', 'qué debo revisar', 'hay algún problema', 'resumen'],
+    sin_poliza: ['¿Qué facturas no tienen póliza?', 'facturas sin contabilizar', 'cuáles facturas no están contabilizadas', 'cfdi sin póliza'],
     nomina: ['¿Cuántos empleados tengo?', 'cuánto es la nómina', 'sueldos'],
     ayuda: ['hola', 'ayuda', '¿qué puedes hacer?', 'buenos días', 'gracias'],
   };
@@ -84,6 +85,7 @@ const herramientas = (extra = {}) => ({
   },
   async cuentas_por_cobrar_y_pagar() { return { por_cobrar_clientes: { facturas_con_saldo: 2, importe_total: 150.5 }, por_pagar_proveedores: { facturas_con_saldo: 0, importe_total: 0 } }; },
   async iva_del_periodo() { return { periodo: '2026-11', trasladado: 160, acreditable: 100, resultado: 60 }; },
+  async cfdis_sin_poliza() { return { total: 2, facturas: [{ folio: 'CT-29', fecha: '2026-11-08', total: 142.68, tipo: 'I' }, { folio: null, fecha: '2026-11-10', total: 50, tipo: 'I' }] }; },
   async obligaciones_fiscales() { return { proximas: [
     { obligacion: 'IVA mensual', periodo: 'octubre 2026', fecha_limite: '2026-11-17', dias_restantes: -8 },
     { obligacion: 'DIOT', periodo: 'octubre 2026', fecha_limite: '2026-11-30', dias_restantes: 5 },
@@ -314,6 +316,77 @@ await ok('los textos no prometen lo que el sistema no hace: ISR sin cálculo y t
   assert.match(t('isr'), /no lo calcula por ti/); assert.match(t('nomina'), /no está disponible/); assert.match(t('guia_nomina'), /no está disponible/);
   assert.match(t('soy_ia'), /No soy inteligencia artificial/);
   const ayuda = textoAyuda(); assert.match(ayuda, /¿Qué es el IVA\?/); assert.match(ayuda, /¿Cómo registro una venta\?/);
+});
+
+// ---------------- Mejoras de la OT-0058: memoria, saldo de una cuenta, facturas sin póliza y faltas de ortografía ----------------
+const { detectarCuenta, corregirTexto } = await import('./src/asistenteContable.js');
+const conHistorial = (pregunta, historial, h = herramientas()) => responderPorReglas({ pregunta, historial }, { herramientas: h, hoy: HOY, log: sinLog });
+
+await ok('saldo de una cuenta: reconoce el código en la pregunta, pide solo esa cuenta y explica el saldo negativo', async () => {
+  for (const [q, c] of [['¿Cuánto hay en la cuenta 102?', '102'], ['saldo de la 105', '105'], ['cuál es el saldo de la cuenta número 4010', '4010'], ['cuánto tengo en la 102', '102']]) assert.equal(detectarCuenta(q), c, q);
+  assert.equal(detectarCuenta('cuánto hay en bancos'), null); assert.equal(detectarCuenta('el mes 11 de 2026'), null);
+  let pedido = null;
+  const r = await preguntar('¿Cuánto hay en la cuenta 101 este mes?', herramientas({ async saldos_de_cuentas(e) { pedido = e; return { cuentas: [{ codigo: '101', nombre: 'Caja', naturaleza: 'deudora', debe: 0, haber: 1000, saldo: -1000 }, { codigo: '1010', nombre: 'otra', naturaleza: 'deudora', debe: 5, haber: 0, saldo: 5 }] }; } }));
+  assert.deepEqual(pedido, { anio: 2026, mes: 11, prefijo: '101' });
+  assert.equal(r.intencion, 'saldo_cuenta'); assert.match(r.respuesta, /Caja \(101\)/); assert.match(r.respuesta, /Saldo: -\$1,000\.00/); assert.match(r.respuesta, /saldo negativo/);
+  assert.ok(!/otra/.test(r.respuesta), 'solo la cuenta exacta, no las que empiezan igual');
+  const nada = await preguntar('saldo de la cuenta 999', herramientas({ async saldos_de_cuentas() { return { cuentas: [] }; } }));
+  assert.match(nada.respuesta, /No encontré movimientos en la cuenta 999/);
+});
+
+await ok('facturas sin póliza: lista folio, fecha e importe (sin nombres) y dice cómo contabilizarlas; si no hay, lo dice', async () => {
+  const r = await preguntar('¿Qué facturas no tienen póliza?', herramientas());
+  assert.equal(r.intencion, 'sin_poliza'); assert.match(r.respuesta, /Tienes \*\*2\*\* facturas emitidas vigentes sin póliza/);
+  assert.match(r.respuesta, /CT-29 \(2026-11-08\) · \$142\.68/); assert.match(r.respuesta, /sin folio \(2026-11-10\) · \$50\.00/); assert.match(r.respuesta, /Importar desde factura timbrada/);
+  const vacia = await preguntar('facturas sin contabilizar', herramientas({ async cfdis_sin_poliza() { return { total: 0, facturas: [] }; } }));
+  assert.match(vacia.respuesta, /Todas tus facturas emitidas vigentes ya tienen su póliza/);
+  const err = await preguntar('facturas sin póliza', herramientas({ async cfdis_sin_poliza() { return { error: 'secreto interno' }; } }));
+  assert.ok(!/secreto/.test(JSON.stringify(err)));
+});
+
+await ok('memoria: "¿y el mes pasado?" repite la pregunta de datos anterior con el periodo nuevo; sin historial o sin periodo no inventa', async () => {
+  let pedido = null;
+  const h = herramientas({ async iva_del_periodo(e) { pedido = e; return { trasladado: 10, acreditable: 4, resultado: 6 }; } });
+  const hist = [{ rol: 'usuario', texto: '¿Cómo va el IVA este mes?' }, { rol: 'ia', texto: 'respuesta anterior' }];
+  const r = await conHistorial('¿y el mes pasado?', hist, h);
+  assert.equal(r.ok, true); assert.equal(r.intencion, 'iva'); assert.equal(r.seguimiento, true);
+  assert.deepEqual(pedido, { anio: 2026, mes: 10 }); assert.match(r.respuesta, /octubre de 2026/);
+  assert.equal((await conHistorial('¿y en septiembre?', hist, h)).intencion, 'iva');
+  assert.equal((await conHistorial('¿y el año pasado?', [{ rol: 'usuario', texto: 'cuánto gané este año' }])).intencion, 'resultado');
+  // sin historial no hay a qué darle seguimiento
+  const sola = await conHistorial('¿y el mes pasado?', []);
+  assert.equal(sola.intencion, null); assert.match(sola.respuesta, /No estoy seguro/);
+  // el seguimiento ignora las explicaciones (conceptos) y sigue con la última pregunta de datos
+  const mixto = await conHistorial('¿y octubre?', [{ rol: 'usuario', texto: '¿Cómo va el IVA?' }, { rol: 'usuario', texto: '¿Qué es una póliza?' }], h);
+  assert.equal(mixto.intencion, 'iva');
+  // un historial raro no rompe nada
+  assert.equal((await conHistorial('¿y el mes pasado?', 'basura')).intencion, null);
+  assert.equal((await conHistorial('hola', [null, 5, { rol: 'x' }])).intencion, 'ayuda');
+  // memoria también para el saldo de una cuenta
+  let cuentaPedida = null;
+  const rc = await conHistorial('¿y el mes pasado?', [{ rol: 'usuario', texto: 'saldo de la cuenta 102' }], herramientas({ async saldos_de_cuentas(e) { cuentaPedida = e; return { cuentas: [] }; } }));
+  assert.equal(rc.intencion, 'saldo_cuenta'); assert.deepEqual(cuentaPedida, { anio: 2026, mes: 10, prefijo: '102' });
+});
+
+await ok('faltas de ortografía: solo se corrigen cuando la pregunta tal cual no se entendió, y con una letra de diferencia', async () => {
+  assert.equal(corregirTexto('¿Cómo va el balnce general?').includes('balance'), true);
+  for (const [q, esperada] of [['¿cómo va el balnce?', 'balance'], ['cuanto hay en bancs', 'bancos'], ['¿qué obligacions vencen?', 'obligaciones'], ['cuánto me deban mis clientes', 'por_cobrar'], ['resumn', 'alertas'], ['¿qué es un cfdi? ', 'conocimiento:cfdi'], ['¿qué es la polza?', 'conocimiento:poliza']]) {
+    const r = await preguntar(q, herramientas());
+    assert.equal(r.intencion, esperada, q);
+  }
+  assert.equal((await preguntar('¿cómo va el balnce?', herramientas())).corregida, true);
+  // lo que ya se entiende no se toca, y lo que no se parece a nada no se inventa
+  const bien = await preguntar('¿Cómo va el balance?', herramientas()); assert.equal(bien.corregida, undefined);
+  for (const q of ['asdfghjkl qwertyuiop', 'cuéntame un chiste de contadores', 'zzzzz xxxxx']) assert.equal((await preguntar(q, herramientas())).intencion, null, q);
+  // los números y los meses no se alteran
+  assert.equal(corregirTexto('cuenta 102 de octubre').includes('102'), true);
+});
+
+await ok('el periodo "año pasado" se reconoce, y la ruta pasa el historial al asistente', async () => {
+  assert.deepEqual(detectarPeriodo('¿cuánto gané el año pasado?', HOY), { anio: 2025, etiqueta: 'el año 2025' });
+  assert.deepEqual(detectarPeriodo('iva del año anterior', '2026-01-05'), { anio: 2025, etiqueta: 'el año 2025' });
+  const ruta = fs.readFileSync(path.join(aqui, 'src', 'routes', 'ia.js'), 'utf8');
+  assert.ok(ruta.includes('responderPorReglas({ pregunta, historial }'));
 });
 
 console.log(`\n✔ ${pruebas} pruebas del asistente contable por reglas pasaron\n`);

@@ -17,6 +17,7 @@ import { config } from './config.js';
 import { obtenerDashboard } from './supabaseDashboard.js';
 import { obtenerCalendario } from './supabaseFiscal.js';
 import { hoyMexico } from './validacionesFiscal.js';
+import { cfdisSinPoliza } from './alertasContables.js';
 
 export const ROLES_IA = ['director', 'admin', 'contador', 'auditor'];
 export const MAX_PREGUNTA = 600;
@@ -75,6 +76,11 @@ export const DEFINICION_HERRAMIENTAS = [
       },
       additionalProperties: false,
     },
+  },
+  {
+    name: 'cfdis_sin_poliza',
+    description: 'Facturas emitidas vigentes y timbradas que todavía no tienen póliza de causación (folio, fecha, importe y tipo; sin nombres de clientes).',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'obligaciones_fiscales',
@@ -190,6 +196,18 @@ export function crearHerramientasReales(token, deps = {}) {
       const saldoDe = (codigo) => Math.abs((s.cuentas.find((c) => c.codigo === codigo) || {}).saldo || 0);
       const trasladado = redondea(saldoDe(cT)), acreditable = redondea(saldoDe(cA));
       return { periodo: s.periodo, trasladado, acreditable, resultado: redondea(trasladado - acreditable), nota: 'Cifra de referencia calculada con las pólizas; no es la declaración.', ...(s.aviso ? { aviso: s.aviso } : {}) };
+    },
+    async cfdis_sin_poliza() {
+      const supabase = clienteDe(token);
+      if (!supabase) return { error: 'Postgres no está configurado en el backend.' };
+      const [cf, po] = await Promise.all([
+        supabase.from('cfdis').select('uuid_sat, folio, tipo, estatus, total, fecha').neq('estatus', 'cancelado').not('uuid_sat', 'is', null),
+        supabase.from('polizas').select('cfdi_uuid, estado').not('cfdi_uuid', 'is', null),
+      ]);
+      if (cf.error || po.error) return { error: 'No se pudieron leer las facturas y las pólizas.' };
+      const faltan = cfdisSinPoliza(cf.data, po.data);
+      if (faltan === null) return { error: 'Hay demasiadas facturas para comprobarlas de una vez; revisa el módulo de Contabilidad.' };
+      return { total: faltan.length, facturas: faltan.slice(0, 10).map((f) => ({ folio: f.folio, fecha: f.fecha, total: redondea(f.total), tipo: f.tipo })) };
     },
     async obligaciones_fiscales() {
       const r = await cal(token);
