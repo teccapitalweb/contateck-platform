@@ -1520,6 +1520,7 @@
   // ---- Conectar el botón "Timbrar CFDI" del módulo de Facturación ----
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-facturar]")) { e.preventDefault(); open(); }
+    if (e.target.closest("[data-fac-masivo]")) { e.preventDefault(); openMasivo(); } // OT-0061
     const cancelTrigger = e.target.closest("[data-cancelar-cfdi]");
     if (cancelTrigger) {
       e.preventDefault();
@@ -1799,6 +1800,265 @@
     } else {
       window.open(url, "_blank");
     }
+  });
+
+  // ============================================================
+  // TIMBRADO MASIVO (OT-0061)
+  // Sube un CSV (plantilla descargable), se revisa TODO en el servidor sin gastar timbres
+  // (POST /api/facturar-masivo/validar) y, tras una confirmación explícita, cada factura válida
+  // se timbra una por una con el mismo POST /api/facturar del formulario individual: mismas
+  // validaciones, mismo candado contra duplicados, mismo registro y mismos permisos.
+  // Si el servidor no contesta en una factura, el lote SE DETIENE (esa factura pudo haberse
+  // timbrado): se avisa y no se sigue a ciegas. Los posibles duplicados NO se emiten solos.
+  // ============================================================
+  const masivoEstados = {
+    pendiente: ["En espera", "var(--faint)"],
+    timbrando: ["Timbrando…", "var(--brand,#6E8BFF)"],
+    timbrada: ["✓ Timbrada", "#34D399"],
+    duplicado: ["⚠ Posible duplicado: no se emitió", "#F2B84B"],
+    error: ["✘ Rechazada", "var(--neg,#FB7185)"],
+    incierto: ["? Sin respuesta: revisa la lista", "#F2B84B"],
+    sin_enviar: ["No se envió (lote detenido)", "var(--faint)"],
+  };
+  let masivo = null;
+
+  function openMasivo() {
+    masivo = { facturas: [], erroresCsv: [], rev: null, items: [], corriendo: false, detener: false };
+    setTitle("Timbrado masivo");
+    modal.classList.add("fac-modal--wide");
+    renderMasivoArchivo();
+    modal.classList.add("is-open");
+  }
+
+  function descargarTexto(nombre, texto, tipo) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([texto], { type: tipo || "text/csv;charset=utf-8" }));
+    a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  function renderMasivoArchivo(mensaje) {
+    content.innerHTML = `
+      <p style="color:var(--muted);font-size:.9rem;margin-top:0">
+        Timbra varias facturas de una sola vez a partir de un archivo <b>CSV</b>
+        (Excel: <i>Guardar como → CSV UTF-8</i>). Primero se <b>revisa todo sin gastar timbres</b>; después tú confirmas.
+      </p>
+      <ul style="color:var(--muted);font-size:.84rem;line-height:1.5;padding-left:1.1rem;margin:.2rem 0 1rem">
+        <li>Una fila = una factura con un concepto. Para varios conceptos en <b>una</b> factura, repite el mismo valor en la columna <code>factura</code>.</li>
+        <li>Obligatorias: <code>rfc, nombre, cp, regimen, descripcion, cantidad, precioUnitario</code>. Opcionales: <code>usoCfdi</code> (G03), <code>tasaIva</code> (16), <code>metodoPago</code> (PUE), <code>formaPago</code> (01), <code>claveProdServ</code>, <code>claveUnidad</code>.</li>
+        <li>Máximo 50 facturas por archivo. Se timbran una por una, en orden.</li>
+      </ul>
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+        <button class="btn btn--ghost" data-mas-plantilla>Descargar plantilla</button>
+        <input type="file" id="fac-mas-file" accept=".csv,text/csv,text/plain" class="input" style="flex:1;min-width:14rem">
+      </div>
+      <div data-mas-msg style="margin-top:1rem">${mensaje || ""}</div>
+      <p style="font-size:.78rem;color:var(--faint,#6b7a99);margin-top:.9rem;text-align:center">Ambiente de pruebas · emisor de prueba del SAT · sin validez fiscal</p>`;
+  }
+
+  async function masivoLeerArchivo(archivo) {
+    const msg = content.querySelector("[data-mas-msg]");
+    if (!archivo) return;
+    if (archivo.size > 2 * 1024 * 1024) { msg.innerHTML = `<div class="fac-err">El archivo pesa más de 2 MB; revisa que sea el CSV correcto.</div>`; return; }
+    msg.innerHTML = `<div style="color:var(--muted)"><span class="fac-spin"></span> Revisando el archivo…</div>`;
+    let texto;
+    try { texto = await archivo.text(); } catch (e) { msg.innerHTML = `<div class="fac-err">No se pudo leer el archivo.</div>`; return; }
+    const r = window.CTMasivoCsv.leerFacturas(texto);
+    masivo.facturas = r.facturas;
+    masivo.erroresCsv = r.errores;
+    if (!r.facturas.length) { msg.innerHTML = `<div class="fac-err">${r.errores.map(esc).join("<br>")}</div>`; return; }
+    try {
+      const rev = await enviarOperacion("/api/facturar-masivo/validar", { facturas: r.facturas.map(masivoCuerpo) });
+      if (!rev.ok) { msg.innerHTML = errBox("No se pudo revisar el archivo", rev); return; }
+      masivo.rev = rev;
+      renderMasivoRevision();
+    } catch (err) {
+      msg.innerHTML = `<div class="fac-err">No se pudo revisar el archivo: se perdió la conexión con el servidor. No se timbró nada.</div>`;
+    }
+  }
+
+  // Lo que se manda a /api/facturar (y a la revisión): sin los campos internos del lector.
+  function masivoCuerpo(f) {
+    return { receptor: f.receptor, conceptos: f.conceptos, tasaIva: f.tasaIva, metodoPago: f.metodoPago, formaPago: f.formaPago };
+  }
+  function masivoNombre(f) { return f.receptor.nombre || f.receptor.rfc; }
+
+  function renderMasivoRevision() {
+    const rev = masivo.rev, r = rev.resumen;
+    const filas = masivo.facturas.map((f, i) => {
+      const x = rev.resultados[i];
+      const estado = x.ok
+        ? `<span style="color:#34D399">✓ Lista</span>${x.aviso ? `<div style="color:#F2B84B;font-size:.76rem">⚠ ${esc(x.aviso)}</div>` : ""}`
+        : `<span style="color:var(--neg,#FB7185)">✘ ${esc(x.error)}</span>`;
+      return `<tr${x.ok ? "" : ' style="background:rgba(251,113,133,.06)"'}>
+        <td>${esc(f.filasCsv.join(", "))}</td><td>${esc(masivoNombre(f))}<div style="color:var(--faint);font-size:.76rem">${esc(f.receptor.rfc)}</div></td>
+        <td>${f.conceptos.length}</td><td style="text-align:right">${x.ok ? money(x.total) : "—"}</td><td>${estado}</td></tr>`;
+    }).join("");
+    const errCsv = masivo.erroresCsv.length
+      ? `<div class="fac-err" style="margin-bottom:.8rem"><b>Avisos del archivo:</b><br>${masivo.erroresCsv.map(esc).join("<br>")}</div>` : "";
+    content.innerHTML = `
+      ${errCsv}
+      <div style="display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:.8rem;font-size:.9rem">
+        <span><b>${r.total}</b> facturas en el archivo</span>
+        <span style="color:#34D399"><b>${r.validas}</b> listas</span>
+        <span style="color:${r.conError ? "var(--neg,#FB7185)" : "var(--muted)"}"><b>${r.conError}</b> con error (no se timbrarán)</span>
+        <span>Importe de las listas (con IVA): <b>${money(r.importe)}</b></span>
+      </div>
+      <div style="overflow:auto;max-height:46vh"><table class="tbl"><thead><tr><th>Fila</th><th>Cliente</th><th>Conceptos</th><th style="text-align:right">Total</th><th>Revisión</th></tr></thead><tbody>${filas}</tbody></table></div>
+      <div data-mas-msg></div>
+      <div class="fac-foot" style="border:0;padding:1.2rem 0 0">
+        <button class="btn btn--ghost" data-mas-otro>Elegir otro archivo</button>
+        <button class="btn btn--primary" data-mas-confirmar ${r.validas ? "" : "disabled"}>Timbrar ${r.validas} ${r.validas === 1 ? "factura" : "facturas"}…</button>
+      </div>`;
+  }
+
+  function renderMasivoConfirmar() {
+    const r = masivo.rev.resumen;
+    const msg = content.querySelector("[data-mas-msg]");
+    msg.innerHTML = `<div class="fac-err" style="border-color:#F2B84B;background:rgba(242,184,75,.1);color:var(--text,#fff);margin-top:1rem">
+      <b>Confirma antes de empezar</b><br>
+      Se van a timbrar <b>${r.validas}</b> ${r.validas === 1 ? "factura" : "facturas"} por <b>${money(r.importe)}</b> (con IVA), una por una, ante el PAC de <b>pruebas</b>.
+      Cada timbre queda registrado; si te equivocas, hay que cancelar cada CFDI por separado. Los posibles duplicados no se emiten solos y, si el servidor deja de responder, el lote se detiene.
+      <div style="display:flex;gap:.5rem;margin-top:.7rem;flex-wrap:wrap">
+        <button class="btn btn--ghost btn--sm" data-mas-cancelar-conf>Volver</button>
+        <button class="btn btn--primary btn--sm" data-mas-iniciar>Sí, timbrar ${r.validas}</button>
+      </div></div>`;
+    const b = content.querySelector("[data-mas-confirmar]"); if (b) b.disabled = true;
+  }
+
+  function masivoRenglon(it, i) {
+    const [txt, color] = masivoEstados[it.estado];
+    const extra = it.estado === "timbrada"
+      ? `<div style="color:var(--faint);font-size:.76rem">${esc(it.folio || "")} · UUID ${esc(it.uuid || "—")}</div>`
+      : (it.detalle ? `<div style="color:var(--muted);font-size:.78rem">${esc(it.detalle)}</div>` : "");
+    const boton = it.estado === "duplicado" && !masivo.corriendo
+      ? `<div style="margin-top:.3rem"><button class="btn btn--ghost btn--sm" data-mas-dup="${i}">Emitir de todos modos</button></div>` : "";
+    return `<tr data-mas-fila="${i}"><td>${esc(it.filaCsv)}</td><td>${esc(it.cliente)}<div style="color:var(--faint);font-size:.76rem">${esc(it.rfc)}</div></td>
+      <td style="text-align:right">${money(it.total)}</td><td style="color:${color}">${it.estado === "timbrando" ? '<span class="fac-spin" style="width:14px;height:14px"></span> ' : ""}${esc(txt)}${extra}${boton}</td></tr>`;
+  }
+
+  function pintarMasivo() {
+    const cuenta = (e) => masivo.items.filter((x) => x.estado === e).length;
+    const hechas = masivo.items.filter((x) => x.estado !== "pendiente" && x.estado !== "timbrando").length;
+    const resumen = content.querySelector("[data-mas-resumen]");
+    if (resumen) {
+      resumen.innerHTML = `<b>${hechas}</b> de ${masivo.items.length} procesadas · <span style="color:#34D399">${cuenta("timbrada")} timbradas</span> · ` +
+        `<span style="color:#F2B84B">${cuenta("duplicado") + cuenta("incierto")} por revisar</span> · <span style="color:var(--neg,#FB7185)">${cuenta("error")} rechazadas</span>` +
+        (cuenta("sin_enviar") ? ` · ${cuenta("sin_enviar")} sin enviar` : "");
+    }
+    const tb = content.querySelector("[data-mas-filas]");
+    if (tb) tb.innerHTML = masivo.items.map(masivoRenglon).join("");
+    const pie = content.querySelector("[data-mas-pie]");
+    if (pie) {
+      pie.innerHTML = masivo.corriendo
+        ? `<button class="btn btn--ghost" data-mas-detener>${masivo.detener ? "Deteniendo…" : "Detener después de la factura en curso"}</button>`
+        : `<button class="btn btn--ghost" data-mas-csv>Descargar resultado (CSV)</button><button class="btn btn--primary" data-fac-close>Cerrar</button>`;
+    }
+  }
+
+  function masivoGuardarEnPanel(f, data) {
+    try {
+      if (window.CTData && typeof window.CTData.addCfdi === "function") {
+        window.CTData.addCfdi({
+          uuid: data.uuid, folio: data.cfdi && data.cfdi.folio, cliente: masivoNombre(f), total: data.total,
+          serie: (data.cfdi && data.cfdi.serie) || "CT", cfdiId: data.id, metodoPago: f.metodoPago, tipo: "I", receptorRfc: f.receptor.rfc,
+        });
+      }
+      if (window.CTData) {
+        if (window.CTData.saveCliente) window.CTData.saveCliente({ rfc: f.receptor.rfc, nombre: f.receptor.nombre, usoCfdi: f.receptor.usoCfdi, cp: f.receptor.cp, regimen: f.receptor.regimen });
+        if (window.CTData.saveProducto) f.conceptos.forEach((c) => window.CTData.saveProducto({ descripcion: c.descripcion, precioUnitario: c.precioUnitario }));
+      }
+    } catch (e) { /* el catálogo y la lista no deben romper el lote */ }
+  }
+
+  // Timbra UNA factura del lote. Devuelve false si hay que detener el lote.
+  async function masivoTimbrar(it, forzar) {
+    it.estado = "timbrando"; it.detalle = ""; pintarMasivo();
+    try {
+      const data = await enviarOperacion("/api/facturar", Object.assign(masivoCuerpo(it.factura), { confirmarDuplicado: forzar === true }));
+      if (data.ok) {
+        it.estado = "timbrada"; it.uuid = data.uuid; it.folio = (data.cfdi && data.cfdi.folio) || ""; it.detalle = data.aviso || "";
+        masivoGuardarEnPanel(it.factura, data);
+      } else if (data.codigo === "POSIBLE_DUPLICADO") {
+        it.estado = "duplicado"; it.detalle = data.error || "Se parece a un CFDI ya emitido.";
+      } else {
+        it.estado = "error"; it.detalle = [data.error, data.details && data.details !== data.error ? String(data.details).slice(0, 200) : ""].filter(Boolean).join(" ");
+      }
+      return true;
+    } catch (err) {
+      it.estado = "incierto";
+      it.detalle = err && err.name === "AbortError" ? "El servidor tardó demasiado: pudo haberse timbrado." : "Se perdió la conexión: pudo haberse timbrado.";
+      return false;
+    } finally { pintarMasivo(); }
+  }
+
+  async function masivoIniciar() {
+    const validas = masivo.facturas.filter((f, i) => masivo.rev.resultados[i].ok);
+    masivo.items = validas.map((f) => {
+      const idx = masivo.facturas.indexOf(f);
+      return { factura: f, filaCsv: f.filasCsv.join(", "), cliente: masivoNombre(f), rfc: f.receptor.rfc, total: masivo.rev.resultados[idx].total, estado: "pendiente", detalle: "", uuid: "", folio: "" };
+    });
+    masivo.corriendo = true; masivo.detener = false;
+    content.innerHTML = `
+      <div data-mas-resumen style="margin-bottom:.8rem;font-size:.9rem"></div>
+      <div style="overflow:auto;max-height:50vh"><table class="tbl"><thead><tr><th>Fila</th><th>Cliente</th><th style="text-align:right">Total</th><th>Estado</th></tr></thead><tbody data-mas-filas></tbody></table></div>
+      <div class="fac-foot" style="border:0;padding:1.2rem 0 0" data-mas-pie></div>`;
+    pintarMasivo();
+    window.addEventListener("beforeunload", masivoAvisarSalida);
+    for (const it of masivo.items) {
+      if (masivo.detener) break;
+      const seguir = await masivoTimbrar(it, false);
+      if (!seguir) { masivo.detener = true; break; }
+    }
+    masivo.items.forEach((it) => { if (it.estado === "pendiente") it.estado = "sin_enviar"; });
+    masivo.corriendo = false;
+    window.removeEventListener("beforeunload", masivoAvisarSalida);
+    refrescarLista();
+    pintarMasivo();
+    const hayIncierto = masivo.items.some((x) => x.estado === "incierto");
+    if (hayIncierto) {
+      const pie = content.querySelector("[data-mas-pie]");
+      if (pie) pie.insertAdjacentHTML("beforebegin", `<div class="fac-err" style="margin-top:1rem"><b>El lote se detuvo.</b> Una factura no recibió respuesta y pudo haberse timbrado. Revisa la lista de Facturación (ya se actualizó) antes de volver a subir ese cliente, para no duplicarlo.</div>`);
+    }
+  }
+  function masivoAvisarSalida(e) { e.preventDefault(); e.returnValue = ""; }
+
+  async function masivoEmitirDuplicado(i) {
+    const it = masivo.items[i];
+    if (!it || masivo.corriendo) return;
+    masivo.corriendo = true; pintarMasivo();
+    await masivoTimbrar(it, true);
+    masivo.corriendo = false; refrescarLista(); pintarMasivo();
+  }
+
+  function masivoDescargarResultado() {
+    const items = masivo.items.map((it) => ({ filaCsv: it.filaCsv, cliente: it.cliente, rfc: it.rfc, total: it.total, estado: masivoEstados[it.estado][0].replace(/^[✓✘⚠?]\s*/, ""), folio: it.folio, uuid: it.uuid, detalle: it.detalle }));
+    const f = new Date().toISOString().slice(0, 10);
+    descargarTexto("Timbrado_masivo_" + f + ".csv", window.CTMasivoCsv.resultadoCsv(items));
+  }
+
+  // Mientras corre un lote no se puede cerrar la ventana (se cortaría el seguimiento).
+  modal.addEventListener("click", (e) => {
+    if (masivo && masivo.corriendo && e.target.closest("[data-fac-close]")) {
+      e.stopPropagation();
+      facToast("Hay un lote en curso: usa «Detener» y espera a que termine la factura actual.", "warn");
+    }
+  }, true);
+  modal.addEventListener("click", (e) => {
+    if (!masivo) return;
+    if (e.target.closest("[data-mas-plantilla]")) { descargarTexto("Plantilla_timbrado_masivo.csv", window.CTMasivoCsv.plantillaCsv()); return; }
+    if (e.target.closest("[data-mas-otro]")) { renderMasivoArchivo(); return; }
+    if (e.target.closest("[data-mas-confirmar]")) { renderMasivoConfirmar(); return; }
+    if (e.target.closest("[data-mas-cancelar-conf]")) { renderMasivoRevision(); return; }
+    if (e.target.closest("[data-mas-iniciar]")) { masivoIniciar(); return; }
+    if (e.target.closest("[data-mas-detener]")) { masivo.detener = true; pintarMasivo(); return; }
+    if (e.target.closest("[data-mas-csv]")) { masivoDescargarResultado(); return; }
+    const dup = e.target.closest("[data-mas-dup]");
+    if (dup) { masivoEmitirDuplicado(Number(dup.getAttribute("data-mas-dup"))); }
+  });
+  modal.addEventListener("change", (e) => {
+    if (masivo && e.target && e.target.id === "fac-mas-file") masivoLeerArchivo(e.target.files && e.target.files[0]);
   });
 
   console.log("[CONTATECK] Módulo de facturación cargado · backend:", BACKEND);

@@ -77,6 +77,7 @@ await ok('un botón nuevo que escribe no puede quedar sin ocultar: todo lo que p
     'data-cont-as-add': 'agregar renglón dentro del formulario de póliza (oculto)', 'data-cont-as-del': 'quitar renglón dentro del formulario de póliza (oculto)',
     'data-cont-cuadrar': 'ayuda de cuadre dentro del formulario de póliza (oculto)', 'data-ct-ok': 'aceptar un aviso de la propia pantalla',
     'data-perfil-volver': 'navegación dentro de la ventana de Configuración de facturación (oculta)',
+    'data-mas-confirmar': 'paso dentro de la ventana de Timbrado masivo (solo se abre desde data-fac-masivo, oculto)', 'data-mas-cancelar-conf': 'volver dentro de la ventana de Timbrado masivo (oculta)',
   };
   const modulos = ['ventas.js', 'facturacion.js', 'nomina.js', 'contabilidad.js', 'data-firestore.js', 'app.js', 'dashboard.html'];
   const nombres = new Set();
