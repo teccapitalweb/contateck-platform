@@ -25,3 +25,14 @@ El usuario descargó del SAT el **Anexo 24 de la RMF 2026** (`Anexo_24_RMF2026-1
 `supabase-dev-mantener-activo` (en la app, sección Programadas): lunes y jueves a las 10:00 hora local ejecuta una sola consulta de **solo lectura** (`select now(), count(empresas)`) con el MCP `supabase-dev`. Si falla, solo avisa que el proyecto parece pausado.
 - Limitaciones: solo corre con la app abierta (si estaba cerrada, corre al abrirla). No está demostrado que una consulta del MCP cuente como actividad para Supabase; si el proyecto se pausa igual, habrá que usar otra vía (por ejemplo, entrar al panel).
 - No reanuda el proyecto ni modifica nada.
+
+## 3. Carga en Empresa Demo C (25-nov-2026)
+Con el director de Empresa Demo C en el visor se llamó a `PUT /api/fiscal/codigos-agrupador` (la misma ruta que usa Contabilidad → SAT → "Cargar códigos agrupador") con las 25 cuentas activas y los códigos de la hoja verificada. Antes se validó el contenido con `validarCodigosAgrupador` de la propia app: sin errores.
+- Respuesta: `ok`, **25 actualizadas, 0 no encontradas**.
+- Base de datos (lectura por el MCP): Empresa Demo C pasó de 0 a **25 cuentas activas con código** (las 4 dadas de baja siguen sin él); las otras tres empresas de DEV siguen con **0**. Los valores guardados coinciden con la hoja.
+- Pantalla (tras recargar, director): Contabilidad ve los 25 códigos y el bloque SAT dice **"Código Agrupador SAT: 25 de 25 cuentas con código asignado"**.
+- Es reversible: basta volver a dejar la columna vacía con la misma ruta.
+
+**Dato de prueba, no definitivo:** las cuentas dudosas llevan la sugerencia, entre ellas IVA trasladado = `208.01` (IVA cobrado). En una empresa real lo debe confirmar quien lleve su contabilidad.
+
+**No verificado:** la descarga real del XML del catálogo desde la pantalla (no se descargó ningún archivo); sí está cubierto por la prueba automática de `xmlCatalogoSAT` (usa el Código Agrupador si existe).
