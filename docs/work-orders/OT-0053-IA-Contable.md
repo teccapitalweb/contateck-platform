@@ -37,3 +37,11 @@ Un chat dentro del panel (vista **IA Contable**) donde el usuario hace preguntas
 - Las cifras salen de las mismas fuentes que el Dashboard (pólizas con estado `ok`); hereda sus límites (ver OT-0043, OT-0051).
 - El límite de uso es en memoria: se reinicia al reiniciar el backend y no se comparte entre instancias.
 - La IA no da asesoría fiscal definitiva: lo dice en sus instrucciones y debe remitir al contador.
+
+## Verificación (25-nov-2026, rama unida a `integracion-local`, backend reiniciado, SIN llave configurada)
+- `npm run test:ci`: pasan las **7 suites (89 pruebas)**: 24 + 14 + 10 + 3 + 13 + 7 + 18 de la IA.
+- Hubo que corregir `package.json`: la primera edición dejó `test-ia.js` dentro de `test:login` en vez de `test:ci` (OT-0053b); se detectó al ver que `test:ci` no mostraba las pruebas de la IA.
+- Visor, director de Empresa Demo C, `app.js?v=12`: antes de abrir la vista el chat dice "Cargando…" y está desactivado; al abrir **IA Contable** dice que todavía no está activada en el servidor porque falta la llave, con la caja de texto deshabilitada; la etiqueta es "Beta · solo lectura".
+- API: `GET /api/ia/estado` → `ok`, `disponible: false`, `rolPermitido: true`; `POST /api/ia/consultar` → **503 `IA_NO_CONFIGURADA`** sin llamar a ningún servicio externo; sin sesión → 401.
+
+**No verificado:** una conversación real con el proveedor (no hay llave); el chat con los roles contador y auditor en pantalla; el aspecto del chat en celular.
