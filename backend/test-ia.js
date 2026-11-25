@@ -304,7 +304,7 @@ await ok('frontend: la IA arranca desactivada, se inicia al abrir la vista, y co
   const pg = fs.readFileSync(path.join(aqui, '..', 'frontend', 'postgres-crud.js'), 'utf8');
   assert.ok(pg.includes('"/api/ia/estado"') && pg.includes('"/api/ia/consultar"'));
   const html = fs.readFileSync(path.join(aqui, '..', 'frontend', 'dashboard.html'), 'utf8');
-  assert.ok(html.includes('app.js?v=19') && html.includes('postgres-crud.js?v=5'));
+  assert.ok(html.includes('app.js?v=20') && html.includes('postgres-crud.js?v=5'));
   assert.ok(!html.includes('>En desarrollo<'), 'la etiqueta "En desarrollo" ya no aplica');
   const css = fs.readFileSync(path.join(aqui, '..', 'frontend', 'styles.css'), 'utf8');
   assert.ok(!css.includes('data-ia'), 'el auditor (solo lectura) debe poder usar la IA: no se oculta');

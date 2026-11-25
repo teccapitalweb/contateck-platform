@@ -83,7 +83,7 @@ ok('invitaciones: "Enviar por correo" arma el mensaje con el enlace, el correo y
 });
 
 ok('las páginas cargan las versiones nuevas de los archivos cambiados (para saltar el caché)', () => {
-  for (const v of ['app.js?v=19', 'fiscal.js?v=6', 'invitaciones.js?v=3', 'styles.css?v=3']) assert.ok(html.includes(v), v);
+  for (const v of ['app.js?v=20', 'fiscal.js?v=6', 'invitaciones.js?v=3', 'styles.css?v=3']) assert.ok(html.includes(v), v);
 });
 
 console.log(`\n✔ ${pruebas} pruebas de interfaz pasaron\n`);

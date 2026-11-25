@@ -209,7 +209,7 @@
       if (iva.error) h += '<p style="color:var(--faint);font-size:.82rem;margin:.2rem 0">' + esc(iva.detalle || iva.error) + '</p>';
       else {
         h += fila("IVA trasladado (" + esc(iva.periodo) + ")", "$" + money(iva.trasladado)) + fila("IVA acreditable", "$" + money(iva.acreditable)) +
-          fila(iva.resultado > 0 ? "IVA a cargo" : "IVA a favor", "$" + money(Math.abs(iva.resultado)));
+          fila(iva.resultado > 0 ? "IVA a cargo" : (iva.resultado < 0 ? "IVA a favor" : "Diferencia del mes"), "$" + money(Math.abs(iva.resultado)));
       }
       const isr = r.isr || {};
       if (isr.disponible) h += fila("ISR estimado " + esc(isr.anio), "$" + money(isr.estimado)) + '<p style="color:var(--faint);font-size:.76rem;margin:.4rem 0 0">30% de la utilidad contable acumulada ($' + money(isr.base) + '). Es un estimado: el pago provisional real usa el coeficiente de utilidad.</p>';
