@@ -16,3 +16,10 @@ Balance General (Activo −$424.57, Pasivo −$510.78, Resultado $86.21, cuadra)
 ## Pendiente que no es del asistente
 - Las pantallas de Cobranza y de cuentas por pagar deberían ocultar o marcar las facturas canceladas con saldo (hoy aparecen con saldo pendiente). Es del módulo de Ventas y Pagos.
 - "¿Cuánto gané este mes?" depende de que las pólizas del mes toquen cuentas de ingresos, costos o gastos: en Demo C, noviembre solo movió bancos, clientes y proveedores, por eso no hay utilidad del mes.
+
+## Verificación con datos reales (25-nov-2026, backend reiniciado, director de Demo C)
+- "¿Cuánto me deben mis clientes y cuánto debo a proveedores?" → **$42.68** en 1 factura y **$27.84** en 1 factura (coincide con el reporte del 13-nov; antes sumaba la cancelada y decía $274.68).
+- "¿Cuánto gané este año?" → Ingresos $258.62, Gastos $172.41, **Utilidad $86.21** (igual que el Estado de Resultados y el Balance).
+- "¿Cómo va el IVA este año?" → trasladado $41.38, acreditable $27.59, **$13.79 a cargo** (igual que los saldos de la Balanza de noviembre).
+- Corrección menor de redacción: "del año 2026" en vez de "de el año 2026", y la nota de "pregunta por el año" solo aparece cuando se pidió un mes.
+**No verificado:** el chat en pantalla con los roles contador y auditor; la apariencia en celular.

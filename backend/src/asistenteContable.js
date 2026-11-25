@@ -26,6 +26,8 @@ export function normalizar(texto) {
 
 export const dinero = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(n) || 0);
 const num = (n) => Number(n) || 0;
+// "de el año 2026" → "del año 2026"; "de octubre de 2026" queda igual.
+const de = (etiqueta) => (String(etiqueta).startsWith('el ') ? 'del ' + String(etiqueta).slice(3) : 'de ' + etiqueta);
 const redondea = (n) => Math.round(num(n) * 100) / 100;
 
 // ---------------- Intenciones ----------------
@@ -181,11 +183,11 @@ const MANEJADORES = {
     const r = await h.iva_del_periodo({ anio: periodo.anio, mes: periodo.mes });
     if (!r || r.error) return { respuesta: (r && r.error) || ERROR_DATOS('el IVA') };
     const lineas = [
-      `**IVA** de ${periodo.etiqueta || 'el periodo'} (cifra de referencia):`,
+      `**IVA** ${de(periodo.etiqueta || 'el periodo')} (cifra de referencia):`,
       `- IVA trasladado (cobrado a tus clientes): ${dinero(r.trasladado)}`,
       `- IVA acreditable (pagado a proveedores): ${dinero(r.acreditable)}`,
       r.resultado > 0 ? `- Resultado: **${dinero(r.resultado)} a cargo** (por pagar al SAT).` : r.resultado < 0 ? `- Resultado: **${dinero(-r.resultado)} a favor**.` : '- Resultado: $0.00.',
-      '', 'Es el movimiento de ' + (periodo.etiqueta || 'el periodo') + '. Para el saldo acumulado pregunta, por ejemplo, "¿cómo va el IVA este año?".', AVISO_VALIDAR,
+      '', ...(periodo.mes ? ['Es el movimiento de ' + periodo.etiqueta + '. Para el saldo del año pregunta, por ejemplo, "¿cómo va el IVA este año?".'] : []), AVISO_VALIDAR,
     ];
     return { respuesta: lineas.join('\n'), fuente: 'cuentas de IVA según la Configuración contable' };
   },
@@ -212,7 +214,7 @@ const MANEJADORES = {
     const resultado = redondea(ingresos - costos - gastos);
     if (!ingresos && !costos && !gastos) return { respuesta: `No hay movimientos de ingresos, costos ni gastos en ${periodo.etiqueta}. Para ver el acumulado pregunta, por ejemplo, "¿cuánto gané este año?".` };
     const lineas = [
-      `**Resultado de ${periodo.etiqueta}** (con las cuentas de ingresos, costos y gastos):`,
+      `**Resultado ${de(periodo.etiqueta)}** (con las cuentas de ingresos, costos y gastos):`,
       `- Ingresos: ${dinero(ingresos)}`, `- Costos: ${dinero(costos)}`, `- Gastos: ${dinero(gastos)}`,
       resultado >= 0 ? `- **Utilidad: ${dinero(resultado)}**` : `- **Pérdida: ${dinero(-resultado)}**`,
       '', AVISO_VALIDAR,
