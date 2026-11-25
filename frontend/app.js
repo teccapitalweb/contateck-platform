@@ -159,6 +159,10 @@
       return '<div class="dash-proximamente" style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' +
         '<b style="display:block;color:var(--text);margin-bottom:.2rem">Próximamente</b>' + motivo + '</div>';
     }
+    // Estado vacío SIN el rótulo "Próximamente": para cuando no hay nada que mostrar pero la función sí existe.
+    function sinPendientes(texto) {
+      return '<div style="padding:1rem;text-align:center;color:var(--faint);font-size:.9rem">' + texto + '</div>';
+    }
     // Mientras llegan los datos del backend: antes estos bloques decían
     // "Próximamente" por un instante, como si no existieran.
     function cargando(que) {
@@ -426,9 +430,9 @@
                 '</td><td>—</td><td><span class="pill ' + (vencida ? "pill--late" : "pill--pend") + '">' +
                 (vencida ? "Vencida" : "Pendiente") + '</span></td></tr>';
             }).join("")
-          : '<tr><td colspan="5">' + proximamente(datos.obligacionesConfiguradas > 0
-            ? "No tienes obligaciones pendientes por presentar."
-            : "Sin obligaciones fiscales configuradas todavía (SAT y Fiscal → + Obligación).") + '</td></tr>';
+          : '<tr><td colspan="5">' + (datos.obligacionesConfiguradas > 0
+            ? sinPendientes("No tienes obligaciones pendientes por presentar.")
+            : proximamente("Sin obligaciones fiscales configuradas todavía (SAT y Fiscal → + Obligación).")) + '</td></tr>';
       }
     }
     window.renderDashboardReal = renderDashboardReal;
