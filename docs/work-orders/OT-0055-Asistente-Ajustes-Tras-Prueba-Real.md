@@ -14,7 +14,7 @@ Balance General (Activo −$424.57, Pasivo −$510.78, Resultado $86.21, cuadra)
 `test-asistente.js` 15 pruebas (+2) y `test-ia.js` 19 (la prueba de cuentas por cobrar y pagar ahora incluye facturas canceladas con saldo). Suma total: 105 pruebas en 8 suites.
 
 ## Pendiente que no es del asistente
-- Las pantallas de Cobranza y de cuentas por pagar deberían ocultar o marcar las facturas canceladas con saldo (hoy aparecen con saldo pendiente). Es del módulo de Ventas y Pagos.
+- ~~Las pantallas de Cobranza y de cuentas por pagar deberían ocultar las facturas canceladas con saldo.~~ **Corregido en la revisión (OT-0057):** el selector de cobros ya excluía las canceladas (OT-0029) y los cobros nuevos sobre una factura cancelada ya se rechazaban (OT-0034); lo que faltaba era lo mismo del lado de proveedores, que se agregó en la OT-0057. El defecto de las vistas de saldos afectaba solo al asistente, que ya lo filtra.
 - "¿Cuánto gané este mes?" depende de que las pólizas del mes toquen cuentas de ingresos, costos o gastos: en Demo C, noviembre solo movió bancos, clientes y proveedores, por eso no hay utilidad del mes.
 
 ## Verificación con datos reales (25-nov-2026, backend reiniciado, director de Demo C)
