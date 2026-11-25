@@ -326,7 +326,7 @@ await ok('mensajes del inicio de sesión: errores conocidos traducidos y el téc
     ['Invalid login credentials', /incorrectos/], ['Email not confirmed', /Confirma tu correo/], ['User already registered', /ya tiene una cuenta/],
     ['email rate limit exceeded', /demasiados correos/], ['Signups not allowed for this instance', /registro con correo está desactivado/],
     ['Error sending confirmation email', /correo de confirmación/], ['Password should be at least 6 characters.', /contraseña es muy débil/],
-    ['Unable to validate email address: invalid format', /Revisa el correo/], ['User is banned', /suspendida/], ['Failed to fetch', /Sin conexión/],
+    ['Unable to validate email address: invalid format', /Revisa el correo/], ['User is banned', /suspendida/], // OT-0048: los errores de red ("Failed to fetch") ahora se prueban en test-login-mensajes.js
   ]) assert.match(m(msg), re, msg);
   assert.equal(avisos.length, 0);
   assert.match(m('Database error saving new user', 'No se pudo crear la cuenta.'), /No se pudo crear la cuenta/);
