@@ -62,3 +62,16 @@ No se toca ninguna política de las demás tablas: `perfiles` pasa a ser el **co
 6. Quien trabaja en otra empresa deja visible su `empresa_id` activa (un UUID) a los compañeros de esta por la política `perfiles_select_membresia`; no se expone nombre ni datos de la otra empresa.
 7. Datos que el navegador guarda por empresa (`storage-empresa.js`, OT-0038) ya vienen separados por empresa; el cambio de empresa recarga la página completa.
 8. Sin push. El panel y el backend se pueden desplegar en cualquier orden, pero el selector solo se activa de verdad cuando el SQL está aplicado.
+
+## 7. Paso 0 ejecutado en DEV (2026-11-25, solo lectura)
+
+Cinco consultas SELECT, sin escribir nada. Resultado:
+
+- `perfiles_proteger_campos()` real = la de OT-0038 (solo difiere el fin de línea), así que la copia con la excepción de OT-0056 no pisa ningún cambio hecho a mano.
+- `auth_empresa_id()` y `auth_rol()` exigen `activo = true` (igual que en la prueba del SQL).
+- `perfiles` ya tiene, además de `perfiles_select_empresa` y `perfiles_update_propio`, la política `perfiles_update_gestion_equipo` (RH/Admin/Director actualizan a gente de **su** empresa). Por eso `membresia_cambiar_estado` es necesaria: esa política no alcanza a quien está trabajando en otra empresa. La política nueva `perfiles_select_membresia` se suma sin chocar.
+- `auditoria_log` solo tiene llaves (sin CHECK en `accion` ni `modulo`): la fila con `modulo = 'auth'` entra sin problema.
+- Columnas de `perfiles`, `empresas`, `roles` e `invitaciones` coinciden con lo que usa el SQL. `empresas` tiene `status` y `estado` a la vez (no se usan aquí).
+- Hay 4 empresas y 9 perfiles, ninguno inactivo, y `usuario_empresas` no existe todavía: el respaldo inicial crearía 9 membresías.
+
+Conclusión: el SQL se puede aplicar tal cual. Sigue sin aplicarse: falta la revisión de Jorge.
