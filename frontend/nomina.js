@@ -395,6 +395,8 @@
     if (e.target.closest("[data-pn-generar]")) { generarPrenomina(); return; }
     if (e.target.closest("[data-pn-descartar]")) { salirPrenomina(); return; }
     if (e.target.closest("[data-pn-aprobar]")) { aprobarNomina(); return; }
+    if (e.target.closest("[data-hist-exportar]")) { exportarHistorialNominas(); return; }
+    if (e.target.closest("[data-nom-det-exportar]")) { exportarDetalleNomina(); return; }
     const histVer = e.target.closest("[data-hist-ver]");
     if (histVer) { verDetalleNomina(histVer.getAttribute("data-hist-ver")); return; }
     const histRec = e.target.closest("[data-hist-recibos]");
@@ -536,6 +538,31 @@
   const PERIODO_ETIQUETAS = { semanal: "Semanal", catorcenal: "Catorcenal", quincenal: "Quincenal", mensual: "Mensual" };
 
   let nominasCache = [];
+  let ultimoDetalleNomina = null; // OT-0077: lo que muestra la ventana de detalle, para exportarlo
+  // OT-0077: exporta a CSV lo que ya ve esta persona (historial o detalle). Solo lee.
+  function exportarCsvNomina(prefijo, cols, filas) {
+    if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+    window.CTExportar.descargar(window.CTExportar.nombreArchivo(prefijo), window.CTExportar.csv(cols, filas));
+    toast("Exportadas " + filas.length + " fila" + (filas.length === 1 ? "" : "s") + " a CSV");
+  }
+  function exportarHistorialNominas() {
+    if (!nominasCache.length) { toast("No hay nóminas para exportar", "warn"); return; }
+    exportarCsvNomina("Nominas", ["Inicio del periodo", "Fin del periodo", "Periodicidad", "Empleados pagados", "Neto pagado", "Procesada"],
+      nominasCache.map(function (n) {
+        return [String(n.fecha_inicio || "").slice(0, 10), String(n.fecha_fin || "").slice(0, 10), PERIODO_ETIQUETAS[n.periodicidad] || n.periodicidad || "",
+          Number(n.empleados_pagados) || 0, Number(n.total_neto) || 0, String(n.created_at || "").slice(0, 10)];
+      }));
+  }
+  function exportarDetalleNomina() {
+    const u = ultimoDetalleNomina;
+    if (!u || !u.detalle.length) { toast("No hay renglones para exportar", "warn"); return; }
+    const n = nominasCache.find(function (x) { return x.id === u.id; });
+    const periodo = n ? "_" + String(n.fecha_inicio || "").slice(0, 10) + "_a_" + String(n.fecha_fin || "").slice(0, 10) : "";
+    exportarCsvNomina("Nomina_detalle" + periodo, ["Empleado", "Puesto", "Sueldo base", "Otras percepciones", "Deducciones", "Neto", "UUID del CFDI de nómina", "Notas"],
+      u.detalle.map(function (d) {
+        return [d.nombre, d.puesto || "", Number(d.sueldo_base) || 0, Number(d.otras_percepciones) || 0, Number(d.deducciones) || 0, Number(d.neto) || 0, d.cfdi_uuid || "", d.notas || ""];
+      }));
+  }
   async function cargarHistorial() {
     const root = $("[data-historial-nominas-root]");
     if (!root) return;
@@ -557,7 +584,7 @@
     }
     root.innerHTML =
       '<div class="card"><div class="card__head"><h3>Historial de nóminas</h3>' +
-      '<span class="sub">' + lista.length + " nómina" + (lista.length === 1 ? "" : "s") + " pagada" + (lista.length === 1 ? "" : "s") + "</span></div>" +
+      '<span class="sub">' + lista.length + " nómina" + (lista.length === 1 ? "" : "s") + " pagada" + (lista.length === 1 ? "" : "s") + '</span> <button class="btn btn--ghost btn--sm" data-hist-exportar title="Descarga en CSV el historial de nóminas, para abrirlo en Excel">Exportar CSV</button></div>' +
       '<div style="overflow-x:auto"><table class="tbl">' +
       "<thead><tr><th>Periodo</th><th>Periodicidad</th><th style=\"text-align:right\">Empleados</th>" +
       "<th style=\"text-align:right\">Neto pagado</th><th>Procesada</th><th></th></tr></thead><tbody>" +
@@ -588,6 +615,7 @@
 
     let totNeto = 0;
     detalle.forEach(function (d) { totNeto += Number(d.neto) || 0; });
+    ultimoDetalleNomina = { id: id, detalle: detalle };
 
     const cuerpo =
       '<div style="overflow-x:auto"><table class="tbl">' +
@@ -604,7 +632,7 @@
           "<td>" + (d.notas ? escNom(d.notas) : '<span style="color:var(--faint)">—</span>') + "</td></tr>";
       }).join("") +
       "</tbody></table></div>" +
-      '<p style="text-align:right;margin-top:.8rem;font-size:.95rem">Neto total: <b>$' + money(totNeto) + "</b></p>";
+      '<p style="text-align:right;margin-top:.8rem;font-size:.95rem">Neto total: <b>$' + money(totNeto) + '</b> &nbsp; <button class="btn btn--ghost btn--sm" data-nom-det-exportar>Exportar CSV</button></p>';
 
     verDetalleModal("Detalle de nómina · " + detalle.length + " empleado(s)", cuerpo);
   }

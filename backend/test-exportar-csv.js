@@ -71,9 +71,33 @@ ok('Pólizas exporta lo que se ve: la tabla y la exportación comparten la misma
   assert.ok(/function renderPolizasTabla\(\) \{[\s\S]*?const pol = polizasVisibles\(\);/.test(c));
   assert.ok(/function exportarPolizasCsv\(\) \{\s*const pol = polizasVisibles\(\);/.test(c));
 });
-ok('exportar solo lee: no es una acción de escritura (el auditor también puede usarlo)', () => {
+ok('Facturación exporta las facturas que se ven (mismo filtro que la tabla) y avisa si faltan por cargar', () => {
+  const d = leer('data-firestore.js'), html = leer('dashboard.html');
+  assert.ok(/<button[^>]*data-cfdis-exportar/.test(html));
+  const m = d.match(/function exportarCfdis\(\) \{[\s\S]*?\r?\n\}\r?\n/);
+  assert.ok(m, 'existe exportarCfdis');
+  assert.ok(m[0].includes('filters.cfdis') && m[0].includes('searchText("cfdis", r)'), 'usa el mismo filtro que refresh()');
+  assert.ok(m[0].includes('uuidFull') && m[0].includes('CONTATECK_CFDIS_META') && m[0].includes('Cargar más'));
+});
+ok('Balanza exporta lo que se ve (con o sin saldo inicial según el periodo) y trae la fila de totales', () => {
+  const c = leer('contabilidad.js'), html = leer('dashboard.html');
+  assert.ok(c.includes('data-cont-exportar-balanza') && c.includes('function exportarBalanzaCsv()'));
+  const m = c.match(/function exportarBalanzaCsv\(\) \{[\s\S]*?\r?\n  \}\r?\n/);
+  assert.ok(m && m[0].includes('b.hayPeriodo') && m[0].includes('"Totales"') && m[0].includes('b.tot.saldoAcreedor'));
+  assert.ok(html.includes('contabilidad.js?v=25'));
+});
+ok('Nómina exporta el historial y el detalle de una nómina, con montos como números', () => {
+  const n = leer('nomina.js');
+  assert.ok(n.includes('data-hist-exportar') && n.includes('data-nom-det-exportar'));
+  assert.ok(/function exportarDetalleNomina\(\) \{[\s\S]*?Number\(d\.sueldo_base\)[\s\S]*?Number\(d\.neto\)/.test(n));
+  assert.ok(/function exportarHistorialNominas\(\) \{[\s\S]*?Number\(n\.total_neto\)/.test(n));
+  assert.ok(n.includes('ultimoDetalleNomina = { id: id, detalle: detalle }'), 'exporta el mismo detalle que muestra la ventana');
+});
+ok('exportar solo lee: ningún botón de exportación se oculta al rol de solo lectura', () => {
   const css = leer('styles.css');
-  assert.ok(!css.includes('data-v-exportar') && !css.includes('data-cont-exportar-pol'), 'no se oculta al rol de solo lectura');
+  for (const b of ['data-v-exportar', 'data-cont-exportar-pol', 'data-cont-exportar-balanza', 'data-cfdis-exportar', 'data-hist-exportar', 'data-nom-det-exportar']) {
+    assert.ok(!css.includes(b), b + ' no debe ocultarse');
+  }
 });
 
 console.log(process.exitCode ? '\nHAY FALLAS' : `\nTODO OK · ${pasaron} pruebas`);
