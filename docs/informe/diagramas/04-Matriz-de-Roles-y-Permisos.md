@@ -25,6 +25,7 @@ Roles: **director**, **admin**, **contador**, **auditor**, **rh**, **vendedor**.
 - **Auditor:** puede consultar pero no modificar nada; en pantalla se le ocultan todos los botones de escritura (prueba del 25-nov-2026 en Empresa Demo C: 0 botones de escritura visibles en las 7 vistas) y la base también rechaza sus escrituras.
 - **Separación de funciones:** quien registra una venta no la valida, salvo admin y director.
 - **Todos los datos están aislados por empresa** (RLS); el rol define qué se puede hacer dentro de la propia empresa.
+- **Revisión en pantalla de los seis roles** (26-nov-2026, Empresa Demo C): ver `docs/work-orders/OT-0073-Revision-de-Roles-en-Pantalla.md`. Director, contador, auditor, rh y vendedor se probaron con cuenta propia; el asistente contable se probó con contador y auditor.
 - **Pendiente de decisión:** si el contador debe poder procesar nómina (hoy no; ver el reporte de prueba completa).
 - **rh** (probado en pantalla el 26-nov-2026 con `demo.rh@contateck.mx` en Empresa Demo C): ve **Nómina y Equipo** (OT-0070). Calcula, ve recibos y timbra nómina; el servidor le rechaza facturar, cancelar y el módulo SAT y Fiscal.
 - **vendedor:** ve **Ventas y pagos** y la **Facturación en solo lectura** (OT-0070); registra ventas, pero no las revisa ni confirma. Probado en pantalla el 26-nov-2026 con `demo.vendedor.c@contateck.mx`: menú de Ventas y Facturación, Facturación sin botones de escritura y "Nueva venta" disponible.
