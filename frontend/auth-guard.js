@@ -48,7 +48,7 @@ if (!configured) {
     // el backend sigue respondiendo 401, se devuelve esa respuesta sin cerrar sesión.
     (function instalarRenovacionDeToken() {
       const original = window.fetch.bind(window);
-      const BASE = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const BASE = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
       let renovando = null;
       // OT-0056 · Multiempresa: cada llamada al backend dice qué empresa está mostrando esta pestaña
       // (cabecera X-Empresa-Id). Si la persona ya cambió de empresa en otra pestaña, el backend responde
@@ -122,7 +122,7 @@ if (!configured) {
       // el selector de empresa sigue funcionando con EMPRESAS de data.js
       // exactamente como antes. Esto es un agregado, no un reemplazo.
       try {
-        const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+        const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
         const authHeader = { Authorization: `Bearer ${data.session.access_token}` };
 
         // OT-0014: estas 4 llamadas son independientes entre sí (ninguna

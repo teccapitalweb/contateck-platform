@@ -84,7 +84,7 @@
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
   const cfg = window.SUPABASE_CONFIG || {};
-  const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+  const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
   const supabase = createClient(cfg.url, cfg.anonKey, { auth: { persistSession: true, detectSessionInUrl: true, autoRefreshToken: true } });
 
   const $ = (id) => document.getElementById(id);

@@ -11,7 +11,7 @@
    ============================================================ */
 window.CTPostgres = (function () {
   function backendUrl() {
-    return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+    return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
   }
 
   async function pedir(metodo, ruta, body) {

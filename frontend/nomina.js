@@ -126,7 +126,7 @@
   }
   function abrirModal() {
     ensureModal();
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = (function () { try { return new Date().toLocaleDateString("sv-SE", { timeZone: "America/Mexico_City" }); } catch (e) { return new Date().toISOString().slice(0, 10); } })();
     $("[data-pn-body]").innerHTML =
       '<div class="fld"><label>Periodicidad</label><div class="seg" data-pn-seg style="flex-wrap:wrap">' +
       PERIODOS.map(function (p, i) {
@@ -190,7 +190,7 @@
     const p = PERIODOS.find(function (x) { return x.v === periodicidadElegida(); });
     const d = new Date(ini.value + "T12:00:00");
     d.setDate(d.getDate() + (p ? p.dias : 15) - 1);
-    fin.value = d.toISOString().slice(0, 10);
+    fin.value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
 
   /* ---------- Estado de la prenómina activa ---------- */
@@ -451,7 +451,7 @@
 
   /* ---------- Aprobar y Pagar (Pieza 4) ---------- */
   function backendUrl() {
-    return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+    return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
   }
   async function aprobarNomina() {
     if (!pre || !pre.filas.length) return;

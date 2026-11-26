@@ -10,7 +10,7 @@
   // URL del backend de timbrado. Por default, producción (Railway).
   // OT-0005: ahora se puede sobreescribir desde app-config.js para
   // pruebas locales, sin tocar esta línea cada vez.
-  const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+  const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
 
   // OT-0011 fix: el backend exige Authorization: Bearer <token> cuando
   // REQUIRE_AUTH=true (auth-guard.js ya guarda el token de sesión en
@@ -2041,7 +2041,7 @@
 
   function masivoDescargarResultado() {
     const items = masivo.items.map((it) => ({ filaCsv: it.filaCsv, cliente: it.cliente, rfc: it.rfc, total: it.total, estado: masivoEstados[it.estado][0].replace(/^[✓✘⚠?]\s*/, ""), folio: it.folio, uuid: it.uuid, detalle: it.detalle }));
-    const f = new Date().toISOString().slice(0, 10);
+    const f = (function () { try { return new Date().toLocaleDateString("sv-SE", { timeZone: "America/Mexico_City" }); } catch (e) { return new Date().toISOString().slice(0, 10); } })();
     descargarTexto("Timbrado_masivo_" + f + ".csv", window.CTMasivoCsv.resultadoCsv(items));
   }
 

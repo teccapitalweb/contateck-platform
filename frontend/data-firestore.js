@@ -22,6 +22,7 @@ function parseMoney(s) { const n = parseFloat(String(s).replace(/[^0-9.]/g, ""))
 // "123456789", nunca el texto sucio.
 function soloAlfanumerico(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
 function soloNumeros(s) { return String(s || "").replace(/[^0-9]/g, ""); }
+function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 function pad5(n) { return String(n).padStart(5, "0"); }
 function hex(n) { let s = ""; for (let i = 0; i < n; i++) s += "0123456789ABCDEF"[Math.floor(Math.random() * 16)]; return s; }
 function uuidShort() { return hex(4) + "…" + hex(4); }
@@ -168,7 +169,7 @@ const SCHEMAS = {
   },
 };
 const COLL2KEY = { polizas: "poliza", empleados: "empleado" };
-function labelOf(coll, o) { return coll === "empleados" ? o.nombre : o.folio; }
+function labelOf(coll, o) { return esc(coll === "empleados" ? o.nombre : o.folio); }
 
 /* ---------- Modal ---------- */
 const modal = document.querySelector("[data-modal]");
@@ -178,7 +179,7 @@ const mSave = modal && modal.querySelector("[data-modal-save]");
 let current = null; // {mode, schema?, coll, id?, obj?, label?}
 
 function fieldHTML(f, val) {
-  const v = val == null ? "" : String(val);
+  const v = esc(val == null ? "" : String(val));
   if (f.type === "seg") {
     // OT-nomina-p1: soporta opciones como string plano ("Diario") o como
     // par { v: valor-interno, t: etiqueta-visible } — retrocompatible con
@@ -186,8 +187,8 @@ function fieldHTML(f, val) {
     // (Estado del empleado) acomoden en 2 filas sin desbordarse del modal.
     const opts = f.opts.map((o) => (typeof o === "string" ? { v: o, t: o } : o));
     const activo = val || f.def;
-    return '<div class="fld"><label>' + f.label + '</label><div class="seg" data-seg="' + f.k + '" style="flex-wrap:wrap">' +
-      opts.map((o) => '<button type="button" data-val="' + o.v + '" class="' + (o.v === activo ? "is-active" : "") + '">' + o.t + "</button>").join("") +
+    return '<div class="fld"><label>' + esc(f.label) + '</label><div class="seg" data-seg="' + esc(f.k) + '" style="flex-wrap:wrap">' +
+      opts.map((o) => '<button type="button" data-val="' + esc(o.v) + '" class="' + (o.v === activo ? "is-active" : "") + '">' + esc(o.t) + "</button>").join("") +
       "</div></div>";
   }
   if (f.type === "money") {
@@ -211,7 +212,7 @@ function fieldHTML(f, val) {
   // 18) — nunca fuerza una longitud exacta que rechazaría casos válidos.
   return '<div class="fld" data-fld="' + f.k + '"><label>' + f.label + '</label>' +
     '<input data-in="' + f.k + '" type="text"' + (f.mask ? ' data-mask="' + f.mask + '"' : "") + (f.max ? ' maxlength="' + f.max + '"' : "") +
-    ' value="' + v.replace(/"/g, "&quot;") + '" placeholder="' + (f.ph || "") + '"><span class="err">Este campo es obligatorio.</span></div>';
+    ' value="' + v + '" placeholder="' + esc(f.ph || "") + '"><span class="err">Este campo es obligatorio.</span></div>';
 }
 
 function bindSegs() {
@@ -418,7 +419,7 @@ if (configured) {
       }
       const supaToken = window.CONTATECK_SUPABASE_TOKEN;
       if (supaToken) {
-        const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+        const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
         const resp = await fetch(`${BACKEND}/api/firebase-token`, {
           headers: { Authorization: `Bearer ${supaToken}` },
         });
