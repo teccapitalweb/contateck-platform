@@ -58,6 +58,10 @@
       });
       const crumb = doc.querySelector("[data-crumb-title]");
       if (crumb && titulo) crumb.textContent = titulo;
+      // Los módulos (Ventas, Equipo…) dibujan su sección cuando se hace clic en su opción del menú; como el perfil llega
+      // después de que cargaron, se hace ese mismo clic para que la sección de inicio no quede en blanco.
+      const itemInicio = items.filter(function (it) { return it.getAttribute("data-view") === inicio; })[0];
+      if (itemInicio && typeof itemInicio.click === "function") itemInicio.click();
     }
     return { ocultas: ocultas, inicio: inicio };
   }

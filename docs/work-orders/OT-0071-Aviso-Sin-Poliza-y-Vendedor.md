@@ -10,3 +10,6 @@ Una prueba nueva en `backend/test-acceso-roles.js` (8 en total) evalúa la funci
 
 ## Límite
 No cambia lo que la base permite leer: el vendedor sigue viendo las ventas de la empresa (la base lo permite) y la lectura amplia por rol queda como decisión pendiente (ver OT-0070).
+
+## Corrección a la OT-0070 encontrada al verificar esto (OT-0071b)
+Al recargar con la sesión del vendedor, **Ventas arrancaba en blanco**: los módulos dibujan su sección cuando se hace clic en su opción del menú, y la OT-0070 la activaba sin ese clic (el perfil llega después de que cargan los módulos). En la primera revisión no se notó porque se navegó con clics. Ahora `aplicar` hace el clic real en la sección de inicio del rol (`acceso-roles.js?v=2`), y la prueba comprueba que se hace una vez y solo cuando hay que mover a la persona. Con una mutación (quitar el clic) la prueba falla.
