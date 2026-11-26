@@ -11,7 +11,7 @@ Lista de lo que el panel **ofrecía como botón o acción** y estaba marcado com
 | Buscador global (🔍, `Ctrl+K`) | Barra superior | **Hecho y probado en el panel real (26-nov-2026).** Antes el icono no hacía nada | `OT-0068-Buscador-y-Notificaciones.md`; `test-busqueda-notificaciones.js` (16); en el panel: encontró una factura por folio y dejó Facturación filtrada, empleados por nombre, clientes, y abrió el detalle de una póliza; el RFC de un empleado no produce resultados | Busca en lo cargado (las 200 facturas más recientes); aspecto en teléfono sin revisar |
 | Notificaciones (🔔) | Barra superior | **Hecho y probado en el panel real (26-nov-2026).** Antes mostraba siempre un punto rojo y no hacía nada | Mismo documento; la campana mostró las 3 alertas reales del Dashboard y llevó al módulo; el punto rojo solo aparece si hay avisos; incluye invitaciones a otras empresas | Las invitaciones en la campana solo se probaron con datos simulados |
 
-Pruebas automáticas de toda la rama: `npm run test:ci` = 17 suites, 213 pruebas, en verde (incluye 22 del timbrado masivo y 18 del timbrado de nómina).
+Pruebas automáticas de toda la rama: `npm run test:ci` = 18 suites, 220 pruebas, en verde (incluye 22 del timbrado masivo y 18 del timbrado de nómina).
 
 ## Prueba real desde el panel: timbrado de nómina (25-nov-2026, ambiente de pruebas)
 

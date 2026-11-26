@@ -760,6 +760,23 @@ html[data-rol="auditor"] :is(
   [data-new], [data-edit], [data-del]
 ) { display: none !important; }
 
+/* ============================================================
+   OT-0070 · Pantalla por rol
+   acceso-roles.js marca con .por-rol-oculto el menú y las secciones que el rol no ve (rh: solo Nómina y Equipo;
+   vendedor: solo Ventas y Facturación). Al vendedor, además, la Facturación se le muestra en solo lectura: se le
+   ocultan los botones que escriben. "Nueva venta" (data-v-nueva) SÍ le queda: registrar ventas es de su rol.
+   El servidor y la base rechazan igual lo que no le toca; esto evita mostrarle botones que fallarían.
+   ============================================================ */
+.por-rol-oculto { display: none !important; }
+html[data-rol="vendedor"] :is(
+  /* Facturación */
+  [data-config-empresa], [data-facturar], [data-correo-cfdi], [data-nc-cfdi], [data-rep-cfdi], [data-cancelar-cfdi],
+  [data-fac-timbrar], [data-fac-masivo], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
+  [data-perfil-editar], [data-perfil-nuevo], [data-perfil-guardar], [data-perfil-activar], [data-perfil-borrar],
+  /* Ventas y pagos: registra, pero no revisa, confirma ni contabiliza */
+  [data-v-tomar], [data-v-conf], [data-v-rech], [data-v-rech-ok], [data-v-genpol]
+) { display: none !important; }
+
 /* OT-0060 · Imprimir / guardar PDF: se ocultan el menú, la barra superior, los botones y los modales. */
 @media print {
   .side, .topbar, .page-head__actions, .modal, .toast, [data-modal], .chat__input { display: none !important; }

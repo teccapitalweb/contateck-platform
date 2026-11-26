@@ -26,4 +26,6 @@ Roles: **director**, **admin**, **contador**, **auditor**, **rh**, **vendedor**.
 - **Separación de funciones:** quien registra una venta no la valida, salvo admin y director.
 - **Todos los datos están aislados por empresa** (RLS); el rol define qué se puede hacer dentro de la propia empresa.
 - **Pendiente de decisión:** si el contador debe poder procesar nómina (hoy no; ver el reporte de prueba completa).
-- Los roles **rh** y **vendedor** se documentan desde el código; no se probaron en pantalla en la ronda final.
+- **rh** (probado en pantalla el 26-nov-2026 con `demo.rh@contateck.mx` en Empresa Demo C): ve **Nómina y Equipo** (OT-0070). Calcula, ve recibos y timbra nómina; el servidor le rechaza facturar, cancelar y el módulo SAT y Fiscal.
+- **vendedor:** ve **Ventas y pagos** y la **Facturación en solo lectura** (OT-0070); registra ventas, pero no las revisa ni confirma. Pendiente de probar en pantalla con `demo.vendedor.c@contateck.mx`.
+- La pantalla por rol **ordena lo que se ve; la seguridad es el servidor y las reglas de la base**. Hoy la base todavía deja **leer** facturas, pólizas y ventas a cualquier rol de la empresa (decisión pendiente) y la escritura de `cfdis_proveedor` no revisa el rol (propuesta SQL sin ejecutar: `database/OT-0070-cfdis-proveedor-solo-contables-PROPUESTA.sql`).
