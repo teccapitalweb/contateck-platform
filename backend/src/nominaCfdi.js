@@ -74,6 +74,22 @@ export function antiguedadSemanas(fechaIngreso, fechaFin) {
 
 const hoyDe = (fechaHora) => String(fechaHora || '').slice(0, 10);
 
+// Día (AAAA-MM-DD) en hora de México de una marca de tiempo; null si no es válida.
+function diaMexico(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+// Fecha de pago del CFDI: el día en que se aprobó y pagó la nómina en el sistema (no el día en que se timbra),
+// sin ir antes del inicio del periodo ni después de hoy. Si la nómina no trae su fecha de proceso, el fin del
+// periodo (recortado a hoy). El sistema no guarda otra fecha de pago.
+export function fechaDePago(nomina, hoy) {
+  const base = diaMexico(nomina.created_at) || nomina.fecha_fin;
+  const f = base < nomina.fecha_inicio ? nomina.fecha_inicio : base;
+  return f > hoy ? hoy : f;
+}
+
 // Construye la factura de nómina para UN empleado. `contexto`:
 //   { nomina, renglon, empleado, emisor, cpExpedicion, fecha, registroPatronal? }
 // Devuelve { ok:true, invoice, desglose } o { ok:false, error }.
@@ -90,7 +106,7 @@ export function construirCfdiNomina(contexto) {
   if (!d.ok) return d;
   if (!(d.totalPercepciones > 0)) return { ok: false, error: 'El renglón no tiene percepciones que timbrar.' };
 
-  const fechaPago = nomina.fecha_fin > hoyDe(fecha) ? hoyDe(fecha) : nomina.fecha_fin;
+  const fechaPago = fechaDePago(nomina, hoyDe(fecha));
   const sdi = num(renglon.sdi);
   const conImss = Boolean(registroPatronal);   // el SAT pide registro patronal cuando se informa el NSS
   const clabe = String(empleado.cuenta_bancaria || '').replace(/\D/g, '');

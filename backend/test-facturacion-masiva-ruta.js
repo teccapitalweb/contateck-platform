@@ -49,6 +49,8 @@ ok(r.status === 400 && /Máximo 50/.test(r.j.error), 'más de 50 facturas: 400')
 r = await post({}, TOKENS.contador);
 ok(r.status === 400, 'sin facturas: 400');
 
-srv.close(); fake.close();
+// Se cierran los servidores y se deja terminar solo: process.exit con sockets a medio cerrar aborta Node en
+// Windows ("UV_HANDLE_CLOSING") y rompe la cadena de `npm run test:ci`.
+srv.closeAllConnections(); fake.closeAllConnections(); srv.close(); fake.close();
 console.log(fallas ? `\n${fallas} FALLA(S)` : `\nTODO OK · ${n} pruebas`);
-process.exit(fallas ? 1 : 0);
+process.exitCode = fallas ? 1 : 0;

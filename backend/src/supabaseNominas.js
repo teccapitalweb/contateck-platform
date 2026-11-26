@@ -165,7 +165,7 @@ export async function leerParaTimbrar(accessToken, nominaId, log = console) {
   const supabase = clienteComoUsuario(accessToken);
   if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
   const { data: nomina, error: e1 } = await supabase
-    .from('nominas').select('id, periodicidad, fecha_inicio, fecha_fin, dias, estado').eq('id', nominaId).maybeSingle();
+    .from('nominas').select('id, periodicidad, fecha_inicio, fecha_fin, dias, estado, created_at').eq('id', nominaId).maybeSingle();
   if (e1) { log.warn('[postgres] leerParaTimbrar nomina:', e1.message); return { ok: false, error: 'No se pudo leer la nómina.' }; }
   if (!nomina) return { ok: true, nomina: null, detalle: [], empleados: [] };
   const { data: detalle, error: e2 } = await supabase

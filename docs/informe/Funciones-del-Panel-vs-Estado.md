@@ -9,7 +9,7 @@ Lista de lo que el panel **ofrecía como botón o acción** y estaba marcado com
 | Timbrado masivo de facturas | Facturación | **Hecho; probado con servidor simulado; falta un lote real contra el PAC de pruebas** | `OT-0063-Timbrado-Masivo.md`; `test-facturacion-masiva.js` (16) y `test-facturacion-masiva-ruta.js` (6); prueba de la ventana en navegador (lote con timbrada, duplicado, rechazo y corte de red) | Un lote real contra Fiscalapi (pruebas), hecho por una persona con su sesión |
 | Timbrar nómina (CFDI de nómina) | Nómina | **Hecho y probado en el ambiente de pruebas del proveedor, desde el panel con sesión real (25-nov-2026):** botón "Timbrar" en el historial, un CFDI por empleado, UUID y XML en el detalle, y recibos con UUID. Además: cálculo de ISR/IMSS, historial y recibos imprimibles | `OT-0064-Timbrado-de-Nomina.md`; sección "Prueba real desde el panel" de este documento (CFDI de prueba con UUID `d4e1ffd0-ea52-4b48-b7d2-4bb10b495dd0` y su XML revisado; rechazo del proveedor a un RFC inexistente; empleados sin datos fiscales no llegan al proveedor) | Los criterios fiscales (partidas, tratamiento del subsidio) están **por validar con un contador**; con un emisor real habría que validarlos antes. No cancela CFDI de nómina ni cubre nóminas extraordinarias, incapacidades u horas extra. No se verificó todavía volver a pulsar "Timbrar" (que no repita al ya timbrado) ni el PDF |
 
-Pruebas automáticas de toda la rama: `npm run test:ci` = 13 suites en verde (incluye 22 pruebas del timbrado masivo).
+Pruebas automáticas de toda la rama: `npm run test:ci` = 14 suites, 177 pruebas, en verde (incluye 22 del timbrado masivo y 18 del timbrado de nómina).
 
 ## Prueba real desde el panel: timbrado de nómina (25-nov-2026, ambiente de pruebas)
 
@@ -23,7 +23,7 @@ Hecha por una persona con su sesión (director de SA de CV), con una nómina **m
 
 **Revisión del XML timbrado (Karla):** percepciones $1,600.00 (001 Sueldos); deducciones $104.44 = seguridad social $39.87 (001) + ISR $64.57 (002); otros pagos $64.57 (002 Subsidio para el empleo, con SubsidioCausado $535.65); SubTotal $1,664.57 − Descuento $104.44 = **Total $1,560.13, igual al neto que paga la nómina**. NumDiasPagados 30, antigüedad P4W, periodicidad 05 (mensual), SDI $55.96, registro patronal de ejemplo del emisor de pruebas (variable de entorno).
 
-**Observaciones para pulir (no impidieron el timbrado):**
-- El mensaje de rechazo se muestra tal cual lo devuelve el proveedor, con el JSON crudo; conviene traducirlo (por ejemplo, "El RFC no está inscrito en el SAT").
-- `FechaPago` del recibo salió igual a la fecha de inicio del periodo (2026-11-25) y no a la fecha real de pago.
+**Observaciones que salieron de esta prueba (la primera y la segunda ya se corrigieron en OT-0064c; la tercera sigue):**
+- ~~El mensaje de rechazo se mostraba con el JSON crudo del proveedor~~ **Corregido:** ahora se extrae el motivo y el RFC inexistente (NOM9) se explica.
+- ~~`FechaPago` salió igual al inicio del periodo~~ **Ajustado:** ahora es el día en que se aprobó la nómina (hora de México), sin salirse del periodo ni pasar de hoy; el sistema no guarda otra fecha de pago real, y en esta prueba coincide con el 25-nov.
 - El `NumEmpleado` se derivó del identificador interno porque el empleado no tiene número capturado.
