@@ -5,6 +5,7 @@
 //    POST /api/nominas/:id/timbrar             -> OT-0064: timbra el CFDI de nómina de cada
 //                                                 empleado (ambiente de pruebas del PAC).
 //    GET  /api/nominas/detalle/:detalleId/xml  -> OT-0064: XML del CFDI de un empleado.
+//    GET  /api/nominas/detalle/:detalleId/pdf  -> OT-0069: PDF (representación impresa) del mismo CFDI.
 //  El candado de rol (rh/admin/director) vive dentro de la RPC y en
 //  la política RLS de INSERT — aquí solo se exige autenticación
 //  (el timbrado además exige el rol aquí, ANTES de llamar al PAC).
@@ -91,6 +92,27 @@ nominasRouter.post('/nominas/:id/timbrar', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Error al timbrar la nómina.' });
   } finally {
     enCurso.delete(id);
+  }
+});
+
+// OT-0069 · PDF del CFDI de nómina de un empleado (misma regla que el XML: solo de la empresa del usuario, por RLS,
+// y solo si ya está timbrado). El proveedor genera la representación impresa.
+nominasRouter.get('/nominas/detalle/:detalleId/pdf', async (req, res) => {
+  if (!req.user || !req.token) return res.status(401).json({ ok: false, error: 'Falta autenticación.' });
+  if (!UUID_RE.test(String(req.params.detalleId || ''))) return res.status(400).json({ ok: false, error: 'Identificador no válido.' });
+  const l = await idPacDeRenglon(req.token, req.params.detalleId);
+  if (!l.ok) return res.status(400).json(l);
+  if (!l.renglon || !l.renglon.cfdi_fiscalapi_id) return res.status(404).json({ ok: false, error: 'Ese empleado no tiene CFDI de nómina timbrado.' });
+  try {
+    const r = unwrap(await getFiscalapi().invoices.getPdf({ invoiceId: l.renglon.cfdi_fiscalapi_id }));
+    const b64 = r.data && (r.data.base64File || r.data.base64Content);
+    if (!r.ok || !b64) return res.status(r.status || 400).json({ ok: false, error: r.message || 'No se pudo generar el PDF.' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${(r.data.fileName || 'nomina-' + l.renglon.cfdi_uuid + '.pdf').replace(/[^\w.\-]/g, '_')}"`);
+    return res.send(Buffer.from(b64, 'base64'));
+  } catch (err) {
+    console.error('[nómina] pdf:', err.message);
+    return res.status(500).json({ ok: false, error: 'No se pudo generar el PDF.' });
   }
 });
 
