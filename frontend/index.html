@@ -104,6 +104,27 @@
   .nav-links{display:flex; gap:34px; align-items:center;}
   .nav-links a{color:var(--muted); font-size:.94rem; transition:color .2s var(--ease);}
   .nav-links a:hover{color:var(--text);}
+  .nav-toggle{display:none; background:none; border:none; color:var(--text); cursor:pointer; padding:6px;}
+  .nav-toggle svg{width:24px; height:24px;}
+  @media (max-width:768px){
+    .nav-toggle{display:flex; align-items:center;}
+    .nav-links{
+      display:none; order:4;
+      flex-basis:100%; flex-direction:column; gap:0;
+      padding:8px 0 0;
+    }
+    nav > .btn--primary{
+      display:none; order:5;
+      flex-basis:100%;
+      margin:4px 0 8px; padding:12px 22px; text-align:center; justify-content:center;
+    }
+    .nav-links a{padding:12px 0; border-bottom:1px solid var(--line); width:100%; font-size:1rem;}
+    nav.nav-open{
+      flex-wrap:wrap;
+      background:rgba(7,11,20,.97); backdrop-filter:blur(14px);
+    }
+    nav.nav-open .nav-links, nav.nav-open > .btn--primary{display:flex;}
+  }
   .btn{
     display:inline-flex; align-items:center; gap:8px;
     padding:11px 22px; border-radius:11px; font-size:.92rem; font-weight:600;
@@ -710,6 +731,9 @@
       <a href="#planes">Planes</a>
     </div>
     <a href="login.html" class="btn btn--primary">Entrar al panel</a>
+    <button class="nav-toggle" aria-label="Menú" onclick="this.closest('nav').classList.toggle('nav-open')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
   </nav>
 </header>
 
