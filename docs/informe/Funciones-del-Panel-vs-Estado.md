@@ -7,7 +7,7 @@ Lista de lo que el panel **ofrecía como botón o acción** y estaba marcado com
 | Exportar el dashboard (Excel/CSV) | Dashboard | **Hecho** | `OT-0060-Sin-Botones-Muertos.md`; `test-interfaz.js`; CSV real de Empresa Demo C abierto en el visor | La impresión real del navegador no se verificó (se probó el HTML generado) |
 | Imprimir / PDF del dashboard | Dashboard | **Hecho** | Mismo | Igual: sale por el diálogo de impresión del navegador |
 | Timbrado masivo de facturas | Facturación | **Hecho; probado con servidor simulado; falta un lote real contra el PAC de pruebas** | `OT-0063-Timbrado-Masivo.md`; `test-facturacion-masiva.js` (16) y `test-facturacion-masiva-ruta.js` (6); prueba de la ventana en navegador (lote con timbrada, duplicado, rechazo y corte de red) | Un lote real contra Fiscalapi (pruebas), hecho por una persona con su sesión |
-| Timbrar nómina (CFDI de nómina) | Nómina | **Hecho y probado en el ambiente de pruebas del proveedor, desde el panel con sesión real (25-nov-2026):** botón "Timbrar" en el historial, un CFDI por empleado, UUID y XML en el detalle, y recibos con UUID. Además: cálculo de ISR/IMSS, historial y recibos imprimibles | `OT-0064-Timbrado-de-Nomina.md`; sección "Prueba real desde el panel" de este documento (CFDI de prueba con UUID `d4e1ffd0-ea52-4b48-b7d2-4bb10b495dd0` y su XML revisado; rechazo del proveedor a un RFC inexistente; empleados sin datos fiscales no llegan al proveedor) | Los criterios fiscales (partidas, tratamiento del subsidio) están **por validar con un contador**; con un emisor real habría que validarlos antes. No cancela CFDI de nómina ni cubre nóminas extraordinarias, incapacidades u horas extra. No se verificó todavía volver a pulsar "Timbrar" (que no repita al ya timbrado) ni el PDF |
+| Timbrar nómina (CFDI de nómina) | Nómina | **Hecho y probado en el ambiente de pruebas del proveedor, desde el panel con sesión real (25-nov-2026):** botón "Timbrar" en el historial, un CFDI por empleado, UUID y XML en el detalle, y recibos con UUID. Además: cálculo de ISR/IMSS, historial y recibos imprimibles | `OT-0064-Timbrado-de-Nomina.md`; sección "Prueba real desde el panel" de este documento (CFDI de prueba con UUID `d4e1ffd0-ea52-4b48-b7d2-4bb10b495dd0` y su XML revisado; rechazo del proveedor a un RFC inexistente; empleados sin datos fiscales no llegan al proveedor) | Los criterios fiscales (partidas, tratamiento del subsidio) están **por validar con un contador**; con un emisor real habría que validarlos antes. No cancela CFDI de nómina ni cubre nóminas extraordinarias, incapacidades u horas extra. Volver a pulsar "Timbrar" se comprobó (no repite al ya timbrado); no se verificó el PDF del recibo timbrado |
 
 Pruebas automáticas de toda la rama: `npm run test:ci` = 14 suites, 177 pruebas, en verde (incluye 22 del timbrado masivo y 18 del timbrado de nómina).
 
@@ -27,3 +27,17 @@ Hecha por una persona con su sesión (director de SA de CV), con una nómina **m
 - ~~El mensaje de rechazo se mostraba con el JSON crudo del proveedor~~ **Corregido:** ahora se extrae el motivo y el RFC inexistente (NOM9) se explica.
 - ~~`FechaPago` salió igual al inicio del periodo~~ **Ajustado:** ahora es el día en que se aprobó la nómina (hora de México), sin salirse del periodo ni pasar de hoy; el sistema no guarda otra fecha de pago real, y en esta prueba coincide con el 25-nov.
 - El `NumEmpleado` se derivó del identificador interno porque el empleado no tiene número capturado.
+
+### Segunda revisión desde el visor del panel (26-nov-2026)
+
+Con la sesión de la persona abierta en el visor (cuenta de Google de la empresa SA de CV) y el backend ya con las correcciones de OT-0064c:
+
+| Comprobación | Resultado |
+|---|---|
+| Volver a pulsar **Timbrar** en la nómina del 25/11 al 24/12/2026 | "Timbrados: 0 · Ya timbrados: 1 · Con error: 3". **Karla sale "Ya estaba timbrado" con el mismo UUID**: no se repite el timbre |
+| Mensaje de rechazo de diego (RFC inexistente) | Ya no sale el JSON crudo: "El RFC del empleado no está inscrito en el SAT (el proveedor lo valida contra el listado de RFC vigentes). Revisa el RFC y el nombre del empleado. (NOM9)" |
+| Empleados sin datos fiscales | Mismo aviso con los datos que faltan; no se llama al proveedor |
+| Detalle de la nómina ("Ver") | Karla muestra su UUID y el botón **XML**; los demás "Sin timbrar" |
+| **Timbrado masivo**: abrir la ventana y revisar la plantilla | La ventana abre; la revisión previa (sin gastar timbres) leyó la plantilla: 2 facturas listas por $4,872.00 (con IVA) y el botón "Timbrar 2 facturas…". **No se timbró ningún lote** |
+
+**Sin verificar:** un lote de Timbrado masivo contra el proveedor de pruebas, y el PDF de un recibo de nómina timbrado.
