@@ -777,7 +777,7 @@ ${ctas}
     try {
       const t = window.CONTATECK_SUPABASE_TOKEN;
       if (!t) return false;
-      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
       const r = await fetch(BACKEND + "/api/fiscal/proveedores-diot", { headers: { Authorization: "Bearer " + t } });
       const j = await r.json();
       if (!j || !j.ok) return false;
@@ -1298,7 +1298,7 @@ ${ctas}
     try {
       if (btn) btn.disabled = true;
       if (modo === "ver" && box) { box.style.display = "block"; box.innerHTML = `<span style="color:var(--faint);font-size:.8rem">Generando comprobante…</span>`; }
-      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/pagos-proveedor/" + pagoId + "/comprobante-pdf", {
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "") + "/api/pagos-proveedor/" + pagoId + "/comprobante-pdf", {
         headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
       });
       if (!resp.ok) {
@@ -2127,7 +2127,7 @@ ${ctas}
     } catch (e2) { /* no crítico: se sincroniza al recargar */ }
     // Refresca la lista de saldos sin recargar toda la sesión.
     try {
-      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/cfdis-saldo", {
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "") + "/api/cfdis-saldo", {
         headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
       });
       const data = await resp.json();
@@ -2320,7 +2320,7 @@ ${ctas}
       guardarPolizas(arr2);
     } catch (e2) { /* no crítico: se sincroniza al recargar */ }
     try {
-      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/cfdis-proveedor-saldo", {
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "") + "/api/cfdis-proveedor-saldo", {
         headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
       });
       const data = await resp.json();
@@ -2969,7 +2969,7 @@ ${ctas}
     // factura recién importada no aparecía en "Le pagué a un proveedor"
     // hasta recargar todo el sitio.
     try {
-      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app") + "/api/cfdis-proveedor-saldo", {
+      const resp = await fetch(((window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "") + "/api/cfdis-proveedor-saldo", {
         headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
       });
       const data = await resp.json();
@@ -3126,7 +3126,7 @@ ${ctas}
   async function cargarCatalogoAgrupadorSat() {
     if (catalogoAgrupadorSat) return catalogoAgrupadorSat;
     try {
-      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
       const t = window.CONTATECK_SUPABASE_TOKEN;
       if (!t) return null;
       const r = await fetch(BACKEND + "/api/fiscal/codigos-agrupador/catalogo", { headers: { Authorization: "Bearer " + t } });
@@ -3173,7 +3173,7 @@ ${ctas}
     const msg = cbody.querySelector("[data-cont-msg]");
     const btn = cbody.querySelector("[data-sat-agr-aplicar]"); if (btn) btn.disabled = true;
     try {
-      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
       const t = window.CONTATECK_SUPABASE_TOKEN;
       if (!t) throw new Error("Sin sesión todavía; espera unos segundos e inténtalo de nuevo.");
       const resp = await fetch(BACKEND + "/api/fiscal/codigos-agrupador", {
@@ -3548,7 +3548,7 @@ ${ctas}
   // backend y se sincroniza, sin que el usuario tenga que recargar.
   async function refrescarPolizasDesdeBackend() {
     try {
-      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+      const BACKEND = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
       const token = window.CONTATECK_SUPABASE_TOKEN;
       if (!token) return;
       const r = await fetch(BACKEND + "/api/operacion", { headers: { Authorization: "Bearer " + token } });

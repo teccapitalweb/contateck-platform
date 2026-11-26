@@ -14,7 +14,7 @@
    ============================================================ */
 window.dashboardService = (function () {
   function backendUrl() {
-    return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app";
+    return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "";
   }
 
   // Espera a que auth-guard.js deje lista la sesión (mismo patrón que

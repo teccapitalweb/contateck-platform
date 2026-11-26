@@ -37,7 +37,7 @@
   const ROLES_CONFIGURAN = ["admin", "director"];
   const ROLES_REGISTRAN = ["contador", "admin", "director"];
 
-  function backendUrl() { return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app"; }
+  function backendUrl() { return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || ""; }
   function authHeaders(json) { const h = json ? { "Content-Type": "application/json" } : {}; const t = window.CONTATECK_SUPABASE_TOKEN; if (t) h.Authorization = "Bearer " + t; return h; }
   function miPerfil() { return window.CONTATECK_PERFIL_PG || null; }
   function miRol() { const p = miPerfil(); return p ? p.rol : null; }

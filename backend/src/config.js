@@ -75,7 +75,7 @@ export const config = {
   requireAuth: bool(process.env.REQUIRE_AUTH, false),
 
   // Orígenes permitidos para CORS (separados por coma). Ej: https://teccapitalweb.github.io
-  allowedOrigins: (process.env.ALLOWED_ORIGINS || '*')
+  allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:5500,http://localhost:5511,http://127.0.0.1:5500,http://127.0.0.1:5511')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),

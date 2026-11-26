@@ -186,4 +186,24 @@ if (!configured) {
   if (btnG) btnG.addEventListener("click", googleLogin);
   if (pwd)  pwd.addEventListener("keydown", (e) => { if (e.key === "Enter") { modoRegistro ? emailSignUp() : emailLogin(); } });
   if (email) email.addEventListener("keydown", (e) => { if (e.key === "Enter" && pwd) pwd.focus(); });
+
+  const forgotLink = $("forgotPwd");
+  if (forgotLink) forgotLink.addEventListener("click", async (e) => {
+    e.preventDefault();
+    clearNote();
+    const correo = (email.value || "").trim();
+    if (!correo) { note("Escribe tu correo arriba para recuperar tu contraseña.", true); return; }
+    forgotLink.style.pointerEvents = "none"; forgotLink.style.opacity = ".5";
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(correo, {
+        redirectTo: window.location.origin + window.location.pathname.replace("login.html", "dashboard.html"),
+      });
+      if (error) throw error;
+      note("Te enviamos un correo para restablecer tu contraseña. Revisa tu bandeja de entrada.", false);
+    } catch (err) {
+      note(msgFor(err.message, "No se pudo enviar el correo de recuperación. Inténtalo de nuevo."), true);
+    } finally {
+      forgotLink.style.pointerEvents = ""; forgotLink.style.opacity = "";
+    }
+  });
 }

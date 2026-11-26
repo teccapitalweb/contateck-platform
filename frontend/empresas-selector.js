@@ -22,7 +22,7 @@
   var menu = document.querySelector("[data-empresas]");
   if (!menu) return;
 
-  function backend() { return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "https://contateck-backend-production.up.railway.app"; }
+  function backend() { return (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || ""; }
   function headers(json) {
     var h = json ? { "Content-Type": "application/json" } : {};
     if (window.CONTATECK_SUPABASE_TOKEN) h.Authorization = "Bearer " + window.CONTATECK_SUPABASE_TOKEN;
