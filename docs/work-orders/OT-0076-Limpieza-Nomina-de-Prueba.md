@@ -12,7 +12,10 @@ La nómina de noviembre de 2026 que se pagó y timbró para verificar el timbrad
 - **No toca:** la bitácora de auditoría, otras empresas, las cuentas de prueba (rh, vendedor) ni el CFDI de prueba que quedó en el proveedor de timbrado.
 
 ## Verificación previa (solo lectura, 26-nov-2026)
-Con los datos actuales, todos los candados darían luz verde: 1 póliza y 2 partidas, 1 nómina con 2 renglones, 1 empleada de prueba, una sola empresa con ese nombre, ningún otro folio de Egreso 16 o mayor, y la expresión de folios distingue E-00015 / E-00009 (no) de E-00017 / E-00100 (sí). No se pudo probar el candado de periodo cerrado porque la función no es ejecutable con el acceso de solo lectura.
+Con los datos actuales, todos los candados darían luz verde: 1 póliza y 2 partidas, 1 nómina con 2 renglones, 1 empleada de prueba, una sola empresa con ese nombre, ningún otro folio de Egreso 16 o mayor, y la expresión de folios distingue E-00015 / E-00009 (no) de E-00017 / E-00100 (sí). El candado de periodo cerrado consulta `periodos_contables` directamente (noviembre de 2026 no está cerrado).
+
+## Corrección (OT-0076b)
+La primera versión usaba `periodo_esta_cerrado()` para ese candado y, dentro del SQL Editor (sin sesión de usuario), respondió `Empresa no válida`: el script se detuvo **sin borrar nada** (se comprobó después: la póliza, sus partidas, la nómina y el folio seguían intactos). Ahora el candado lee la tabla de periodos.
 
 ## Para el informe
 La nómina de prueba (historial, recibos, UUID y XML) sirve como evidencia del timbrado de nómina; conviene tomar esas capturas **antes** del bloque 2, y las del Dashboard y Balance **después** del bloque 1.
