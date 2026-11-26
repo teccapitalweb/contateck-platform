@@ -4,6 +4,8 @@
 //    POST /api/ventas                -> registrar venta (pendiente)
 //    GET  /api/ventas                -> listar (filtrado por RLS)
 //    GET  /api/ventas/config-contable -> OT-0029: ¿hay cuentas para generar la póliza?
+//    PUT  /api/ventas/:id            -> OT-0070: corregir un pago PENDIENTE (solo quien lo registró)
+//    POST /api/ventas/:id/cancelar   -> OT-0070: cancelar un pago PENDIENTE (body: { motivo })
 //    POST /api/ventas/:id/tomar      -> pendiente -> revision (manual)
 //    POST /api/ventas/:id/confirmar  -> revision -> confirmado
 //    POST /api/ventas/:id/rechazar   -> revision -> rechazado (body: { motivo })
@@ -11,7 +13,7 @@
 // ============================================================
 import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
-import { crearVenta, listarVentas, tomarParaRevision, confirmarVenta, rechazarVenta, estadoConfigContable, generarPolizaDeVenta } from '../supabaseVentas.js';
+import { crearVenta, editarVentaPendiente, cancelarVentaPendiente, listarVentas, tomarParaRevision, confirmarVenta, rechazarVenta, estadoConfigContable, generarPolizaDeVenta } from '../supabaseVentas.js';
 
 export const ventasRouter = Router();
 ventasRouter.use(verifyAuth);
@@ -41,6 +43,20 @@ ventasRouter.get('/ventas', async (req, res) => {
 ventasRouter.get('/ventas/config-contable', async (req, res) => {
   if (!requireAuth(req, res)) return;
   const r = await estadoConfigContable(req.token);
+  if (!r.ok) return res.status(400).json(r);
+  return res.json(r);
+});
+
+ventasRouter.put('/ventas/:id', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await editarVentaPendiente(req.token, req.user.uid, req.params.id, req.body || {});
+  if (!r.ok) return res.status(400).json(r);
+  return res.json(r);
+});
+
+ventasRouter.post('/ventas/:id/cancelar', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+  const r = await cancelarVentaPendiente(req.token, req.user.uid, req.params.id, (req.body || {}).motivo);
   if (!r.ok) return res.status(400).json(r);
   return res.json(r);
 });

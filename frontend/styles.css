@@ -750,6 +750,7 @@ html[data-rol="auditor"] :is(
   [data-sat-agr-cargar], [data-sat-agr-aplicar],
   /* Ventas y pagos */
   [data-v-nueva], [data-v-tomar], [data-v-conf], [data-v-rech], [data-v-rech-ok], [data-v-genpol], [data-v-guardar],
+  [data-v-editar], [data-v-cancelar], [data-v-canc-ok], /* OT-0070 */
   /* Facturación (y los avisos "timbrado" de Nómina) */
   [data-config-empresa], [data-facturar], [data-correo-cfdi], [data-nc-cfdi], [data-rep-cfdi], [data-cancelar-cfdi],
   [data-fac-timbrar], [data-fac-masivo], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
