@@ -58,7 +58,8 @@ begin
     raise exception 'Algo más referencia esta póliza (pago, venta o ajuste). No se borra nada.';
   end if;
 
-  if periodo_esta_cerrado(v_emp, date '2026-11-30') then raise exception 'El periodo de noviembre de 2026 está cerrado. No se borra nada.'; end if;
+  -- Se consulta la tabla directamente: la función periodo_esta_cerrado() exige una sesión de usuario de la app y en el SQL Editor responde "Empresa no válida".
+  if exists (select 1 from periodos_contables where empresa_id = v_emp and anio = 2026 and mes = 11 and estado = 'cerrado') then raise exception 'El periodo de noviembre de 2026 está cerrado. No se borra nada.'; end if;
 end $$;
 
 delete from poliza_partidas where poliza_id = '29a21546-efb7-41ca-96a3-53471b111db0';
