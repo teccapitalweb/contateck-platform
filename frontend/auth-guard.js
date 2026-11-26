@@ -195,6 +195,8 @@ if (!configured) {
           // OT-0042: el rol queda en <html data-rol="…"> para que styles.css oculte, al auditor
           // (rol de solo lectura), los botones que escriben. El servidor y la base los rechazan igual.
           if (perfilData.perfil && perfilData.perfil.rol) document.documentElement.setAttribute("data-rol", perfilData.perfil.rol);
+          // OT-0070: rh y vendedor solo ven las secciones de su rol (acceso-roles.js).
+          if (perfilData.perfil && perfilData.perfil.rol && window.CTAcceso) window.CTAcceso.aplicar(perfilData.perfil.rol, document);
           document.querySelectorAll("[data-empresa-label]").forEach((el) => {
             el.textContent = perfilData.empresa.nombre;
           });
