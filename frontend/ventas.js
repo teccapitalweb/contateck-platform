@@ -60,6 +60,8 @@
   function miId() { const p = miPerfil(); return p ? p.id : null; }
   function miRol() { const p = miPerfil(); return p ? p.rol : null; }
   function esValidador() { return ROLES_VALIDADORES.indexOf(miRol()) !== -1; }
+  // OT-0071: el estado contable de las ventas ("sin póliza") no es asunto del vendedor: ni el aviso, ni el filtro, ni la etiqueta.
+  function veAvisosContables() { return miRol() !== "vendedor"; }
   function puedeAutovalidar() { return ROLES_AUTOVALIDAN.indexOf(miRol()) !== -1; }
 
   function money(n) { return "$" + Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -276,7 +278,7 @@
     if (esValidador() && configContable && !configContable.listo) {
       html += `<div class="v-aviso v-aviso--warn"><b>Configuración contable incompleta:</b> falta ${configContable.faltantes.map(esc).join(", ")}. Puedes confirmar pagos, pero no se generará su póliza hasta configurar las cuentas (Contabilidad → Configuración contable); después usa "Generar póliza".</div>`;
     }
-    const nSin = ventasCache.filter(sinPoliza).length;
+    const nSin = veAvisosContables() ? ventasCache.filter(sinPoliza).length : 0;
     const chip = document.querySelector("[data-v-chip-sinpoliza]");
     if (chip) chip.style.display = nSin ? "" : "none";
     if (nSin) {
@@ -344,7 +346,7 @@
     }
     tb.innerHTML = arr.map((v) => {
       const e = ESTADOS[v.estado] || ESTADOS.pendiente;
-      const badgePol = sinPoliza(v) ? ` <span class="v-badge v-badge--warn" title="Confirmada, pero su póliza contable no se ha generado">Sin póliza</span>` : "";
+      const badgePol = veAvisosContables() && sinPoliza(v) ? ` <span class="v-badge v-badge--warn" title="Confirmada, pero su póliza contable no se ha generado">Sin póliza</span>` : "";
       return `<tr>
         <td><b>${esc(v.folio)}</b></td>
         <td>${esc(v.cliente) || "—"}</td>
