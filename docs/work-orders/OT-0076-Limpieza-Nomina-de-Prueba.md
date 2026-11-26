@@ -1,6 +1,6 @@
 # OT-0076 · SQL para limpiar la nómina de prueba de Empresa Demo C
 
-**Rama:** `feature/OT-0076-limpieza-nomina-de-prueba` (sobre `integracion-local`). **El SQL NO está ejecutado**: lo corre la persona responsable en el SQL Editor de contateck-dev.
+**Rama:** `feature/OT-0076-limpieza-nomina-de-prueba` (sobre `integracion-local`). **Estado: EJECUTADO por la persona responsable en contateck-dev el 26-nov-2026** (ver "Resultado"). Lo corre ella en el SQL Editor; el asistente solo tiene acceso de lectura.
 
 ## Para qué
 La nómina de noviembre de 2026 que se pagó y timbró para verificar el timbrado de nómina (OT-0064) dejó en Demo C una póliza de egreso (E-00016, $22,759.73) que vuelve negativo el Balance (Activo ≈ -23,184.30, resultado ≈ -22,673.52) y cambia las cifras del Dashboard que se van a capturar para el informe. Antes de ella: Activo ≈ -424.57 y resultado ≈ 86.21.
@@ -19,3 +19,8 @@ La primera versión usaba `periodo_esta_cerrado()` para ese candado y, dentro de
 
 ## Para el informe
 La nómina de prueba (historial, recibos, UUID y XML) sirve como evidencia del timbrado de nómina; conviene tomar esas capturas **antes** del bloque 2, y las del Dashboard y Balance **después** del bloque 1.
+
+## Resultado (verificado en solo lectura tras la ejecución)
+Se ejecutaron **los dos bloques** (el SQL Editor corre el texto completo que se pega). En Empresa Demo C: la póliza E-00016 y sus partidas ya no existen, el folio de Egreso volvió a 15 (último egreso E-00015), no queda ninguna nómina ni renglones de nómina, y la empleada de prueba se borró. Los saldos regresaron a su estado anterior: Activo -424.57, Pasivo 510.78 (saldo acreedor), ingresos 258.62 y gastos 172.41, es decir resultado 86.21. Las 7 nóminas de otras empresas siguen intactas.
+
+**Consecuencia para el informe:** como el bloque 2 también corrió, la evidencia de Nómina (historial, recibos, UUID y XML) ya no está en Demo C. Para capturarla hay que volver a dar de alta una empleada con datos fiscales, pagar una nómina y timbrarla; conviene hacerlo **después** de las capturas del Dashboard y la Contabilidad, porque esa nómina vuelve a mover las cifras.
