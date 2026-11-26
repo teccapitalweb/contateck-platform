@@ -303,6 +303,52 @@ const MANEJADORES = {
   },
 };
 
+// ---------- Órdenes de escritura y preguntas sobre otra empresa (OT-0074) ----------
+// El asistente es de CONSULTA. Si alguien le ordena registrar, cancelar, timbrar… se le dice qué módulo usar,
+// en vez del aviso genérico de "no entiendo". Y si la pregunta nombra a otra empresa, se aclara de quién son las cifras.
+const PREFIJO_ORDEN = '(?:(?:por favor|oye|hola|necesito|quiero|puedes|podrias|me puedes|me ayudas a|ayudame a)\\s+)*';
+const VERBOS_DESTRUCTIVOS = 'elimina|eliminar|borra|borrar|cancela|cancelar|anula|anular|timbra|timbrar|modifica|modificar|edita|editar|cambia|cambiar|actualiza|actualizar|corrige|corregir';
+const VERBOS_ALTA = 'registra|registrar|crea|crear|agrega|agregar|anade|anadir|inserta|insertar|guarda|guardar|paga|pagar|cobra|cobrar|cierra|cerrar|manda|mandar|envia|enviar|sube|subir|importa|importar|presenta|presentar|declara|declarar|factura|facturar';
+const reOrden = (verbos) => new RegExp('^' + PREFIJO_ORDEN + '(?:' + verbos + ')\\b');
+const REGLAS_MODULO = [
+  [/poliza|asiento|periodo|cierre|cuenta contable/, 'Contabilidad (Nueva póliza, Captura rápida o Cerrar periodo)'],
+  [/venta|pago|cobro|cobranza/, 'Ventas y pagos (Nueva venta o Registrar pago)'],
+  [/nomina|empleado|sueldo|recibo/, 'Nómina (Calcular, Recibos o Timbrar)'],
+  [/factura|cfdi|timbr|nota de credito|complemento/, 'Facturación (Timbrar CFDI, Nota de crédito o Cancelar)'],
+  [/declaracion|obligacion|diot|impuesto|sat\b/, 'SAT y Fiscal'],
+];
+
+export function ordenDeEscritura(texto, { soloDestructivas = false } = {}) {
+  const n = normalizar(texto).trim();
+  return reOrden(VERBOS_DESTRUCTIVOS).test(n) || (!soloDestructivas && reOrden(VERBOS_ALTA).test(n));
+}
+
+const SOLO_CONSULTA = (pregunta) => {
+  const n = normalizar(pregunta);
+  const modulo = (REGLAS_MODULO.find(([re]) => re.test(n)) || [])[1];
+  return {
+    intencion: 'solo_consulta',
+    respuesta: [
+      'Soy un asistente de **consulta**: no registro, modifico, cancelo ni elimino nada.',
+      modulo ? 'Para eso usa **' + modulo + '**. Si quieres, pregúntame cómo se hace, por ejemplo "¿Cómo registro una venta?".' : 'Eso se hace desde el módulo correspondiente del panel. Si quieres, pregúntame cómo se hace, por ejemplo "¿Cómo registro una venta?".',
+      '',
+      'Lo que sí puedo hacer es consultar los datos de tu empresa: balance, bancos, por cobrar y por pagar, IVA, obligaciones, utilidad, alertas.',
+    ].join('\n'),
+    pregunta_normalizada: normalizar(pregunta).trim(),
+  };
+};
+
+/** Si la pregunta nombra a otra empresa ("la empresa TEC CAPITAL"), regresa el aviso de que solo se ve la propia; si no, ''. */
+export function notaOtraEmpresa(pregunta, empresa) {
+  const propia = normalizar(empresa || '').trim();
+  if (!propia || typeof pregunta !== 'string') return '';
+  const m = /\b(?:[Ee]mpresa|[Cc]ompa[ñn][ií]a|[Nn]egocio|[Gg]rupo)\s+(?:de\s+)?([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ&.-]*(?:\s+[A-ZÁÉÍÓÚÑ0-9][\wÁÉÍÓÚÑáéíóúñ&.-]*){0,3})/.exec(pregunta);
+  if (!m) return '';
+  const otra = normalizar(m[1]).trim();
+  if (!otra || propia.includes(otra) || otra.includes(propia)) return '';
+  return 'Aviso: solo puedo consultar los datos de **' + empresa + '**, la empresa con la que iniciaste sesión; no tengo acceso a «' + m[1].slice(0, 60) + '». Lo siguiente es de ' + empresa + ':\n\n';
+}
+
 const limpiaHistorial = (h) => (Array.isArray(h) ? h : []).filter((x) => x && (x.rol === 'usuario' || x.rol === 'ia') && typeof x.texto === 'string').slice(-12);
 
 /** Qué entendió el asistente de un texto: { tipo: 'saber' | 'cuenta' | 'intencion', ... } o null. */
@@ -320,7 +366,7 @@ function entender(texto) {
  * `historial` (opcional) son los mensajes anteriores [{ rol: 'usuario'|'ia', texto }]: permite contestar "¿y el mes pasado?".
  * Nunca lanza: regresa { ok, respuesta, intencion, fuente? } o { ok:false, error, codigo }.
  */
-export async function responderPorReglas({ pregunta, historial }, { herramientas = {}, hoy = hoyMexico(), log = console } = {}) {
+export async function responderPorReglas({ pregunta, historial }, { herramientas = {}, hoy = hoyMexico(), log = console, empresa = null } = {}) {
   let p = typeof pregunta === 'string' ? pregunta.trim() : '';
   if (!p) return { ok: false, codigo: 'CONSULTA_INVALIDA', error: 'Escribe una pregunta.' };
   if (p.length > MAX_PREGUNTA_ASISTENTE) return { ok: false, codigo: 'CONSULTA_INVALIDA', error: `La pregunta es muy larga (máximo ${MAX_PREGUNTA_ASISTENTE} caracteres).` };
@@ -335,6 +381,8 @@ export async function responderPorReglas({ pregunta, historial }, { herramientas
     const previas = limpiaHistorial(historial).filter((x) => x.rol === 'usuario').reverse();
     for (const prev of previas) { const e = entender(prev.texto); if (e && e.tipo !== 'saber') { ent = e; seguimiento = true; p = e.tipo === 'cuenta' ? prev.texto + ' ' + p : p; break; } }
   }
+  // OT-0074: una orden de escritura se explica (qué módulo usar) en vez de decir que no se entendió; las guías ("saber") se respetan.
+  if (ordenDeEscritura(p, { soloDestructivas: Boolean(ent) }) && !(ent && ent.tipo === 'saber')) return { ok: true, ...SOLO_CONSULTA(p) };
   if (!ent) return { ok: true, ...NO_ENTIENDO(p) };
 
   // Concepto o guía: respuestas fijas, sin datos de la empresa.
@@ -345,6 +393,7 @@ export async function responderPorReglas({ pregunta, historial }, { herramientas
   }
 
   const intencion = ent.intencion;
+  const aviso = notaOtraEmpresa(typeof pregunta === 'string' ? pregunta : '', empresa);
   try {
     const periodo = detectarPeriodo(p, hoy);
     const r = await MANEJADORES[intencion](p, periodo, herramientas);
@@ -353,9 +402,9 @@ export async function responderPorReglas({ pregunta, historial }, { herramientas
     if (par && puntosDeIntencion(p, par) > 0) {
       const r2 = await MANEJADORES[par](p, periodo, herramientas);
       const [primero, segundo] = intencion === 'por_cobrar' ? [r, r2] : [r2, r];
-      return { ok: true, intencion: 'por_cobrar_y_pagar', respuesta: primero.respuesta + '\n' + segundo.respuesta, fuente: 'saldos de facturas emitidas y de proveedores' };
+      return { ok: true, intencion: 'por_cobrar_y_pagar', respuesta: aviso + primero.respuesta + '\n' + segundo.respuesta, fuente: 'saldos de facturas emitidas y de proveedores' };
     }
-    return { ok: true, intencion, respuesta: r.respuesta, fuente: r.fuente || null, ...(corregida ? { corregida: true } : {}), ...(seguimiento ? { seguimiento: true } : {}) };
+    return { ok: true, intencion, respuesta: aviso + r.respuesta, fuente: r.fuente || null, ...(corregida ? { corregida: true } : {}), ...(seguimiento ? { seguimiento: true } : {}) };
   } catch (e) {
     log.warn('[asistente] falló la intención', intencion);
     return { ok: true, intencion, respuesta: ERROR_DATOS('esos datos') };

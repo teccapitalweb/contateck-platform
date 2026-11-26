@@ -163,6 +163,16 @@ async function saldosPorCuenta(supabase, entrada = {}, prefijo = '') {
   return r;
 }
 
+// OT-0074: nombre de la empresa de la sesión (solo lectura, con el token del usuario). null si no se pudo leer.
+export async function nombreDeMiEmpresa(token, deps = {}) {
+  try {
+    const supabase = (deps.clienteComoUsuario || clienteComoUsuario)(token);
+    if (!supabase) return null;
+    const { data, error } = await supabase.from('empresas').select('nombre').limit(1).maybeSingle();
+    return error || !data || typeof data.nombre !== 'string' ? null : data.nombre;
+  } catch (e) { return null; }
+}
+
 export function crearHerramientasReales(token, deps = {}) {
   const dash = deps.obtenerDashboard || obtenerDashboard;
   const cal = deps.obtenerCalendario || obtenerCalendario;
