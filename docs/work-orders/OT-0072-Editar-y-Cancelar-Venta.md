@@ -19,7 +19,7 @@ Si alguien registraba un pago con un error (cliente, importe, fecha, banco), **n
 - **Probado en el panel real** (sesión de director, DEV, 26-nov-2026): se registró el pago P-0007; "Editar" lo abrió precargado; se cambiaron cliente, importe ($1,160.00 → $2,320.50), IVA (sin IVA) y banco ("Otro" → Bancoppel); la base y el detalle mostraron lo nuevo y `auditoria_log` guardó el antes y el después. "Cancelar" sin motivo avisó y no hizo nada; con motivo dejó P-0007 como *Cancelado* con su motivo, apareció en el chip "Cancelados", salió de los totales ("Total registros 6 · 1 cancelado aparte") y ya no ofrece Editar, Cancelar ni Tomar para revisión.
 
 ## Sin verificar
-- Con una sesión de **vendedor** en el panel (no hay una con acceso en el visor): su caso, y que otro vendedor no pueda tocar el pago, está cubierto por las pruebas del backend y del SQL, no por el panel.
+- Con una sesión de **vendedor** de verdad en el panel (no hay una con acceso en el visor). Lo que sí se comprobó en la pantalla, cambiando el rol y el usuario en memoria: el vendedor ve Editar y Cancelar solo en lo que registró y sin "Tomar para revisión"; en el pago de otra persona solo ve "Ver"; el contador solo ve "Tomar para revisión"; el director ve "Cancelar" en el ajeno pero no "Editar"; RH solo ve "Ver". La parte del servidor (que un vendedor no pueda editar lo ajeno) está cubierta por las pruebas del backend y del SQL.
 - Cambiar el comprobante al editar: no se ofrece a propósito (se cancela y se vuelve a capturar).
 - Definir con la contadora si una corrección de un pago **ya confirmado** debe tener un camino propio (hoy tiene póliza y no se toca aquí).
 - Producción: el SQL se aplicó solo en DEV.

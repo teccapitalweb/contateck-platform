@@ -30,6 +30,11 @@ Subir un archivo **CSV**, revisarlo entero **sin gastar timbres**, confirmar, y 
 - Ventana real (`facturacion.js` + CSV, en el navegador, con el servidor simulado): carga de archivo, agrupación, fila con error, nombre con HTML mostrado como texto, confirmación, lote con timbrada / posible duplicado / rechazo del PAC, "Emitir de todos modos", descarga del CSV de resultado, cierre bloqueado durante el lote y **corte de red a mitad del lote** (se detiene, marca "sin respuesta" y deja el resto sin enviar).
 - Suite completa `npm run test:ci` en verde (incluye las dos nuevas); la de solo lectura exigió ocultar el botón al auditor y registrar los botones internos de la ventana.
 
+## Lote con errores y duplicados, probado en el panel real (26-nov-2026)
+Archivo de 6 filas con una factura repetida, un RFC mal formado, un RFC genérico con régimen 601, una cantidad ilegible y un RFC con formato válido pero inexistente en el SAT:
+- **Revisión (sin gastar timbres):** 3 listas, 3 con error y el motivo de cada una; la fila repetida lleva el aviso "Se parece a la factura 1 de este archivo"; la cantidad ilegible sale en "Avisos del archivo".
+- **Timbrado:** la primera se timbró (CT-48); la repetida se **detuvo como "Posible duplicado: no se emitió"**, con el botón "Emitir de todos modos" (no se pulsó); la del RFC inexistente la **rechazó el proveedor** (CFDI40143). En la base solo quedó CT-48.
+- Mejora que salió de la prueba: el rechazo mostraba el JSON crudo del proveedor ("Request failed with status code 400 {…}"); ahora muestra solo su mensaje (`masivoMotivo`, con prueba; `facturacion.js` v25). Se repitió la fila rechazada para comprobarlo.
+
 ## Sin verificar
-- **No se ha timbrado un lote real contra el PAC de pruebas de Fiscalapi desde el panel.** Falta que una persona suba la plantilla con su sesión (los RFC de la plantilla son los de prueba del SAT).
 - Excel: se probó el formato CSV (UTF-8 con BOM); no se abrió el archivo en Excel.
