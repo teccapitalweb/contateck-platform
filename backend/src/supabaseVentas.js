@@ -465,15 +465,15 @@ export async function generarPolizaDeVenta(accessToken, ventaId, log = console) 
   }
 }
 
-// ---- OT-0070: corregir o cancelar un pago PENDIENTE ----
-// La base (database/OT-0070-editar-cancelar-venta.sql) tiene la última palabra: las funciones
+// ---- OT-0072: corregir o cancelar un pago PENDIENTE ----
+// La base (database/OT-0072-editar-cancelar-venta.sql) tiene la última palabra: las funciones
 // editar_venta_pendiente / cancelar_venta_pendiente (SECURITY DEFINER, fila bloqueada) revisan de
 // nuevo quién eres y que siga 'pendiente'. Aquí se valida primero para dar mensajes claros y se
 // traduce el error cuando el SQL aún no se aplicó.
 function mensajeRpc(error) {
   const m = String((error && error.message) || '');
   if (error && (error.code === 'PGRST202' || /Could not find the function|schema cache/i.test(m))) {
-    return 'Falta aplicar el SQL OT-0070 (database/OT-0070-editar-cancelar-venta.sql) en la base de datos.';
+    return 'Falta aplicar el SQL OT-0072 (database/OT-0072-editar-cancelar-venta.sql) en la base de datos.';
   }
   return m || 'No se pudo completar la operación.';
 }

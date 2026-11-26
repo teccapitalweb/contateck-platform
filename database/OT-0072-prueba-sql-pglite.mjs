@@ -1,9 +1,9 @@
 // ============================================================
-//  CONTATECK · OT-0070 · Prueba del SQL de editar/cancelar un pago pendiente en un Postgres EN MEMORIA
+//  CONTATECK · OT-0072 · Prueba del SQL de editar/cancelar un pago pendiente en un Postgres EN MEMORIA
 //  No toca ninguna base real. Esquema mínimo (auth.uid(), perfiles, roles, ventas con las MISMAS políticas RLS
-//  que DEV: UPDATE solo contador/admin/director), aplica OT-0070-editar-cancelar-venta.sql DOS veces (idempotencia),
+//  que DEV: UPDATE solo contador/admin/director), aplica OT-0072-editar-cancelar-venta.sql DOS veces (idempotencia),
 //  prueba las reglas con usuarios reales de distintos roles y, al final, la reversa.
-//  Uso (carpeta temporal con  npm i @electric-sql/pglite ):  node <repo>/database/OT-0070-prueba-sql-pglite.mjs
+//  Uso (carpeta temporal con  npm i @electric-sql/pglite ):  node <repo>/database/OT-0072-prueba-sql-pglite.mjs
 // ============================================================
 import { PGlite } from '@electric-sql/pglite';
 import fs from 'fs';
@@ -56,7 +56,7 @@ insert into ventas (id, empresa_id, folio, cliente, concepto, importe, fecha_pag
  ('${V(6)}','${EA}','P-0006','Cliente Seis','Servicio',600,'2026-11-06','pendiente','${U.ven}');
 `);
 
-const sql = fs.readFileSync(REPO + 'OT-0070-editar-cancelar-venta.sql', 'utf8');
+const sql = fs.readFileSync(REPO + 'OT-0072-editar-cancelar-venta.sql', 'utf8');
 await db.exec(sql); await db.exec(sql);
 ok(true, 'el SQL se aplica dos veces sin error (idempotente)');
 const datos = (o = {}) => JSON.stringify({ cliente: 'Cliente Corregido', concepto: 'Servicio', importe: 150.456, fechaPago: '2026-11-10', metodoPago: 'Transferencia', referencia: 'R-9', banco: 'BBVA', notas: '', incluyeIva: false, ...o }).replace(/'/g, "''");
@@ -109,7 +109,7 @@ r = await db.query(`select estado, count(*)::int n from ventas group by estado o
 ok(JSON.stringify(r.rows) === JSON.stringify([{ estado: 'cancelado', n: 2 }, { estado: 'confirmado', n: 1 }, { estado: 'pendiente', n: 2 }, { estado: 'revision', n: 1 }]), 'al final: 2 cancelados, 1 confirmado, 2 pendientes y 1 en revisión; nada se borró (6 filas)');
 
 // Reversa
-await db.exec(fs.readFileSync(REPO + 'OT-0070-editar-cancelar-venta-rollback.sql', 'utf8'));
+await db.exec(fs.readFileSync(REPO + 'OT-0072-editar-cancelar-venta-rollback.sql', 'utf8'));
 r = await db.query(`select count(*)::int n from pg_proc where proname in ('editar_venta_pendiente','cancelar_venta_pendiente')`);
 ok(r.rows[0].n === 0, 'la reversa quita las dos funciones');
 

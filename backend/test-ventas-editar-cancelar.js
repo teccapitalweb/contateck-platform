@@ -1,6 +1,6 @@
 // ============================================================
-//  CONTATECK · OT-0070 · Editar y cancelar un pago PENDIENTE: reglas del backend (rutas reales + Supabase FALSO en localhost)
-//  Las reglas de la base (SECURITY DEFINER, fila bloqueada) se prueban aparte con PGlite: database/OT-0070-prueba-sql-pglite.mjs
+//  CONTATECK · OT-0072 · Editar y cancelar un pago PENDIENTE: reglas del backend (rutas reales + Supabase FALSO en localhost)
+//  Las reglas de la base (SECURITY DEFINER, fila bloqueada) se prueban aparte con PGlite: database/OT-0072-prueba-sql-pglite.mjs
 //  Uso:  cd backend && node test-ventas-editar-cancelar.js
 // ============================================================
 import http from 'http';
@@ -109,7 +109,7 @@ ok(rpcLlamadas.length === a, 'ninguno de esos intentos llegó a la base');
 
 sinSql = true;
 r = await llamar('PUT', '/ventas/PROPIA', 'u-ven', buenos);
-ok(r.status === 400 && /Falta aplicar el SQL OT-0070/.test(r.j.error), 'si el SQL aún no se aplicó, el mensaje lo dice claro (no un error críptico)');
+ok(r.status === 400 && /Falta aplicar el SQL OT-0072/.test(r.j.error), 'si el SQL aún no se aplicó, el mensaje lo dice claro (no un error críptico)');
 sinSql = false;
 
 console.log('Cancelar');
@@ -138,14 +138,14 @@ r = await llamar('POST', '/ventas/PROPIA/cancelar', 'u-rh', { motivo: 'Ya no va'
 ok(r.status === 400 && /rol no permite/.test(r.j.error), 'RH no cancela');
 sinSql = true;
 r = await llamar('POST', '/ventas/PROPIA/cancelar', 'u-ven', { motivo: 'Ya no va' });
-ok(r.status === 400 && /Falta aplicar el SQL OT-0070/.test(r.j.error), 'cancelar sin el SQL aplicado: mensaje claro');
+ok(r.status === 400 && /Falta aplicar el SQL OT-0072/.test(r.j.error), 'cancelar sin el SQL aplicado: mensaje claro');
 sinSql = false;
 
 console.log('Código del panel y SQL');
 const raiz = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ui = fs.readFileSync(path.join(raiz, 'frontend', 'ventas.js'), 'utf8');
 ok(ui.includes('cancelado') && ui.includes('data-v-editar') && ui.includes('data-v-cancelar') && ui.includes('accionVenta("cancelar"') && ui.includes('method: "PUT"'), 'la pantalla de Ventas tiene los botones Editar y Cancelar y el estado Cancelado');
-const sql = fs.readFileSync(path.join(raiz, 'database', 'OT-0070-editar-cancelar-venta.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(raiz, 'database', 'OT-0072-editar-cancelar-venta.sql'), 'utf8');
 ok(/security definer/i.test(sql) && /for update/i.test(sql) && /revoke execute[^;]*from public, anon/i.test(sql) && /grant\s+execute[^;]*to authenticated/i.test(sql), 'el SQL usa SECURITY DEFINER, bloquea la fila y solo permite ejecutar a usuarios con sesión');
 
 srv.closeAllConnections(); fake.closeAllConnections(); srv.close(); fake.close();

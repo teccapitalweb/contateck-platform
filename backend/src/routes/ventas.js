@@ -4,8 +4,8 @@
 //    POST /api/ventas                -> registrar venta (pendiente)
 //    GET  /api/ventas                -> listar (filtrado por RLS)
 //    GET  /api/ventas/config-contable -> OT-0029: ¿hay cuentas para generar la póliza?
-//    PUT  /api/ventas/:id            -> OT-0070: corregir un pago PENDIENTE (solo quien lo registró)
-//    POST /api/ventas/:id/cancelar   -> OT-0070: cancelar un pago PENDIENTE (body: { motivo })
+//    PUT  /api/ventas/:id            -> OT-0072: corregir un pago PENDIENTE (solo quien lo registró)
+//    POST /api/ventas/:id/cancelar   -> OT-0072: cancelar un pago PENDIENTE (body: { motivo })
 //    POST /api/ventas/:id/tomar      -> pendiente -> revision (manual)
 //    POST /api/ventas/:id/confirmar  -> revision -> confirmado
 //    POST /api/ventas/:id/rechazar   -> revision -> rechazado (body: { motivo })

@@ -1,8 +1,8 @@
 -- ============================================================
---  CONTATECK · OT-0070 · Editar y cancelar un pago PENDIENTE (Ventas y Pagos)
+--  CONTATECK · OT-0072 · Editar y cancelar un pago PENDIENTE (Ventas y Pagos)
 --
 --  *** PREPARADO. Correrlo en el SQL Editor de DEV (idempotente). Sin esto el panel muestra
---      "falta aplicar el SQL OT-0070" al editar o cancelar; todo lo demás sigue igual. ***
+--      "falta aplicar el SQL OT-0072" al editar o cancelar; todo lo demás sigue igual. ***
 --
 --  Por qué una función de la base y no un UPDATE desde el backend: la política de UPDATE de `ventas`
 --  solo deja actualizar a contador, admin y director; un VENDEDOR (quien más registra pagos) no podría

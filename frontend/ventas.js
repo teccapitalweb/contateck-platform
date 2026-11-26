@@ -29,10 +29,10 @@
     revision: { txt: "En revisión", cls: "v-badge--warn" },
     confirmado: { txt: "Confirmado", cls: "v-badge--ok" },
     rechazado: { txt: "Rechazado", cls: "v-badge--bad" },
-    cancelado: { txt: "Cancelado", cls: "v-badge--mute" }, // OT-0070: corregido/anulado por quien lo registró antes de revisión
+    cancelado: { txt: "Cancelado", cls: "v-badge--mute" }, // OT-0072: corregido/anulado por quien lo registró antes de revisión
   };
   const ROLES_VALIDADORES = ["contador", "admin", "director"];
-  const ROLES_REGISTRO = ["vendedor", "contador", "admin", "director"]; // OT-0070: mismos que el backend
+  const ROLES_REGISTRO = ["vendedor", "contador", "admin", "director"]; // OT-0072: mismos que el backend
   // OT-mejoras-ventas: mismo criterio que el backend — admin/director
   // pueden validar su propio registro (excepción a la separación de
   // funciones); "contador" a secas se queda sin esta excepción.
@@ -292,7 +292,7 @@
     const cont = document.querySelector("[data-v-kpis]");
     if (!cont) return;
     const cancelados = ventasCache.filter((v) => v.estado === "cancelado").length;
-    const arr = ventasCache.filter((v) => v.estado !== "cancelado"); // OT-0070: lo cancelado no cuenta
+    const arr = ventasCache.filter((v) => v.estado !== "cancelado"); // OT-0072: lo cancelado no cuenta
     const pend = arr.filter((v) => v.estado === "pendiente");
     const enRev = arr.filter((v) => v.estado === "revision");
     const conf = arr.filter((v) => v.estado === "confirmado");
@@ -309,7 +309,7 @@
       <div class="v-kpi v-kpi--accent"><span class="v-kpi__l">Confirmado este mes</span><b class="v-kpi__n">${money(montoMes)}</b><span class="v-kpi__s">${confMes.length} pago${confMes.length === 1 ? "" : "s"} con fecha de este mes</span></div>`;
   }
 
-  // OT-0070: corregir/cancelar un pago PENDIENTE. Editar: solo quien lo registró. Cancelar: quien lo registró o Admin/Director.
+  // OT-0072: corregir/cancelar un pago PENDIENTE. Editar: solo quien lo registró. Cancelar: quien lo registró o Admin/Director.
   function puedeEditar(v) { return v.estado === "pendiente" && v.created_by === miId() && ROLES_REGISTRO.indexOf(miRol()) !== -1; }
   function puedeCancelar(v) { return v.estado === "pendiente" && ROLES_REGISTRO.indexOf(miRol()) !== -1 && (v.created_by === miId() || puedeAutovalidar()); }
 
@@ -384,7 +384,7 @@
 
   // ---------- Nueva venta ----------
   let archivoSeleccionado = null;
-  let editandoId = null; // OT-0070: id del pago que se está corrigiendo (null = alta nueva)
+  let editandoId = null; // OT-0072: id del pago que se está corrigiendo (null = alta nueva)
   function openNuevaVenta(venta) {
     archivoSeleccionado = null;
     editandoId = venta ? venta.id : null;
@@ -455,7 +455,7 @@
     if (venta) precargarFormulario(venta);
   }
 
-  // OT-0070: llena el formulario con los datos actuales (incluye los combos propios y el "Otro" de método/banco).
+  // OT-0072: llena el formulario con los datos actuales (incluye los combos propios y el "Otro" de método/banco).
   function precargarFormulario(v) {
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val == null ? "" : val; };
     set("v-cliente", v.cliente); set("v-concepto", v.concepto); set("v-importe", v.importe);
@@ -515,7 +515,7 @@
     if (btn) { btn.disabled = true; btn.textContent = "Guardando..."; }
 
     try {
-      // OT-0070: corrección de un pago pendiente (PUT); el comprobante no se toca.
+      // OT-0072: corrección de un pago pendiente (PUT); el comprobante no se toca.
       if (editandoId) {
         const respE = await fetch(backendUrl() + "/api/ventas/" + encodeURIComponent(editandoId), {
           method: "PUT",
@@ -585,7 +585,7 @@
       if (v.estado === "pendiente") acciones = `<button class="btn btn--primary" data-v-tomar="${esc(v.id)}">Tomar para revisión</button>`;
       else if (v.estado === "revision") acciones = `<button class="btn btn--ghost v-btn-bad" data-v-rech="${esc(v.id)}">Rechazar</button><button class="btn btn--primary" data-v-conf="${esc(v.id)}">Confirmar pago</button>`;
     }
-    // OT-0070: quien lo registró puede corregirlo o cancelarlo mientras siga pendiente.
+    // OT-0072: quien lo registró puede corregirlo o cancelarlo mientras siga pendiente.
     const accionesPropias = (puedeCancelar(v) ? `<button class="btn btn--ghost v-btn-bad" data-v-cancelar="${esc(v.id)}">Cancelar pago</button>` : "")
       + (puedeEditar(v) ? `<button class="btn btn--ghost" data-v-editar="${esc(v.id)}">Editar</button>` : "");
     if (accionesPropias) acciones = accionesPropias + (acciones || '<button class="btn btn--ghost" data-v-close>Cerrar</button>');
@@ -704,7 +704,7 @@
         <button class="btn btn--primary v-btn-bad" data-v-rech-ok="${esc(id)}">Rechazar pago</button>
       </div>`);
   }
-  // OT-0070: cancelar un pago pendiente pide motivo (queda en el registro y en la auditoría).
+  // OT-0072: cancelar un pago pendiente pide motivo (queda en el registro y en la auditoría).
   function cancelarPago(id) {
     const v = ventasCache.find((x) => x.id === id);
     openModal(`
