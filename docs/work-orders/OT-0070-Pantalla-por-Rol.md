@@ -28,7 +28,7 @@ Con la sesión de `demo.rh@contateck.mx` y el cambio ya aplicado: el menú muest
 
 ## Verificado en vivo (vendedor, Empresa Demo C, 26-nov-2026)
 Con `demo.vendedor.c@contateck.mx` (vendedor de Empresa Demo C): el menú muestra solo **Ventas y pagos** y **Facturación**, arranca en Ventas; en Facturación ve la lista de CFDI **sin ningún botón** (solo lectura); en Ventas tiene "Nueva venta" (abre el formulario "Nueva venta / Registro de pago"; se cerró sin guardar) y no tiene botones de revisar, confirmar ni contabilizar. El servidor le responde 403 en empleados y en SAT y Fiscal, los indicadores fiscales llegan "restringido" y la lista de nóminas llega vacía.
-**Hallazgo menor, sin cambiar:** en Ventas el vendedor ve el aviso "1 venta confirmada sin póliza contable… Ver cuáles", pensado para administración; el enlace lo lleva a Contabilidad, que no es suya (la navegación lo rechaza y se queda en Ventas). También ve las 5 ventas de la empresa, no solo las suyas (la base lo permite).
+**Hallazgo menor, resuelto en la OT-0071:** en Ventas el vendedor veía el aviso "1 venta confirmada sin póliza contable… Ver cuáles" (el enlace solo filtraba la lista de Ventas; no lo llevaba a Contabilidad), su filtro "Sin póliza" y la etiqueta en cada venta. Es estado contable que no le toca: ahora se ocultan al vendedor, no al resto de los roles (el auditor sí los ve). **Sin cambiar:** el vendedor ve las 5 ventas de la empresa, no solo las suyas (la base lo permite).
 
 ## No verificado
 La vista de rh en un teléfono y el parpadeo del menú completo durante el instante en que carga el perfil (el menú se ajusta al conocer el rol).
