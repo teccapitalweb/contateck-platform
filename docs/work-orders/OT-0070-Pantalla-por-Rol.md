@@ -23,5 +23,8 @@ Esto **ordena la pantalla; no es la seguridad**. La seguridad sigue siendo el se
 ## Pruebas
 `backend/test-acceso-roles.js` (7 pruebas, en `npm run test:ci`): las vistas por rol, el DOM armado con las secciones **reales** de `dashboard.html` (rh, vendedor y los demás roles), idempotencia, sección activa que ya es del rol, orden de carga de los scripts, buscador y navegación, y que los estilos del vendedor cubran todos los botones de escritura de Facturación que ya se le ocultan al auditor sin quitar "Nueva venta". Se comprobó con una mutación (dar a rh la sección de Contabilidad) que la prueba falla.
 
+## Verificado en vivo (rh, Empresa Demo C, 26-nov-2026)
+Con la sesión de `demo.rh@contateck.mx` y el cambio ya aplicado: el menú muestra solo **Nómina** y **Equipo** (los grupos Inicio, Fiscal y Asistente quedan ocultos), la pantalla arranca en **Nómina**, no hay botones de "Nueva póliza", "Configuración contable", "Timbrar CFDI" ni "Timbrado masivo", un clic programático a Contabilidad no cambia de sección, y el buscador no encuentra facturas ("CT-" → sin resultados) pero sí al empleado ("Karla").
+
 ## No verificado
 El vendedor en pantalla (la cuenta `demo.vendedor.c@contateck.mx` está creada, pendiente de entrar), la vista de rh en un teléfono y el parpadeo del menú completo durante el instante en que carga el perfil (el menú se ajusta al conocer el rol).
