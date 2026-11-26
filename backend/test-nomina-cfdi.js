@@ -224,6 +224,7 @@ await ok('frontend: el resultado y el detalle escapan todo; el recibo timbrado m
   assert.ok(cx.celda({}).includes('Sin timbrar'));
   const cel = cx.celda({ id: 'i"1', cfdi_uuid: 'aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb' });
   assert.ok(cel.includes('aaaaaaaa…') && cel.includes('data-nom-xml="i&quot;1"') && cel.includes('>XML<'));
+  assert.ok(cel.includes('data-nom-pdf="i&quot;1"') && cel.includes('>PDF<') && !cel.includes('data-nom-pdf="i"1"'), 'OT-0069: el botón PDF escapa el id igual que el XML');
   const rec = cx.recibo({ fecha_inicio: '2026-11-01', fecha_fin: '2026-11-15', periodicidad: 'quincenal' }, [{ nombre: 'Ana', sueldo_base: 1, otras_percepciones: 0, deducciones: 0, neto: 1, cfdi_uuid: 'aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb' }, { nombre: 'Beto', sueldo_base: 1, otras_percepciones: 0, deducciones: 0, neto: 1 }], {});
   assert.ok(rec.includes('UUID: aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb') && rec.includes('ambiente de PRUEBAS') && rec.includes('No es un CFDI de nómina'), 'timbrado muestra el UUID; el que no, aclara que no es un CFDI');
   for (const k of ['isr_bruto: f.isrBruto', 'isr_retenido: f.isr', 'subsidio: f.subsidio', 'imss: f.imss', 'otras_deducciones: f.deducciones', 'sdi: f.sdi']) assert.ok(nom.includes(k), k);
