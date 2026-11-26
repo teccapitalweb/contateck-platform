@@ -232,7 +232,7 @@ await ok('frontend: el resultado y el detalle escapan todo; el recibo timbrado m
   for (const k of ['cp_fiscal', 'clave_entidad', 'tipo_contrato', 'tipo_jornada', 'riesgo_puesto']) assert.ok(fs2.includes('k: "' + k + '"'), k);
   assert.ok(fs2.includes('Object.assign({') && fs2.includes('}, fiscales)'), 'los datos fiscales solo viajan si se capturaron');
   assert.ok(leer('src', 'supabaseCrud.js').includes("'cp_fiscal', 'tipo_contrato', 'tipo_jornada', 'riesgo_puesto', 'clave_entidad'"));
-  assert.ok(leer('..', 'frontend', 'dashboard.html').includes('nomina.js?v=5') && leer('..', 'frontend', 'dashboard.html').includes('data-firestore.js?v=15'));
+  assert.ok(leer('..', 'frontend', 'dashboard.html').includes('nomina.js?v=6') && leer('..', 'frontend', 'dashboard.html').includes('data-firestore.js?v=15'));
 });
 
 await ok('el motivo del rechazo del PAC se muestra limpio: se extrae el mensaje real y el RFC que no existe en el SAT (NOM9) se explica', () => {

@@ -403,6 +403,8 @@
     if (histTim) { timbrarNominaUI(histTim.getAttribute("data-hist-timbrar")); return; }
     const btnXml = e.target.closest("[data-nom-xml]");
     if (btnXml) { descargarXmlNomina(btnXml.getAttribute("data-nom-xml"), btnXml.getAttribute("data-uuid")); return; }
+    const btnPdf = e.target.closest("[data-nom-pdf]"); // OT-0069
+    if (btnPdf) { descargarPdfNomina(btnPdf.getAttribute("data-nom-pdf"), btnPdf.getAttribute("data-uuid"), btnPdf); return; }
     // Periodicidad (seg propio del modal)
     const segBtn = e.target.closest("[data-pn-seg] button");
     if (segBtn) {
@@ -647,7 +649,8 @@
   function celdaCfdi(d) {
     if (!d || !d.cfdi_uuid) return '<span style="color:var(--faint)">Sin timbrar</span>';
     return '<span title="' + escNom(d.cfdi_uuid) + '" style="font-size:.8rem">' + escNom(String(d.cfdi_uuid).slice(0, 8)) + "…</span> " +
-      '<button class="btn btn--ghost" style="padding:.2rem .5rem;font-size:.75rem" data-nom-xml="' + escNom(d.id) + '" data-uuid="' + escNom(d.cfdi_uuid) + '">XML</button>';
+      '<button class="btn btn--ghost" style="padding:.2rem .5rem;font-size:.75rem" data-nom-xml="' + escNom(d.id) + '" data-uuid="' + escNom(d.cfdi_uuid) + '">XML</button> ' +
+      '<button class="btn btn--ghost" style="padding:.2rem .5rem;font-size:.75rem" data-nom-pdf="' + escNom(d.id) + '" data-uuid="' + escNom(d.cfdi_uuid) + '">PDF</button>';
   }
   const ESTADO_TIMBRADO = { timbrado: "Timbrado", ya_timbrado: "Ya estaba timbrado", error: "Error", timbrado_sin_registro: "Timbrado, sin anotar", omitido: "Omitido" };
   function resultadoTimbradoHtml(data) {
@@ -701,6 +704,27 @@
       document.body.appendChild(a); a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 1000);
     } catch (e) { toast("Error al descargar el XML: " + e.message, "warn"); }
+  }
+  // OT-0069: el PDF del CFDI de nómina lo genera el proveedor (puede tardar unos segundos).
+  async function descargarPdfNomina(detalleId, uuid, boton) {
+    if (boton) { boton.disabled = true; boton.dataset.txt = boton.textContent; boton.textContent = "…"; }
+    try {
+      const resp = await fetch(backendUrl() + "/api/nominas/detalle/" + encodeURIComponent(detalleId) + "/pdf", { headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN } });
+      if (!resp.ok) {
+        let m = "No se pudo generar el PDF.";
+        try { m = (await resp.json()).error || m; } catch (e) { /* sin cuerpo */ }
+        toast(m, "warn"); return;
+      }
+      const blob = await resp.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "nomina-" + String(uuid || detalleId).replace(/[^\w-]/g, "") + ".pdf";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 1000);
+    } catch (e) {
+      toast("Error al descargar el PDF: " + e.message, "warn");
+    } finally {
+      if (boton) { boton.disabled = false; boton.textContent = boton.dataset.txt || "PDF"; }
+    }
   }
   async function imprimirRecibosNomina(id) {
     const nomina = nominasCache.find(function (n) { return String(n.id) === String(id); });
