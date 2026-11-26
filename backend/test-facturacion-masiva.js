@@ -3,6 +3,9 @@
 //  Sin red y sin base: no timbra nada. Uso:  cd backend && node test-facturacion-masiva.js
 // ============================================================
 import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { validarLote, MAX_FACTURAS_LOTE } from './src/facturacionMasiva.js';
 
@@ -110,6 +113,17 @@ ok(`más de ${MAX_FACTURAS_LOTE} facturas o lote vacío: se rechaza el lote`, ()
 ok('elementos que no son objeto no truenan', () => {
   const r = validarLote([null, 5, 'x']);
   assert.deepStrictEqual(r.resultados.map((x) => x.ok), [false, false, false]);
+});
+
+ok('un rechazo del proveedor se muestra con su mensaje (CFDI40143...), no con el JSON técnico', () => {
+  const fuente = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'frontend', 'facturacion.js'), 'utf8');
+  const m = fuente.match(/function masivoMotivo\(data\) \{[\s\S]*?\n  \}\r?\n/);
+  assert.ok(m, 'existe masivoMotivo en la pantalla');
+  const masivoMotivo = new Function(m[0] + '; return masivoMotivo;')();
+  const json = JSON.stringify({ data: null, succeeded: false, message: 'CFDI40143 - Este RFC del receptor no existe en la lista de RFC inscritos no cancelados del SAT.', details: null });
+  assert.strictEqual(masivoMotivo({ error: 'Request failed with status code 400', details: json }), 'CFDI40143 - Este RFC del receptor no existe en la lista de RFC inscritos no cancelados del SAT.');
+  assert.strictEqual(masivoMotivo({ error: 'El RFC no es válido.' }), 'El RFC no es válido.');
+  assert.strictEqual(masivoMotivo({ error: 'Falló', details: 'texto plano del servidor' }), 'Falló texto plano del servidor');
 });
 
 console.log(process.exitCode ? '\nHAY FALLAS' : `\nTODO OK · ${pasaron} pruebas`);

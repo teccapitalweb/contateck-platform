@@ -1972,6 +1972,13 @@
     } catch (e) { /* el catálogo y la lista no deben romper el lote */ }
   }
 
+  // El proveedor responde con un JSON ({"message":"CFDI40143 - ..."}); se muestra solo su mensaje, no el texto técnico.
+  function masivoMotivo(data) {
+    var det = data.details;
+    if (typeof det === "string") { try { var j = JSON.parse(det); if (j && j.message) return String(j.message).slice(0, 300); } catch (e) { /* no era JSON */ } }
+    return [data.error, det && det !== data.error ? String(det).slice(0, 200) : ""].filter(Boolean).join(" ");
+  }
+
   // Timbra UNA factura del lote. Devuelve false si hay que detener el lote.
   async function masivoTimbrar(it, forzar) {
     it.estado = "timbrando"; it.detalle = ""; pintarMasivo();
@@ -1983,7 +1990,7 @@
       } else if (data.codigo === "POSIBLE_DUPLICADO") {
         it.estado = "duplicado"; it.detalle = data.error || "Se parece a un CFDI ya emitido.";
       } else {
-        it.estado = "error"; it.detalle = [data.error, data.details && data.details !== data.error ? String(data.details).slice(0, 200) : ""].filter(Boolean).join(" ");
+        it.estado = "error"; it.detalle = masivoMotivo(data);
       }
       return true;
     } catch (err) {
