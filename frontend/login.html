@@ -280,7 +280,8 @@
     background:linear-gradient(120deg, #6E8BFF, #4F6BE0 60%, #6E8BFF);
     background-size:220% 100%;
     box-shadow:0 14px 30px -14px rgba(110,139,255,.6);
-    animation:btnBreathe 3.5s ease-in-out infinite;
+    animation:fieldIn .5s cubic-bezier(.22,.61,.36,1) forwards,
+               btnBreathe 3.5s ease-in-out 1s infinite;
     transition:transform .2s cubic-bezier(.22,.61,.36,1), box-shadow .3s ease;
   }
   #btnLogin:hover, #btnRegistro:hover{

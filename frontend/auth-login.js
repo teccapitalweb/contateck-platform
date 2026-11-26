@@ -184,6 +184,6 @@ if (!configured) {
 
   if (btn)  btn.addEventListener("click", emailLogin);
   if (btnG) btnG.addEventListener("click", googleLogin);
-  if (pwd)  pwd.addEventListener("keydown", (e) => { if (e.key === "Enter") emailLogin(); });
+  if (pwd)  pwd.addEventListener("keydown", (e) => { if (e.key === "Enter") { modoRegistro ? emailSignUp() : emailLogin(); } });
   if (email) email.addEventListener("keydown", (e) => { if (e.key === "Enter" && pwd) pwd.focus(); });
 }
