@@ -352,6 +352,7 @@
 
       const datos = await window.dashboardService.obtenerDatos();
       window.__ctDashDatos = datos; // para Exportar
+      document.dispatchEvent(new CustomEvent("contateck:dashboard-datos", { detail: datos })); // OT-0068: las notificaciones de la barra
       if (fiscalHost) {
         window.CTPostgres.indicadoresFiscales().then(function (r) { fiscalHost.innerHTML = pintarIndicadoresFiscales(r); })
           .catch(function () { fiscalHost.innerHTML = sinPendientes("No se pudieron calcular los indicadores fiscales."); });
