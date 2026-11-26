@@ -125,7 +125,7 @@ ok('Ventas: el vendedor no ve el aviso, el filtro ni la etiqueta de "sin póliza
   }
   assert.ok(ventas.includes('const nSin = veAvisosContables() ? ventasCache.filter(sinPoliza).length : 0;'), 'aviso y chip salen de nSin');
   assert.ok(ventas.includes('const badgePol = veAvisosContables() && sinPoliza(v) ? '), 'la etiqueta de cada venta');
-  assert.ok(html.includes('ventas.js?v=5'));
+  assert.ok(html.includes('ventas.js?v=6'));
 });
 
 console.log(`\n✔ ${pruebas} pruebas de pantalla por rol pasaron\n`);

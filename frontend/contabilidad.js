@@ -1014,14 +1014,33 @@ ${ctas}
 
   /* ---------- Render: tabla de pólizas ---------- */
   let filtroPolizas = "";
-  function renderPolizasTabla() {
-    const el = document.querySelector("[data-polizas]");
-    if (!el) return;
+  // OT-0074: las pólizas que se ven (con el filtro de búsqueda puesto); las usa la tabla y la exportación.
+  function polizasVisibles() {
     let pol = getPolizas();
     if (filtroPolizas.trim()) {
       const q = filtroPolizas.trim().toLowerCase();
       pol = pol.filter((p) => (p.folio || "").toLowerCase().includes(q) || (p.concepto || "").toLowerCase().includes(q));
     }
+    return pol;
+  }
+  function exportarPolizasCsv() {
+    const pol = polizasVisibles();
+    if (!pol.length) { toast("No hay pólizas con ese filtro para exportar", "warn"); return; }
+    if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+    const cols = ["Folio", "Tipo", "Fecha", "Concepto", "Monto", "Origen", "Estado"];
+    const filas = pol.map((p) => [
+      p.folio, p.tipo, String(p.fecha || "").slice(0, 10), p.concepto,
+      Math.round(((p.asientos || []).reduce((s, a) => s + num(a.debe), 0) || num(p.monto)) * 100) / 100,
+      p.origen || "", p.estado || "",
+    ]);
+    window.CTExportar.descargar(window.CTExportar.nombreArchivo("Polizas"), window.CTExportar.csv(cols, filas));
+    toast("Exportadas " + pol.length + " póliza" + (pol.length === 1 ? "" : "s") + " a CSV");
+  }
+
+  function renderPolizasTabla() {
+    const el = document.querySelector("[data-polizas]");
+    if (!el) return;
+    const pol = polizasVisibles();
     if (!pol.length) {
       el.innerHTML = filtroPolizas.trim()
         ? `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Sin resultados para "${esc(filtroPolizas)}".</td></tr>`
@@ -3379,6 +3398,7 @@ ${ctas}
       renderMayor(verMayor.getAttribute("data-cont-mayor"));
       return;
     }
+    if (e.target.closest("[data-cont-exportar-pol]")) { exportarPolizasCsv(); return; }
     if (e.target.closest("[data-cont-contabilizar]")) { openContabilizarCfdi(); return; }
     if (e.target.closest("[data-cont-importar-xml]")) { openImportarXml(); return; }
     if (e.target.closest("[data-sat-csv-cat]")) { descargarTexto("Cuentas_para_contadora.csv", csvCuentasContadora(), "text/csv;charset=utf-8"); return; }
