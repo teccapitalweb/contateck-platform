@@ -545,6 +545,25 @@ function pintarMasCfdis() {
     " CFDI más recientes de " + meta.total + ' (los indicadores usan los cargados)</span>' +
     '<button class="btn btn--ghost btn--sm" data-cfdis-mas-btn>Cargar más</button>';
 }
+// OT-0077: exporta a CSV las facturas que se ven (mismo filtro de búsqueda que la tabla). Solo lee.
+function exportarCfdis() {
+  const term = filters.cfdis;
+  const arr = term ? state.cfdis.filter((r) => searchText("cfdis", r).indexOf(term) > -1) : state.cfdis;
+  if (!arr.length) { toast("No hay facturas con ese filtro para exportar", "warn"); return; }
+  if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+  const TIPOS = { I: "Ingreso", E: "Egreso (nota de crédito)", P: "Pago (REP)" };
+  const cols = ["Folio", "UUID", "Cliente", "RFC del receptor", "Fecha", "Tipo", "Método de pago", "Total", "Estado"];
+  const filas = arr.map((f) => [
+    f.folio, f.uuidFull || "", f.cliente, f.receptorRfc || "", f.fechaISO ? String(f.fechaISO).slice(0, 10) : f.fecha,
+    TIPOS[f.tipo] || f.tipo || "", f.metodoPago || "", Number(f.total) || 0, f.estado === "ok" ? "Vigente" : "Cancelada",
+  ]);
+  window.CTExportar.descargar(window.CTExportar.nombreArchivo("Facturas"), window.CTExportar.csv(cols, filas));
+  const meta = window.CONTATECK_CFDIS_META, cargados = (window.CONTATECK_CFDIS_PG || []).length;
+  const faltan = meta && meta.total > cargados ? " Solo van los " + cargados + " cargados de " + meta.total + "; pulsa \"Cargar más\" para traer el resto." : "";
+  toast("Exportadas " + arr.length + " factura" + (arr.length === 1 ? "" : "s") + " a CSV." + faltan, faltan ? "warn" : "ok", faltan ? 7000 : 3200);
+}
+document.addEventListener("click", function (e) { if (e.target.closest("[data-cfdis-exportar]")) exportarCfdis(); });
+
 document.addEventListener("click", async function (e) {
   const btn = e.target.closest("[data-cfdis-mas-btn]");
   if (!btn) return;

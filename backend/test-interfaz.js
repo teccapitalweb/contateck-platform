@@ -113,7 +113,7 @@ ok('recibos de nómina: uno por empleado, con periodo, importes y neto; todo tex
 });
 
 ok('las páginas cargan las versiones nuevas de los archivos cambiados (para saltar el caché)', () => {
-  for (const v of ['app.js?v=23', 'fiscal.js?v=6', 'invitaciones.js?v=4', 'styles.css?v=5', 'nomina.js?v=6']) assert.ok(html.includes(v), v);
+  for (const v of ['app.js?v=23', 'fiscal.js?v=6', 'invitaciones.js?v=4', 'styles.css?v=5', 'nomina.js?v=7']) assert.ok(html.includes(v), v);
 });
 
 console.log(`\n✔ ${pruebas} pruebas de interfaz pasaron\n`);

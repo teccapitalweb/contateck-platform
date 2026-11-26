@@ -1330,6 +1330,7 @@ ${ctas}
       <td class="num" style="text-align:right${f.atipico ? ";color:#FB7185;font-weight:700" : ""}">${f.saldoAcreedor ? "$" + fmt(f.saldoAcreedor) : "—"}</td></tr>`).join("");
     const nCols = colIni ? 7 : 6;
     pane.innerHTML = `<div class="card">
+      <div class="toolbar" style="justify-content:flex-end"><button class="btn btn--ghost btn--sm" data-cont-exportar-balanza title="Descarga en CSV la balanza que estás viendo (con el periodo elegido), para abrirla en Excel">Exportar CSV</button></div>
       <div style="overflow-x:auto">
         <table class="tbl"><thead><tr><th>Código</th><th>Cuenta</th>
           ${colIni ? `<th style="text-align:right">Saldo inicial</th>` : ""}
@@ -1344,6 +1345,19 @@ ${ctas}
       <div class="cont-balanza-estado ${b.cuadra ? "is-ok" : "is-bad"}">${b.cuadra ? "✓ La balanza cuadra" : "⚠ La balanza no cuadra"}</div>
       ${b.atipicos ? `<div style="margin-top:.7rem;font-size:.85rem;color:#FB7185;display:flex;align-items:center;gap:.4rem">
         <span style="font-size:1.1rem">⚠</span> ${b.atipicos} cuenta${b.atipicos > 1 ? "s" : ""} con saldo atípico (marcada${b.atipicos > 1 ? "s" : ""} en rojo) — una cuenta terminó del lado contrario a su naturaleza, lo que suele indicar un error de captura en sus pólizas.</div>` : ""}</div>`;
+  }
+
+  // OT-0077: la balanza que se ve (con el periodo elegido), a CSV. Solo lee.
+  function exportarBalanzaCsv() {
+    const b = balanza();
+    if (!b.filas.length) { toast("No hay movimientos para exportar", "warn"); return; }
+    if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+    const cols = ["Código", "Cuenta", "Naturaleza"].concat(b.hayPeriodo ? ["Saldo inicial"] : [], ["Cargos", "Abonos", "Saldo deudor", "Saldo acreedor"]);
+    const fila = (f) => [f.codigo, f.nombre, f.nat].concat(b.hayPeriodo ? [f.saldoInicial] : [], [f.debe, f.haber, f.saldoDeudor, f.saldoAcreedor]);
+    const filas = b.filas.map(fila).concat([["", "Totales", ""].concat(b.hayPeriodo ? [""] : [], [b.tot.debe, b.tot.haber, b.tot.saldoDeudor, b.tot.saldoAcreedor])]);
+    const p = periodoActivo ? "_" + periodoActivo.anio + "-" + String(periodoActivo.mes).padStart(2, "0") : "";
+    window.CTExportar.descargar(window.CTExportar.nombreArchivo("Balanza" + p), window.CTExportar.csv(cols, filas));
+    toast("Balanza exportada a CSV (" + b.filas.length + " cuentas)" + (b.cuadra ? "" : " — ojo: no cuadra"), b.cuadra ? "ok" : "warn");
   }
 
   /* ---------- Descargar archivo (XML/texto) ---------- */
@@ -3399,6 +3413,7 @@ ${ctas}
       return;
     }
     if (e.target.closest("[data-cont-exportar-pol]")) { exportarPolizasCsv(); return; }
+    if (e.target.closest("[data-cont-exportar-balanza]")) { exportarBalanzaCsv(); return; }
     if (e.target.closest("[data-cont-contabilizar]")) { openContabilizarCfdi(); return; }
     if (e.target.closest("[data-cont-importar-xml]")) { openImportarXml(); return; }
     if (e.target.closest("[data-sat-csv-cat]")) { descargarTexto("Cuentas_para_contadora.csv", csvCuentasContadora(), "text/csv;charset=utf-8"); return; }
