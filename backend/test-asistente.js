@@ -8,9 +8,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  INTENCIONES, MAX_PREGUNTA_ASISTENTE, normalizar, dinero, detectarIntencion, detectarPeriodo, textoAyuda, responderPorReglas,
+  INTENCIONES, MAX_PREGUNTA_ASISTENTE, normalizar, dinero, detectarIntencion, detectarPeriodo, textoAyuda, responderPorReglas, notaOtraEmpresa,
 } from './src/asistenteContable.js';
-import { ROLES_IA } from './src/iaContable.js';
+import { ROLES_IA, nombreDeMiEmpresa } from './src/iaContable.js';
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 let pruebas = 0;
@@ -387,6 +387,50 @@ await ok('el periodo "año pasado" se reconoce, y la ruta pasa el historial al a
   assert.deepEqual(detectarPeriodo('iva del año anterior', '2026-01-05'), { anio: 2025, etiqueta: 'el año 2025' });
   const ruta = fs.readFileSync(path.join(aqui, 'src', 'routes', 'ia.js'), 'utf8');
   assert.ok(ruta.includes('responderPorReglas({ pregunta, historial }'));
+});
+
+await ok('órdenes de escritura: se explica que es de consulta y a qué módulo ir, sin ejecutar nada ni decir que "no entendió"; las guías se respetan', async () => {
+  let llamadas = 0;
+  const h = new Proxy({}, { get: () => async () => { llamadas++; return {}; } });
+  const casos = [
+    ['Registra una póliza de $500 por favor', /Contabilidad/], ['Cancela la factura CT-29', /Facturación/], ['Por favor timbra la nómina', /Nómina/],
+    ['Elimina esta venta', /Ventas y pagos/], ['Quiero registrar un cobro', /Ventas y pagos/], ['Cierra el periodo de octubre', /Contabilidad/], ['Modifica el IVA', /consulta/],
+  ];
+  for (const [q, esperado] of casos) {
+    const r = await preguntar(q, h);
+    assert.equal(r.ok, true, q); assert.equal(r.intencion, 'solo_consulta', q);
+    assert.match(r.respuesta, /asistente de \*\*consulta\*\*: no registro, modifico, cancelo ni elimino nada/); assert.match(r.respuesta, esperado, q);
+    assert.ok(!/No estoy seguro/.test(r.respuesta), q);
+  }
+  assert.equal(llamadas, 0, 'una orden de escritura no consulta datos ni escribe');
+  // las preguntas y guías NO se confunden con órdenes
+  assert.equal((await preguntar('¿Cómo registro una venta?', h)).intencion, 'conocimiento:guia_venta');
+  assert.notEqual((await preguntar('Genera un resumen del balance', { resumen_general: async () => ({}), saldos_de_cuentas: async () => ({ cuentas: [], totales_por_digito: {} }) })).intencion, 'solo_consulta');
+  assert.notEqual((await preguntar('¿Cuánto vendí este mes?', h)).intencion, 'solo_consulta');
+  assert.notEqual((await preguntar('facturas sin póliza', h)).intencion, 'solo_consulta');
+  assert.notEqual((await preguntar('pagos pendientes', h)).intencion, 'solo_consulta');
+});
+
+await ok('otra empresa: si la pregunta nombra una empresa distinta a la de la sesión, el asistente aclara de quién son las cifras; con la propia no avisa', async () => {
+  const h = { resumen_general: async () => ({ mes: { facturado: 0, ingresos: 448, egresos: 100 } }), saldos_de_cuentas: async () => ({ cuentas: [], totales_por_digito: {} }) };
+  const con = (pregunta, empresa) => responderPorReglas({ pregunta }, { herramientas: h, hoy: HOY, log: sinLog, empresa });
+  const otra = await con('¿Cuánto vendió la empresa TEC CAPITAL este mes?', 'Empresa Demo C');
+  assert.match(otra.respuesta, /^Aviso: solo puedo consultar los datos de \*\*Empresa Demo C\*\*/); assert.match(otra.respuesta, /no tengo acceso a «TEC CAPITAL»/);
+  assert.match((await con('¿Cuánto vendió la empresa Demo C este mes?', 'Empresa Demo C')).respuesta, /^(?!Aviso)/, 'la propia no avisa');
+  assert.ok(!(await con('¿Cuánto vendí este mes?', 'Empresa Demo C')).respuesta.startsWith('Aviso'));
+  assert.ok(!(await con('¿Cuánto vendió mi empresa este mes?', 'Empresa Demo C')).respuesta.startsWith('Aviso'), '"mi empresa" no es otra empresa');
+  assert.ok(!(await con('¿Cuánto vendió la empresa TEC CAPITAL este mes?', null)).respuesta.startsWith('Aviso'), 'sin nombre de la propia no se puede comparar');
+  assert.equal(notaOtraEmpresa('¿Y la empresa Acme S.A. de C.V.?', 'Empresa Demo C').includes('«Acme S.A.'), true);
+  // el nombre de la empresa sale de la sesión (RLS), no de la pregunta
+  const ruta = fs.readFileSync(path.join(aqui, 'src', 'routes', 'ia.js'), 'utf8');
+  assert.ok(ruta.includes('empresa: await nombreDeMiEmpresa(req.token)'));
+  const ia = fs.readFileSync(path.join(aqui, 'src', 'iaContable.js'), 'utf8');
+  const i = ia.indexOf('export async function nombreDeMiEmpresa'); const cuerpo = ia.slice(i, ia.indexOf('\n}\n', i));
+  assert.ok(cuerpo.includes(".from('empresas').select('nombre')") && !/\.(insert|update|delete|upsert|rpc)\(/.test(cuerpo) && !/service_?role/i.test(cuerpo));
+  const respaldo = await nombreDeMiEmpresa('t', { clienteComoUsuario: () => ({ from: () => ({ select: () => ({ limit: () => ({ maybeSingle: async () => ({ data: { nombre: 'Empresa Demo C' }, error: null }) }) }) }) }) });
+  assert.equal(respaldo, 'Empresa Demo C');
+  assert.equal(await nombreDeMiEmpresa('t', { clienteComoUsuario: () => ({ from: () => ({ select: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null, error: { message: 'x' } }) }) }) }) }) }), null);
+  assert.equal(await nombreDeMiEmpresa('t', { clienteComoUsuario: () => { throw new Error('x'); } }), null);
 });
 
 console.log(`\n✔ ${pruebas} pruebas del asistente contable por reglas pasaron\n`);

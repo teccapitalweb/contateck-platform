@@ -12,7 +12,7 @@ import { Router } from 'express';
 import { verifyAuth } from '../supabaseAuth.js';
 import { config } from '../config.js';
 import { obtenerRolUsuario } from '../supabaseCfdis.js';
-import { ROLES_IA, consultarIA, crearHerramientasReales, crearLimitador } from '../iaContable.js';
+import { ROLES_IA, consultarIA, crearHerramientasReales, crearLimitador, nombreDeMiEmpresa } from '../iaContable.js';
 import { responderPorReglas } from '../asistenteContable.js';
 
 export const iaRouter = Router();
@@ -41,7 +41,7 @@ iaRouter.post('/ia/consultar', async (req, res) => {
 
   if (config.ia.modo === 'reglas') {
     if (!permitirReglas(req.user.uid)) return res.status(429).json({ ok: false, codigo: 'LIMITE_DE_USO', error: 'Llegaste al límite de consultas por hora. Inténtalo más tarde.' });
-    const r = await responderPorReglas({ pregunta, historial }, { herramientas: crearHerramientasReales(req.token) });
+    const r = await responderPorReglas({ pregunta, historial }, { herramientas: crearHerramientasReales(req.token), empresa: await nombreDeMiEmpresa(req.token) });
     return res.status(r.ok ? 200 : 400).json(r);
   }
 

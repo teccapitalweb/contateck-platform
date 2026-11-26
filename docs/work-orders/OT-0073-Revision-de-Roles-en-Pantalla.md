@@ -13,6 +13,7 @@ Solo documenta lo observado; no cambia código. Cada rol se revisó con su propi
 
 ## Asistente contable (contador y auditor)
 - Responde con los datos de la propia empresa: balance (Activo -23,184.30 y Resultado -22,673.52 tras la nómina de prueba, que cuadra), por cobrar $42.68 y por pagar $27.84, IVA del mes en cero, alertas (1 CFDI sin póliza y pagos sobre facturas sin póliza de causación), la factura CT-29 sin póliza y "¿qué es el IVA?" y "¿cómo registro una venta?".
+- **Ambos puntos siguientes quedaron resueltos en la OT-0075** (el asistente aclara de quién son las cifras y explica que es de consulta).
 - Una pregunta que nombra **otra empresa** ("¿cuánto vendió TEC CAPITAL?") se contesta con las cifras de la empresa propia **sin aclararlo**: no filtra datos ajenos, pero puede confundir.
 - Una orden de **escritura** ("Registra una póliza de $500") recibe el aviso genérico de que no entiende; no la ejecuta, pero no explica que el asistente es de consulta.
 
