@@ -84,7 +84,7 @@ ok('Balanza exporta lo que se ve (con o sin saldo inicial según el periodo) y t
   assert.ok(c.includes('data-cont-exportar-balanza') && c.includes('function exportarBalanzaCsv()'));
   const m = c.match(/function exportarBalanzaCsv\(\) \{[\s\S]*?\r?\n  \}\r?\n/);
   assert.ok(m && m[0].includes('b.hayPeriodo') && m[0].includes('"Totales"') && m[0].includes('b.tot.saldoAcreedor'));
-  assert.ok(html.includes('contabilidad.js?v=25'));
+  assert.ok(/contabilidad\.js\?v=\d+/.test(html));
 });
 ok('Nómina exporta el historial y el detalle de una nómina, con montos como números', () => {
   const n = leer('nomina.js');
@@ -93,9 +93,30 @@ ok('Nómina exporta el historial y el detalle de una nómina, con montos como n�
   assert.ok(/function exportarHistorialNominas\(\) \{[\s\S]*?Number\(n\.total_neto\)/.test(n));
   assert.ok(n.includes('ultimoDetalleNomina = { id: id, detalle: detalle }'), 'exporta el mismo detalle que muestra la ventana');
 });
+ok('Libro Mayor exporta la cuenta que se ve, con su saldo acumulado según su naturaleza', () => {
+  const c = leer('contabilidad.js');
+  assert.ok(c.includes('data-mayor-exportar'));
+  const m = c.match(/function exportarMayorCsv\(\) \{[\s\S]*?\r?\n  \}\r?\n/);
+  assert.ok(m, 'existe exportarMayorCsv');
+  assert.ok(m[0].includes('[data-mayor-cuenta]') && m[0].includes('movimientosCuenta(sel).movs') && m[0].includes('cta.nat === "Deudora"'), 'misma cuenta y misma fórmula de saldo que la tabla');
+});
+ok('Cuentas por Pagar exporta las facturas que se ven: la búsqueda actualiza la lista que se exporta', () => {
+  const c = leer('contabilidad.js');
+  assert.ok(c.includes('data-cxp-exportar') && c.includes('let provFiltradas = []'));
+  assert.ok(/provFiltradas = filtradas;/.test(c) && /provFiltradas = facturas;/.test(c), 'se actualiza al cargar y al buscar');
+  assert.ok(/function exportarCxpCsv\(\) \{\s*const arr = provFiltradas/.test(c));
+});
+ok('Estados financieros exporta el Estado de Resultados y el Balance General en un solo archivo, con totales y periodo', () => {
+  const c = leer('contabilidad.js');
+  assert.ok(c.includes('data-est-exportar'));
+  const m = c.match(/function exportarEstadosCsv\(\) \{[\s\S]*?\r?\n  \}\r?\n/);
+  assert.ok(m, 'existe exportarEstadosCsv');
+  for (const t of ['estadoResultados()', 'balanceGeneral()', 'Total de ingresos', 'Total activo', 'Pasivo + Capital', 'periodoActivo']) assert.ok(m[0].includes(t), t);
+  assert.ok(leer('dashboard.html').includes('contabilidad.js?v=26'));
+});
 ok('exportar solo lee: ningún botón de exportación se oculta al rol de solo lectura', () => {
   const css = leer('styles.css');
-  for (const b of ['data-v-exportar', 'data-cont-exportar-pol', 'data-cont-exportar-balanza', 'data-cfdis-exportar', 'data-hist-exportar', 'data-nom-det-exportar']) {
+  for (const b of ['data-v-exportar', 'data-cont-exportar-pol', 'data-cont-exportar-balanza', 'data-cfdis-exportar', 'data-hist-exportar', 'data-nom-det-exportar', 'data-mayor-exportar', 'data-cxp-exportar', 'data-est-exportar']) {
     assert.ok(!css.includes(b), b + ' no debe ocultarse');
   }
 });

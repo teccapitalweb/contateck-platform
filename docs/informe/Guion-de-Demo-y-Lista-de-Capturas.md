@@ -27,7 +27,7 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 | 10 | **Asistente contable**: pregunta "¿Cómo va el Balance General?", "¿Cuánto hay en bancos y caja?", "¿Cómo va el IVA este año?", "¿y el año pasado?", "¿Qué es una póliza?", "¿Cómo registro una venta?", "¿Eres una IA?". | Responde con los datos reales y explica lo básico; **no es IA** y no cuesta por consulta; la IA queda preparada y apagada. |
 | 11 | **Equipo**: invitaciones y roles. | 6 roles; el rol define qué se puede hacer dentro de la empresa. |
 | 12 | **Cambia de rol**: entra como **contador** (menos botones), **auditor** (ningún botón de escritura) y, si están, **rh** y **vendedor**. | Control de acceso en pantalla, en el servidor y en la base de datos. |
-| 13 | **Seguridad y pruebas**: abre `npm run test:ci` y deja que termine (20 suites, 276 pruebas). | Pruebas automáticas sin red ni llaves; cada cambio tiene su orden de trabajo. |
+| 13 | **Seguridad y pruebas**: abre `npm run test:ci` y deja que termine (20 suites, 279 pruebas). | Pruebas automáticas sin red ni llaves; cada cambio tiene su orden de trabajo. |
 | 14 | **Alcance y límites**: enseña los indicadores fiscales del Dashboard y la lista de límites. | Qué queda para el equipo: timbrado de nómina con un emisor real (hoy solo pruebas), ISR provisional exacto, conexión con IA real y la validación contable de los criterios fiscales. |
 
 ## 2. Lista de capturas para el informe
@@ -102,7 +102,7 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 ### H. Seguridad, pruebas y documentación
 | Archivo | Qué mostrar |
 |---|---|
-| `40-pruebas-ci.png` | Terminal con `npm run test:ci` terminado (20 suites, 276 pruebas) |
+| `40-pruebas-ci.png` | Terminal con `npm run test:ci` terminado (20 suites, 279 pruebas) |
 | `41-diagrama-er.png` | Diagrama entidad-relación (exportado desde mermaid.live) |
 | `42-diagrama-arquitectura.png` | Diagrama de arquitectura |
 | `43-diagrama-flujo-cobro.png` | Flujo de la factura al cobro |
@@ -122,7 +122,7 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 - **¿La nómina se timbra?** Sí, en el **ambiente de pruebas** del proveedor: cada empleado genera su CFDI de nómina 1.2 (se probaron dos, con y sin subsidio, y el proveedor los aceptó). Con un emisor real falta validar con un contador los criterios fiscales (partidas, tratamiento del subsidio), tener CSD y registro patronal reales y los datos fiscales de cada empleado. Detalle en la OT-0064.
 - **¿Los cálculos fiscales los validó un contador?** El IVA y la utilidad son cifras de referencia; el Código Agrupador se verificó contra el Anexo 24 oficial; los criterios por empresa deben validarse con un contador.
 - **¿Está en producción?** No: está en el ambiente de desarrollo (Supabase `contateck-dev`). Hay una lista de lo necesario para producción en la guía de operación.
-- **¿Cómo sabes que funciona?** 276 pruebas automáticas, una prueba manual con tres roles y la comparación del esquema real con el documentado.
+- **¿Cómo sabes que funciona?** 279 pruebas automáticas, una prueba manual con tres roles y la comparación del esquema real con el documentado.
 
 ## 4. Pasos para crear las cuentas rh y vendedor (para probar y capturar)
 1. Entra como **director** → menú **Equipo** → botón de nueva invitación.
