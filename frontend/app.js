@@ -150,7 +150,7 @@
        de mentira. Cuando exista multiempresa real por usuario, este
        selector se reconstruye desde cero con datos reales. */
     const empMenu = document.querySelector("[data-empresas]");
-    if (empMenu) empMenu.innerHTML = '<div style="padding:.8rem 1rem;color:var(--faint);font-size:.82rem">Aún no puedes cambiar de empresa desde aquí.</div>';
+    if (empMenu) empMenu.innerHTML = '<div style="padding:.8rem 1rem;color:var(--faint);font-size:.82rem">Cargando tus empresas…</div>'; // OT-0056: lo llena empresas-selector.js
 
     /* ============================================================
        OT-0013A: Dashboard real, vía dashboardService (sin globals).

@@ -136,7 +136,7 @@
       host.innerHTML = `
         <div class="card" style="margin-bottom:1.2rem">
           <p style="padding:1rem 1.3rem;margin:0;font-size:.85rem;color:var(--muted)">
-            Cada invitación queda registrada. Para avisar a la persona, usa <b>Enviar por correo</b>: se abre tu correo con el mensaje listo para mandar. En cuanto cree su cuenta con ese mismo correo, quedará asignada sola a tu empresa con el rol elegido.
+            Cada invitación queda registrada. Para avisar a la persona, usa <b>Enviar por correo</b>: se abre tu correo con el mensaje listo para mandar. En cuanto cree su cuenta con ese mismo correo, quedará asignada sola a tu empresa con el rol elegido. Si esa persona ya tiene cuenta en otra empresa, verá la invitación en su selector de empresa (arriba) y podrá aceptarla desde ahí.
           </p>
         </div>
         <div class="card">
@@ -193,10 +193,12 @@
           : `<button class="v-mini v-mini--ok" data-eq-alta="${esc(m.id)}">Reactivar</button>`;
       }
       // Admin/Director pueden cambiar el rol de otra persona (nunca el propio).
-      const celdaRol = (puedeCambiarRol() && !soyYo && m.roles)
+      // OT-0056: quien hoy trabaja en OTRA empresa conserva su acceso aquí, pero su rol solo se cambia cuando vuelva.
+      const celdaRol = (puedeCambiarRol() && !soyYo && m.roles && !m.enOtraEmpresa)
         ? `<select class="v-inp" style="padding:.25rem .4rem;font-size:.82rem;min-width:7.5rem" data-eq-rol="${esc(m.id)}" data-rol-actual="${esc(m.roles.id)}">${opcionesRol(m.roles.id, true)}</select>`
         : esc(rolNombre);
-      return `<tr><td>${esc(m.nombre || "—")}</td><td>${esc(m.email || "—")}</td><td>${celdaRol}</td><td>${fmtFecha(m.created_at)}</td>` +
+      const marcaOtra = m.enOtraEmpresa ? ' <span class="v-badge" title="Hoy está trabajando en otra empresa; conserva su acceso a esta.">En otra empresa ahora</span>' : "";
+      return `<tr><td>${esc(m.nombre || "—")}${marcaOtra}</td><td>${esc(m.email || "—")}</td><td>${celdaRol}</td><td>${fmtFecha(m.created_at)}</td>` +
         `<td><span class="v-badge ${m.activo ? "v-badge--ok" : "v-badge--bad"}">${m.activo ? "Activo" : "Dado de baja"}</span></td><td>${acciones}</td></tr>`;
     }).join("");
   }

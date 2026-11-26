@@ -28,12 +28,13 @@ import { onboardingRouter } from './src/routes/onboarding.js';
 import { equipoRouter } from './src/routes/equipo.js';
 import { nominasRouter } from './src/routes/nominas.js';
 import { plataformaRouter } from './src/routes/plataforma.js';
+import { empresasRouter } from './src/routes/empresas.js';
 const app = express();
 // ---- CORS ----
 const corsOptions = {
   origin: config.allowedOrigins.includes('*') ? true : config.allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Empresa-Id'],
 };
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '5mb' }));
@@ -70,6 +71,7 @@ app.use('/api', onboardingRouter);
 app.use('/api', equipoRouter);
 app.use('/api', nominasRouter);
 app.use('/api', plataformaRouter);
+app.use('/api', empresasRouter);
 app.use('/api/demo', demoRouter);
 // ---- 404 ----
 app.use((_req, res) => res.status(404).json({ ok: false, error: 'Ruta no encontrada.' }));

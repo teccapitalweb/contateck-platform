@@ -13,10 +13,11 @@
     "test:asistente": "node test-asistente.js",
     "test:canceladas": "node test-facturas-canceladas.js",
     "test:interfaz": "node test-interfaz.js",
+    "test:multiempresa": "node test-multiempresa.js",
     "test:masivo": "node test-facturacion-masiva.js && node test-facturacion-masiva-ruta.js",
     "test:indicadores": "node test-indicadores.js",
     "test:nomina-cfdi": "node test-nomina-cfdi.js",
-    "test:ci": "node test-fiscal.js && node test-solo-lectura-y-cache.js && node test-aislamiento-logica.js && node test-endurecimiento-logica.js && node test-storage-empresa.js && node test-login-mensajes.js && node test-ia.js && node test-asistente.js && node test-facturas-canceladas.js && node test-interfaz.js && node test-indicadores.js && node test-facturacion-masiva.js && node test-facturacion-masiva-ruta.js && node test-nomina-cfdi.js"
+    "test:ci": "node test-fiscal.js && node test-solo-lectura-y-cache.js && node test-aislamiento-logica.js && node test-endurecimiento-logica.js && node test-storage-empresa.js && node test-login-mensajes.js && node test-ia.js && node test-asistente.js && node test-facturas-canceladas.js && node test-interfaz.js && node test-indicadores.js && node test-facturacion-masiva.js && node test-facturacion-masiva-ruta.js && node test-nomina-cfdi.js && node test-multiempresa.js"
   },
   "keywords": [],
   "author": "",
