@@ -122,7 +122,7 @@ Sirve para dos cosas: **presentar** el sistema (unos 12 a 15 minutos) y **juntar
 - **¿La nómina se timbra?** Sí, en el **ambiente de pruebas** del proveedor: cada empleado genera su CFDI de nómina 1.2 (se probaron dos, con y sin subsidio, y el proveedor los aceptó). Con un emisor real falta validar con un contador los criterios fiscales (partidas, tratamiento del subsidio), tener CSD y registro patronal reales y los datos fiscales de cada empleado. Detalle en la OT-0064.
 - **¿Los cálculos fiscales los validó un contador?** El IVA y la utilidad son cifras de referencia; el Código Agrupador se verificó contra el Anexo 24 oficial; los criterios por empresa deben validarse con un contador.
 - **¿Está en producción?** No: está en el ambiente de desarrollo (Supabase `contateck-dev`). Hay una lista de lo necesario para producción en la guía de operación.
-- **¿Cómo sabes que funciona?** 177 pruebas automáticas, una prueba manual con tres roles y la comparación del esquema real con el documentado.
+- **¿Cómo sabes que funciona?** 192 pruebas automáticas, una prueba manual con tres roles y la comparación del esquema real con el documentado.
 
 ## 4. Pasos para crear las cuentas rh y vendedor (para probar y capturar)
 1. Entra como **director** → menú **Equipo** → botón de nueva invitación.
