@@ -29,8 +29,10 @@
     revision: { txt: "En revisión", cls: "v-badge--warn" },
     confirmado: { txt: "Confirmado", cls: "v-badge--ok" },
     rechazado: { txt: "Rechazado", cls: "v-badge--bad" },
+    cancelado: { txt: "Cancelado", cls: "v-badge--mute" }, // OT-0072: corregido/anulado por quien lo registró antes de revisión
   };
   const ROLES_VALIDADORES = ["contador", "admin", "director"];
+  const ROLES_REGISTRO = ["vendedor", "contador", "admin", "director"]; // OT-0072: mismos que el backend
   // OT-mejoras-ventas: mismo criterio que el backend — admin/director
   // pueden validar su propio registro (excepción a la separación de
   // funciones); "contador" a secas se queda sin esta excepción.
@@ -233,6 +235,7 @@
             <button class="v-chip" data-f="revision">En revisión</button>
             <button class="v-chip" data-f="confirmado">Confirmados</button>
             <button class="v-chip" data-f="rechazado">Rechazados</button>
+            <button class="v-chip" data-f="cancelado">Cancelados</button>
             <button class="v-chip" data-f="sinpoliza" data-v-chip-sinpoliza style="display:none">Sin póliza</button>
           </div>
         </div>
@@ -290,7 +293,8 @@
   function renderKpis() {
     const cont = document.querySelector("[data-v-kpis]");
     if (!cont) return;
-    const arr = ventasCache;
+    const cancelados = ventasCache.filter((v) => v.estado === "cancelado").length;
+    const arr = ventasCache.filter((v) => v.estado !== "cancelado"); // OT-0072: lo cancelado no cuenta
     const pend = arr.filter((v) => v.estado === "pendiente");
     const enRev = arr.filter((v) => v.estado === "revision");
     const conf = arr.filter((v) => v.estado === "confirmado");
@@ -303,12 +307,18 @@
     cont.innerHTML = `
       <div class="v-kpi"><span class="v-kpi__l">Pendientes + en revisión</span><b class="v-kpi__n">${pend.length + enRev.length}</b><span class="v-kpi__s">${money(montoPend)} por validar</span></div>
       <div class="v-kpi"><span class="v-kpi__l">Confirmados</span><b class="v-kpi__n">${conf.length}</b><span class="v-kpi__s">${money(montoConf)} ingresado</span></div>
-      <div class="v-kpi"><span class="v-kpi__l">Total registros</span><b class="v-kpi__n">${arr.length}</b><span class="v-kpi__s">${arr.length >= LIMITE_LISTA ? "las " + LIMITE_LISTA + " más recientes" : "de tu empresa"}</span></div>
+      <div class="v-kpi"><span class="v-kpi__l">Total registros</span><b class="v-kpi__n">${arr.length}</b><span class="v-kpi__s">${(ventasCache.length >= LIMITE_LISTA ? "las " + LIMITE_LISTA + " más recientes" : "de tu empresa") + (cancelados ? " · " + cancelados + " cancelado" + (cancelados === 1 ? "" : "s") + " aparte" : "")}</span></div>
       <div class="v-kpi v-kpi--accent"><span class="v-kpi__l">Confirmado este mes</span><b class="v-kpi__n">${money(montoMes)}</b><span class="v-kpi__s">${confMes.length} pago${confMes.length === 1 ? "" : "s"} con fecha de este mes</span></div>`;
   }
 
+  // OT-0072: corregir/cancelar un pago PENDIENTE. Editar: solo quien lo registró. Cancelar: quien lo registró o Admin/Director.
+  function puedeEditar(v) { return v.estado === "pendiente" && v.created_by === miId() && ROLES_REGISTRO.indexOf(miRol()) !== -1; }
+  function puedeCancelar(v) { return v.estado === "pendiente" && ROLES_REGISTRO.indexOf(miRol()) !== -1 && (v.created_by === miId() || puedeAutovalidar()); }
+
   function accionesFila(v) {
     let acciones = `<button class="v-mini" data-v-ver="${esc(v.id)}">Ver</button>`;
+    if (puedeEditar(v)) acciones += `<button class="v-mini" data-v-editar="${esc(v.id)}">Editar</button>`;
+    if (puedeCancelar(v)) acciones += `<button class="v-mini v-mini--bad" data-v-cancelar="${esc(v.id)}">Cancelar</button>`;
     const soyCreador = v.created_by === miId();
     // Bloquea solo si es su propio registro Y su rol no tiene la
     // excepción de auto-validar (admin/director sí pueden).
@@ -376,11 +386,15 @@
 
   // ---------- Nueva venta ----------
   let archivoSeleccionado = null;
-  function openNuevaVenta() {
+  let editandoId = null; // OT-0072: id del pago que se está corrigiendo (null = alta nueva)
+  function openNuevaVenta(venta) {
     archivoSeleccionado = null;
+    editandoId = venta ? venta.id : null;
     openModal(`
-      <h2 class="v-h2">Nueva venta / Registro de pago</h2>
-      <p class="v-sub">El pago quedará <b>Pendiente</b> hasta que alguien de administración lo tome para revisión.</p>
+      <h2 class="v-h2">${venta ? "Editar pago " + esc(venta.folio) : "Nueva venta / Registro de pago"}</h2>
+      <p class="v-sub">${venta
+        ? "Corrige lo que haga falta. Sigue <b>Pendiente</b>: mientras nadie lo tome para revisión puedes editarlo o cancelarlo."
+        : "El pago quedará <b>Pendiente</b> hasta que alguien de administración lo tome para revisión."}</p>
       <div class="v-grid2">
         <div class="v-field">
           <label>Cliente</label>
@@ -431,15 +445,43 @@
         </div>
         <div></div>
       </div>
-      <div class="v-field">
+      ${venta ? `<div class="v-aviso v-aviso--info">El comprobante adjunto se conserva tal cual. Para cambiarlo, cancela este registro y captúralo de nuevo con el comprobante correcto.</div>` : `<div class="v-field">
         <label>Comprobante (imagen o PDF)</label>
         <div class="v-file" data-v-file><svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/></svg><span data-v-file-txt>Adjuntar imagen, PDF o captura</span><input type="file" id="v-comprobante" accept="image/*,application/pdf" hidden></div>
-      </div>
+      </div>`}
       <div class="v-field"><label>Notas (opcional)</label><textarea class="v-inp" id="v-notas" rows="2" placeholder="Comentarios..."></textarea></div>
       <div class="v-modal__foot">
         <button class="btn btn--ghost" data-v-close>Cancelar</button>
-        <button class="btn btn--primary" data-v-guardar>Guardar registro</button>
+        <button class="btn btn--primary" data-v-guardar>${venta ? "Guardar cambios" : "Guardar registro"}</button>
       </div>`);
+    if (venta) precargarFormulario(venta);
+  }
+
+  // OT-0072: llena el formulario con los datos actuales (incluye los combos propios y el "Otro" de método/banco).
+  function precargarFormulario(v) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val == null ? "" : val; };
+    set("v-cliente", v.cliente); set("v-concepto", v.concepto); set("v-importe", v.importe);
+    set("v-fecha", String(v.fecha_pago || "").slice(0, 10) || hoy()); set("v-ref", v.referencia); set("v-notas", v.notas);
+    const fijarCombo = (id, valor) => {
+      const label = document.querySelector(`[data-v-combo-label="${id}"]`);
+      if (label) { label.textContent = valor; label.style.color = ""; }
+      document.querySelectorAll(`[data-v-combo-opt^="${id}::"]`).forEach((o) => o.classList.toggle("is-active", o.getAttribute("data-v-combo-opt") === id + "::" + valor));
+    };
+    const poner = (id, lista, actual, otroId) => {
+      if (!actual) return;
+      const enLista = lista.indexOf(actual) !== -1;
+      set("v-" + id, enLista ? actual : "Otro");
+      fijarCombo(id, enLista ? actual : "Otro");
+      const otroWrap = document.querySelector(`[data-v-otro-wrap="${id}"]`);
+      if (!enLista) { set(otroId, actual); if (otroWrap) otroWrap.style.display = ""; }
+    };
+    poner("metodo", METODOS, v.metodo_pago, "v-metodo-otro");
+    if (v.metodo_pago === "Efectivo") { const bw = document.querySelector("[data-v-banco-wrap]"); if (bw) bw.style.display = "none"; }
+    else poner("banco", BANCOS, v.banco, "v-banco-otro");
+    const sinIva = v.incluye_iva === false;
+    set("v-iva", sinIva ? "no" : "si");
+    fijarCombo("iva", sinIva ? "No (exento)" : "Sí (16%)");
+    document.querySelectorAll('[data-v-combo-opt^="iva::"]').forEach((o) => o.classList.toggle("is-active", o.getAttribute("data-v-combo-opt") === "iva::" + (sinIva ? "no" : "si")));
   }
 
   async function guardarVenta() {
@@ -471,9 +513,26 @@
     }
 
     const btn = document.querySelector("[data-v-guardar]");
+    const textoBtn = btn ? btn.textContent : "Guardar registro";
     if (btn) { btn.disabled = true; btn.textContent = "Guardando..."; }
 
     try {
+      // OT-0072: corrección de un pago pendiente (PUT); el comprobante no se toca.
+      if (editandoId) {
+        const respE = await fetch(backendUrl() + "/api/ventas/" + encodeURIComponent(editandoId), {
+          method: "PUT",
+          headers: authHeaders(true),
+          body: JSON.stringify({ cliente, concepto, importe, incluyeIva: g("v-iva") === "si", fechaPago: fecha, metodoPago, referencia: g("v-ref"), banco, notas: g("v-notas") }),
+        });
+        const dataE = await respE.json();
+        if (!dataE.ok) { toast("No se pudo guardar: " + (dataE.error || "error"), "warn", 6000); return; }
+        editandoId = null;
+        closeModal();
+        toast("Pago actualizado ✓ · sigue Pendiente");
+        await recargarDatos();
+        document.dispatchEvent(new CustomEvent("contateck:ventas-cambio"));
+        return;
+      }
       let comprobantePath = null;
       await esperarPerfil();
       const empresa = miEmpresa();
@@ -512,7 +571,7 @@
     } catch (e) {
       toast("Error al guardar: " + e.message, "warn");
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "Guardar registro"; }
+      if (btn) { btn.disabled = false; btn.textContent = textoBtn; }
     }
   }
 
@@ -528,6 +587,10 @@
       if (v.estado === "pendiente") acciones = `<button class="btn btn--primary" data-v-tomar="${esc(v.id)}">Tomar para revisión</button>`;
       else if (v.estado === "revision") acciones = `<button class="btn btn--ghost v-btn-bad" data-v-rech="${esc(v.id)}">Rechazar</button><button class="btn btn--primary" data-v-conf="${esc(v.id)}">Confirmar pago</button>`;
     }
+    // OT-0072: quien lo registró puede corregirlo o cancelarlo mientras siga pendiente.
+    const accionesPropias = (puedeCancelar(v) ? `<button class="btn btn--ghost v-btn-bad" data-v-cancelar="${esc(v.id)}">Cancelar pago</button>` : "")
+      + (puedeEditar(v) ? `<button class="btn btn--ghost" data-v-editar="${esc(v.id)}">Editar</button>` : "");
+    if (accionesPropias) acciones = accionesPropias + (acciones || '<button class="btn btn--ghost" data-v-close>Cerrar</button>');
     // OT-0029: póliza ligada a la venta (o aviso + reintento si no se generó) y motivo de rechazo.
     let bloquePoliza = "";
     if (v.estado === "confirmado" && soportaLigaPoliza()) {
@@ -541,7 +604,8 @@
       }
     }
     const bloqueMotivo = v.estado === "rechazado" && v.motivo_rechazo
-      ? `<div class="v-aviso v-aviso--bad"><b>Motivo del rechazo:</b> ${esc(v.motivo_rechazo)}</div>` : "";
+      ? `<div class="v-aviso v-aviso--bad"><b>Motivo del rechazo:</b> ${esc(v.motivo_rechazo)}</div>`
+      : (v.estado === "cancelado" && v.motivo_rechazo ? `<div class="v-aviso"><b>Motivo de la cancelación:</b> ${esc(v.motivo_rechazo)}</div>` : "");
     openModal(`
       <h2 class="v-h2">Pago ${esc(v.folio)}</h2>
       <span class="v-badge ${e.cls}" style="margin-bottom:.8rem;display:inline-block">${e.txt}</span>
@@ -599,7 +663,7 @@
   // botones se deshabilitan (antes el doble clic mandaba dos peticiones).
   let accionEnCurso = false;
   function bloquearBotones(bloquear) {
-    document.querySelectorAll("[data-v-tomar],[data-v-conf],[data-v-rech],[data-v-genpol],[data-v-rech-ok]").forEach((b) => { b.disabled = bloquear; });
+    document.querySelectorAll("[data-v-tomar],[data-v-conf],[data-v-rech],[data-v-genpol],[data-v-rech-ok],[data-v-cancelar],[data-v-editar],[data-v-canc-ok]").forEach((b) => { b.disabled = bloquear; });
   }
   async function accionVenta(endpoint, id, msgOk, body) {
     if (accionEnCurso) return;
@@ -642,6 +706,23 @@
         <button class="btn btn--primary v-btn-bad" data-v-rech-ok="${esc(id)}">Rechazar pago</button>
       </div>`);
   }
+  // OT-0072: cancelar un pago pendiente pide motivo (queda en el registro y en la auditoría).
+  function cancelarPago(id) {
+    const v = ventasCache.find((x) => x.id === id);
+    openModal(`
+      <h2 class="v-h2">Cancelar pago ${esc(v ? v.folio : "")}</h2>
+      <p class="v-sub">El registro <b>no se borra</b>: queda como Cancelado con el motivo, fuera de los totales. Solo se puede cancelar mientras esté Pendiente.</p>
+      <div class="v-field"><label>Motivo de la cancelación</label><textarea class="v-inp" id="v-motivo-canc" rows="3" maxlength="500" placeholder="Ej. Lo registré dos veces / el cliente se equivocó de cuenta"></textarea></div>
+      <div class="v-modal__foot">
+        <button class="btn btn--ghost" data-v-close>Volver</button>
+        <button class="btn btn--primary v-btn-bad" data-v-canc-ok="${esc(id)}">Cancelar pago</button>
+      </div>`);
+  }
+  function cancelarConfirmado(id) {
+    const motivo = ((document.getElementById("v-motivo-canc") || {}).value || "").trim();
+    if (motivo.length < 3) { toast("Escribe el motivo de la cancelación", "warn"); return; }
+    return accionVenta("cancelar", id, "Pago cancelado", { motivo });
+  }
   function rechazarConfirmado(id) {
     const motivo = ((document.getElementById("v-motivo") || {}).value || "").trim();
     if (motivo.length < 3) { toast("Escribe el motivo del rechazo", "warn"); return; }
@@ -662,6 +743,10 @@
     const conf = e.target.closest("[data-v-conf]"); if (conf) { confirmar(conf.getAttribute("data-v-conf")); return; }
     const rech = e.target.closest("[data-v-rech]"); if (rech) { rechazar(rech.getAttribute("data-v-rech")); return; }
     const rechOk = e.target.closest("[data-v-rech-ok]"); if (rechOk) { rechazarConfirmado(rechOk.getAttribute("data-v-rech-ok")); return; }
+    const edi = e.target.closest("[data-v-editar]");
+    if (edi) { const v = ventasCache.find((x) => x.id === edi.getAttribute("data-v-editar")); if (v && puedeEditar(v)) openNuevaVenta(v); return; }
+    const can = e.target.closest("[data-v-cancelar]"); if (can) { cancelarPago(can.getAttribute("data-v-cancelar")); return; }
+    const canOk = e.target.closest("[data-v-canc-ok]"); if (canOk) { cancelarConfirmado(canOk.getAttribute("data-v-canc-ok")); return; }
     const genPol = e.target.closest("[data-v-genpol]"); if (genPol) { generarPoliza(genPol.getAttribute("data-v-genpol")); return; }
     const verPol = e.target.closest("[data-v-verpol]"); if (verPol) { irAPoliza(verPol.getAttribute("data-v-verpol"), verPol.getAttribute("data-v-verpol-folio")); return; }
     const chip = e.target.closest("[data-f]");
@@ -777,6 +862,8 @@
     .v-badge--warn{background:rgba(242,184,75,.16);color:#F2B84B}
     .v-badge--ok{background:rgba(52,211,153,.16);color:#34D399}
     .v-badge--bad{background:rgba(251,113,133,.16);color:#FB7185}
+    .v-badge--mute{background:rgba(139,152,173,.16);color:var(--muted,#8b98ad)}
+    .v-mini--bad{border-color:rgba(251,113,133,.4);color:#FB7185}
     .v-acc{display:flex;gap:.35rem;justify-content:flex-end}
     .v-mini{padding:.3rem .6rem;border-radius:8px;border:1px solid var(--line,rgba(255,255,255,.12));background:transparent;color:var(--text,#cfd6e2);font-size:.76rem;cursor:pointer;font-family:inherit;white-space:nowrap}
     .v-mini--ok{border-color:rgba(52,211,153,.4);color:#34D399}

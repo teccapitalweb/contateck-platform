@@ -464,3 +464,79 @@ export async function generarPolizaDeVenta(accessToken, ventaId, log = console) 
     return { ok: false, error: error.message };
   }
 }
+
+// ---- OT-0072: corregir o cancelar un pago PENDIENTE ----
+// La base (database/OT-0072-editar-cancelar-venta.sql) tiene la última palabra: las funciones
+// editar_venta_pendiente / cancelar_venta_pendiente (SECURITY DEFINER, fila bloqueada) revisan de
+// nuevo quién eres y que siga 'pendiente'. Aquí se valida primero para dar mensajes claros y se
+// traduce el error cuando el SQL aún no se aplicó.
+function mensajeRpc(error) {
+  const m = String((error && error.message) || '');
+  if (error && (error.code === 'PGRST202' || /Could not find the function|schema cache/i.test(m))) {
+    return 'Falta aplicar el SQL OT-0072 (database/OT-0072-editar-cancelar-venta.sql) en la base de datos.';
+  }
+  return m || 'No se pudo completar la operación.';
+}
+
+export async function editarVentaPendiente(accessToken, userId, ventaId, datos, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  const rol = await obtenerRolUsuario(accessToken, log);
+  if (!ROLES_REGISTRO.includes(rol)) return { ok: false, error: 'Tu rol no permite editar pagos.' };
+
+  try {
+    const venta = await obtenerVenta(supabase, ventaId);
+    if (!venta) return { ok: false, error: 'Pago no encontrado.' };
+    if (venta.created_by !== userId) return { ok: false, error: 'Solo quien registró el pago puede editarlo.' };
+    if (venta.estado !== 'pendiente') {
+      return { ok: false, error: `Este pago ya no está pendiente (estado: ${venta.estado}), así que ya no se puede editar.` };
+    }
+    // El comprobante no se cambia al editar (se conserva el que ya tiene).
+    const v = validarDatosVenta({ ...(datos || {}), comprobantePath: null }, venta.empresa_id);
+    if (v.error) return { ok: false, error: v.error };
+    const d = v.valores;
+
+    const { data, error } = await supabase.rpc('editar_venta_pendiente', {
+      p_id: ventaId,
+      p_datos: {
+        cliente: d.cliente, concepto: d.concepto, importe: d.importe, fechaPago: d.fechaPago,
+        metodoPago: d.metodoPago, referencia: d.referencia, banco: d.banco, notas: d.notas, incluyeIva: d.incluyeIva,
+      },
+    });
+    if (error) return { ok: false, error: mensajeRpc(error) };
+    return { ok: true, venta: data };
+  } catch (error) {
+    log.warn('[postgres] editarVentaPendiente:', error.message);
+    return { ok: false, error: mensajeRpc(error) };
+  }
+}
+
+export async function cancelarVentaPendiente(accessToken, userId, ventaId, motivo, log = console) {
+  const supabase = clienteComoUsuario(accessToken);
+  if (!supabase) return { ok: false, error: 'Postgres no está configurado en el backend.' };
+
+  const rol = await obtenerRolUsuario(accessToken, log);
+  if (!ROLES_REGISTRO.includes(rol)) return { ok: false, error: 'Tu rol no permite cancelar pagos.' };
+
+  const m = String(motivo == null ? '' : motivo).trim();
+  if (m.length < MOTIVO_MIN) return { ok: false, error: 'Escribe el motivo de la cancelación.' };
+  if (m.length > MOTIVO_MAX) return { ok: false, error: `El motivo excede ${MOTIVO_MAX} caracteres.` };
+
+  try {
+    const venta = await obtenerVenta(supabase, ventaId);
+    if (!venta) return { ok: false, error: 'Pago no encontrado.' };
+    if (venta.created_by !== userId && !ROLES_AUTOVALIDAN.includes(rol)) {
+      return { ok: false, error: 'Solo quien registró el pago, o un Admin/Director, puede cancelarlo.' };
+    }
+    if (venta.estado !== 'pendiente') {
+      return { ok: false, error: `Este pago ya no está pendiente (estado: ${venta.estado}), así que ya no se puede cancelar.` };
+    }
+    const { data, error } = await supabase.rpc('cancelar_venta_pendiente', { p_id: ventaId, p_motivo: m });
+    if (error) return { ok: false, error: mensajeRpc(error) };
+    return { ok: true, venta: data };
+  } catch (error) {
+    log.warn('[postgres] cancelarVentaPendiente:', error.message);
+    return { ok: false, error: mensajeRpc(error) };
+  }
+}
