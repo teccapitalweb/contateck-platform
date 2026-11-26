@@ -11,6 +11,7 @@ Material de apoyo para el informe técnico de residencia profesional (proyecto C
 | `diagramas/04-Matriz-de-Roles-y-Permisos.md` | Qué puede hacer cada rol |
 | `Guion-de-Demo-y-Lista-de-Capturas.md` | Guion de la demostración, lista de capturas con nombres y preguntas frecuentes |
 | `Guia-de-Instalacion-y-Operacion.md` | Cómo instalar, probar y operar el sistema, y qué hacer si algo falla |
+| `Manual-de-Usuario.md` | Manual breve por rol: dónde se hace cada tarea (contabilidad, ventas, facturación, nómina, SAT y Fiscal, equipo, asistente), mensajes frecuentes y límites |
 | `../work-orders/` | Una orden de trabajo por cada cambio (qué se hizo, cómo se comprobó y qué quedó sin verificar) |
 | `../work-orders/Reporte-Prueba-Completa-Modulos-2026-11-13.md` | Prueba de todos los módulos con 3 roles (13-nov y 25-nov-2026) |
 
