@@ -112,4 +112,17 @@ ok('estilos: lo oculto por rol no se ve; al vendedor se le quitan los botones de
   for (const b of esperados) assert.ok(bloque.includes('[' + b + ']'), 'falta para el vendedor: ' + b);
 });
 
+ok('Ventas: el vendedor no ve el aviso, el filtro ni la etiqueta de "sin póliza"; los demás roles (auditor incluido) sí', () => {
+  const ventas = leer('ventas.js');
+  const a = ventas.indexOf('function veAvisosContables'); assert.ok(a > 0);
+  const fn = ventas.slice(a, ventas.indexOf('\n', a));
+  for (const [rol, esperado] of [['vendedor', false], ['auditor', true], ['contador', true], ['admin', true], ['director', true], ['rh', true]]) {
+    const cx = {}; new Function('cx', 'const miRol = () => ' + JSON.stringify(rol) + ';\n' + fn + '\ncx.f = veAvisosContables;')(cx);
+    assert.equal(cx.f(), esperado, rol);
+  }
+  assert.ok(ventas.includes('const nSin = veAvisosContables() ? ventasCache.filter(sinPoliza).length : 0;'), 'aviso y chip salen de nSin');
+  assert.ok(ventas.includes('const badgePol = veAvisosContables() && sinPoliza(v) ? '), 'la etiqueta de cada venta');
+  assert.ok(html.includes('ventas.js?v=4'));
+});
+
 console.log(`\n✔ ${pruebas} pruebas de pantalla por rol pasaron\n`);

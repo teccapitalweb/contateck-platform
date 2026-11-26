@@ -12,7 +12,7 @@ Lista de lo que el panel **ofrecía como botón o acción** y estaba marcado com
 | Notificaciones (🔔) | Barra superior | **Hecho y probado en el panel real (26-nov-2026).** Antes mostraba siempre un punto rojo y no hacía nada | Mismo documento; la campana mostró las 3 alertas reales del Dashboard y llevó al módulo; el punto rojo solo aparece si hay avisos; incluye invitaciones a otras empresas | Las invitaciones en la campana solo se probaron con datos simulados |
 | Editar o cancelar un pago pendiente | Ventas y Pagos | **Hecho y probado en el panel real (26-nov-2026).** Antes un pago registrado con error solo podía rechazarlo otra persona | `OT-0072-Editar-y-Cancelar-Venta.md`; `test-ventas-editar-cancelar.js` (38) y prueba del SQL en un Postgres en memoria; en el panel: se registró P-0007, se editó (cliente, importe, IVA y banco; la base y la auditoría guardaron el antes y el después) y se canceló con motivo (quedó como Cancelado, fuera de los totales y sin más botones) | Solo funciona con el SQL OT-0072 aplicado (hecho en DEV, falta en producción). No se probó con una sesión de vendedor en el panel (cubierto por las pruebas). El comprobante no se cambia al editar; corregir un pago **ya confirmado** sigue pendiente de definir con la contadora |
 
-Pruebas automáticas de toda la rama: `npm run test:ci` = 19 suites, 258 pruebas, en verde (incluye 22 del timbrado masivo, 18 del timbrado de nómina y 38 de editar/cancelar pagos).
+Pruebas automáticas de toda la rama: `npm run test:ci` = 19 suites, 259 pruebas, en verde (incluye 22 del timbrado masivo, 18 del timbrado de nómina y 38 de editar/cancelar pagos).
 
 ## Prueba real desde el panel: timbrado de nómina (25-nov-2026, ambiente de pruebas)
 
