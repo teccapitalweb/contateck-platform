@@ -78,6 +78,8 @@ window.CTPostgres = (function () {
     guardarConfigContable: function (body) { return llamar("PUT", "/api/config-contable", body); },
     leerConfigContable: function () { return llamar("GET", "/api/config-contable"); },
     // OT-0053: IA Contable (solo lectura). estado = si está configurada y si el rol puede usarla.
+    // OT-0061: IVA del mes e ISR estimado (referencia) para la tarjeta del Dashboard.
+    indicadoresFiscales: function () { return llamar("GET", "/api/indicadores-fiscales"); },
     estadoIA: function () { return llamar("GET", "/api/ia/estado"); },
     consultarIA: function (pregunta, historial) { return llamar("POST", "/api/ia/consultar", { pregunta: pregunta, historial: historial }); },
     registrarPagoCliente: function (body) { return llamar("POST", "/api/pagos-cliente", body); },

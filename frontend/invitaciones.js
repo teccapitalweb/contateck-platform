@@ -136,7 +136,7 @@
       host.innerHTML = `
         <div class="card" style="margin-bottom:1.2rem">
           <p style="padding:1rem 1.3rem;margin:0;font-size:.85rem;color:var(--muted)">
-            El envío automático de correo todavía no está activo — comparte tú mismo el aviso con la persona invitada. En cuanto inicie sesión con ese mismo correo, quedará asignada sola a tu empresa. Si esa persona ya tiene cuenta en otra empresa, verá la invitación en su selector de empresa (arriba) y podrá aceptarla desde ahí.
+            Cada invitación queda registrada. Para avisar a la persona, usa <b>Enviar por correo</b>: se abre tu correo con el mensaje listo para mandar. En cuanto cree su cuenta con ese mismo correo, quedará asignada sola a tu empresa con el rol elegido. Si esa persona ya tiene cuenta en otra empresa, verá la invitación en su selector de empresa (arriba) y podrá aceptarla desde ahí.
           </p>
         </div>
         <div class="card">
@@ -166,6 +166,7 @@
         acciones += `<button class="v-mini v-mini--ok" data-inv-reenviar="${esc(i.id)}">Reenviar</button>`;
       }
       if (i.estado === "pendiente" && !vencida) {
+        acciones += `<button class="v-mini v-mini--ok" data-inv-correo="${esc(i.id)}">Enviar por correo</button>`;
         acciones += `<button class="v-mini v-mini--bad" data-inv-cancelar="${esc(i.id)}">Cancelar</button>`;
       }
       return `<tr><td>${esc(i.correo)}</td><td>${esc(nombreRol(i.rol_id))}</td><td>${fmtFecha(i.created_at)}</td><td>${fmtFecha(i.expira_en)}</td><td><span class="v-badge ${e.cls}">${e.txt}</span></td><td>${acciones}</td></tr>`;
@@ -306,8 +307,33 @@
     toast("Persona reactivada"); await render();
   }
 
+  // Abre el correo del usuario con el aviso ya redactado (no se manda nada desde el servidor).
+  function textoCorreoInvitacion(inv) {
+    const empresa = (window.CONTATECK_EMPRESA_PG && window.CONTATECK_EMPRESA_PG.nombre) || "la empresa";
+    const url = window.location.origin + "/login.html";
+    const vence = inv.expira_en ? fmtFecha(inv.expira_en) : "";
+    const asunto = "Invitación a CONTATECK · " + empresa;
+    const cuerpo = [
+      "Hola,", "",
+      "Te invité a CONTATECK para trabajar con " + empresa + " con el rol de " + nombreRol(inv.rol_id) + ".", "",
+      "Para entrar:",
+      "1. Abre " + url,
+      "2. Pulsa \"Crear una aquí\" y regístrate con ESTE mismo correo: " + inv.correo,
+      "3. Elige tu contraseña. Quedarás asignado(a) a la empresa automáticamente.", "",
+      vence ? "La invitación vence el " + vence + "." : "",
+    ].join("\n");
+    return { para: inv.correo, asunto, cuerpo };
+  }
+  function enviarInvitacionPorCorreo(id) {
+    const inv = invitaciones.find((x) => x.id === id);
+    if (!inv) { toast("No se encontró la invitación", "warn"); return; }
+    const m = textoCorreoInvitacion(inv);
+    window.location.href = "mailto:" + encodeURIComponent(m.para) + "?subject=" + encodeURIComponent(m.asunto) + "&body=" + encodeURIComponent(m.cuerpo);
+  }
+
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-inv-nueva]")) { openNuevaInvitacion(); return; }
+    const porCorreo = e.target.closest("[data-inv-correo]"); if (porCorreo) { enviarInvitacionPorCorreo(porCorreo.getAttribute("data-inv-correo")); return; }
     if (e.target.closest("[data-inv-guardar]")) { guardarInvitacion(); return; }
     const reenv = e.target.closest("[data-inv-reenviar]"); if (reenv) { conBoton(reenv, () => reenviarInvitacion(reenv.getAttribute("data-inv-reenviar"))); return; }
     const canc = e.target.closest("[data-inv-cancelar]"); if (canc) { conBoton(canc, () => cancelarInvitacion(canc.getAttribute("data-inv-cancelar"))); return; }

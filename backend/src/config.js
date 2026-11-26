@@ -34,6 +34,8 @@ export const config = {
     csdCerBase64: process.env.EMISOR_CSD_CER || '',
     csdKeyBase64: process.env.EMISOR_CSD_KEY || '',
     csdPassword: process.env.EMISOR_CSD_PASSWORD || '',
+    // OT-0064: registro patronal del IMSS (opcional; se informa en el CFDI de nómina junto con el NSS).
+    registroPatronal: (process.env.EMISOR_REGISTRO_PATRONAL || '').trim(),
   },
 
   // ---- Firebase Admin (opcional al inicio) ----

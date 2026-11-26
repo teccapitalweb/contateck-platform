@@ -752,10 +752,17 @@ html[data-rol="auditor"] :is(
   [data-v-nueva], [data-v-tomar], [data-v-conf], [data-v-rech], [data-v-rech-ok], [data-v-genpol], [data-v-guardar],
   /* Facturación (y los avisos "timbrado" de Nómina) */
   [data-config-empresa], [data-facturar], [data-correo-cfdi], [data-nc-cfdi], [data-rep-cfdi], [data-cancelar-cfdi],
-  [data-fac-timbrar], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
+  [data-fac-timbrar], [data-fac-masivo], [data-fac-cancelar], [data-correo-enviar], [data-nc-emitir], [data-rep-emitir],
   [data-perfil-editar], [data-perfil-nuevo], [data-perfil-guardar], [data-perfil-activar], [data-perfil-borrar], [data-soon*="imbrado"],
   /* Nómina */
-  [data-nom-calcular], [data-pn-generar], [data-pn-aprobar], [data-pn-descartar],
+  [data-nom-calcular], [data-pn-generar], [data-pn-aprobar], [data-pn-descartar], [data-hist-timbrar],
   /* Altas, ediciones y bajas genéricas (p. ej. "Empleado") */
   [data-new], [data-edit], [data-del]
 ) { display: none !important; }
+
+/* OT-0060 · Imprimir / guardar PDF: se ocultan el menú, la barra superior, los botones y los modales. */
+@media print {
+  .side, .topbar, .page-head__actions, .modal, .toast, [data-modal], .chat__input { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .card { break-inside: avoid; box-shadow: none !important; border: 1px solid #bbb !important; }
+}

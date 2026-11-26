@@ -41,6 +41,9 @@ const COLUMNAS_AUDITOR = 'id, nombre, puesto, departamento, estado, fecha_ingres
 // Todo, incluyendo datos sensibles (sueldo, rfc, curp, nss, cuenta bancaria).
 const COLUMNAS_COMPLETAS = 'id, nombre, puesto, departamento, fecha_ingreso, sueldo, sueldo_tipo, sueldo_monto_original, rfc, curp, nss, cuenta_bancaria, estado, created_by, created_at, updated_at';
 
+// OT-0064: datos fiscales del CFDI de nómina (no los ve el auditor, igual que RFC/CURP/NSS).
+const COLUMNAS_FISCALES_NOMINA = 'cp_fiscal, tipo_contrato, tipo_jornada, riesgo_puesto, clave_entidad';
+
 function clienteComoUsuario(accessToken) {
   if (!config.supabase.url || !config.supabase.anonKey) return null;
   return createClient(config.supabase.url, config.supabase.anonKey, {
@@ -59,10 +62,14 @@ export async function listarEmpleados(accessToken, log = console) {
   }
 
   const columnas = rol === 'auditor' ? COLUMNAS_AUDITOR : COLUMNAS_COMPLETAS;
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('empleados')
-    .select(columnas)
+    .select(rol === 'auditor' ? columnas : columnas + ', ' + COLUMNAS_FISCALES_NOMINA)
     .order('nombre', { ascending: true });
+  // OT-0064: si la base aún no tiene las columnas fiscales, se lista con las de siempre.
+  if (error && /42703|does not exist|schema cache/i.test(String(error.message) + String(error.code)) && rol !== 'auditor') {
+    ({ data, error } = await supabase.from('empleados').select(columnas).order('nombre', { ascending: true }));
+  }
 
   if (error) {
     log.warn('[postgres] listarEmpleados:', error.message);

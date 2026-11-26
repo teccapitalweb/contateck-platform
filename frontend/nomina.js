@@ -1,15 +1,15 @@
 /* ============================================================
    CONTATECK · nomina.js · Prenómina interna (Pieza 3)
    Control interno — calcula ISR (con subsidio) e IMSS obrero con el
-   Motor Fiscal 2026 (motorFiscal.js), validado por contabilidad. NO
-   timbra CFDI de nómina ante el SAT (eso sigue en "Timbrar nómina",
-   bloqueado hasta definir el flujo de timbrado y el alta IMSS).
+   Motor Fiscal 2026 (motorFiscal.js), validado por contabilidad. Desde
+   OT-0064 el historial permite "Timbrar" el CFDI de nómina de cada
+   empleado en el ambiente de PRUEBAS del PAC (sin efecto fiscal real).
 
    Flujo: [Calcular] → modal de periodo → Generar Prenómina →
    tabla editable (ISR e IMSS calculados; percepciones y otras
    deducciones capturables, neto en vivo) → Aprobar y Pagar (Pieza 4:
    guarda historial en Postgres). ISR + IMSS + otras deducciones se
-   guardan sumados en `deducciones` (sin cambiar el esquema).
+   guardan sumados en `deducciones` y, desde OT-0064, también desglosados.
    La cuota patronal es solo informativa: no se guarda ni genera póliza.
 
    Regla de negocio: SOLO empleados con estado "ok" (Activo) entran
@@ -71,12 +71,13 @@
   // deja en la propia fila. Si el motor falla, la fila queda en cero y
   // marcada (f.errFiscal) — nunca se inventa una cifra.
   function calcularImpuestos(f) {
-    f.isr = 0; f.imss = 0; f.isrBruto = 0; f.subsidio = 0; f.patronal = 0; f.infonavit = 0; f.errFiscal = null;
+    f.isr = 0; f.imss = 0; f.isrBruto = 0; f.subsidio = 0; f.patronal = 0; f.infonavit = 0; f.sdi = 0; f.errFiscal = null;
     if (!motor) { f.errFiscal = "Motor fiscal no disponible"; return; }
     const percepciones = round2(f.base + f.extras);
     if (!(f.salario_diario > 0) || !(percepciones > 0)) return;
     try {
       const sdi = motor.calcularSDI(f.salario_diario, f.anios).sdi;
+      f.sdi = sdi;   // OT-0064: el salario diario integrado va al CFDI de nómina
       const isr = motor.calcularISR({
         baseGravable: percepciones, periodo: pre.periodicidad, dias: DIAS_SUBSIDIO[pre.periodicidad],
         ingresoMensualOrdinario: round2(f.salario_diario * 30), anio: ANIO_FISCAL,
@@ -396,6 +397,12 @@
     if (e.target.closest("[data-pn-aprobar]")) { aprobarNomina(); return; }
     const histVer = e.target.closest("[data-hist-ver]");
     if (histVer) { verDetalleNomina(histVer.getAttribute("data-hist-ver")); return; }
+    const histRec = e.target.closest("[data-hist-recibos]");
+    if (histRec) { imprimirRecibosNomina(histRec.getAttribute("data-hist-recibos")); return; }
+    const histTim = e.target.closest("[data-hist-timbrar]");
+    if (histTim) { timbrarNominaUI(histTim.getAttribute("data-hist-timbrar")); return; }
+    const btnXml = e.target.closest("[data-nom-xml]");
+    if (btnXml) { descargarXmlNomina(btnXml.getAttribute("data-nom-xml"), btnXml.getAttribute("data-uuid")); return; }
     // Periodicidad (seg propio del modal)
     const segBtn = e.target.closest("[data-pn-seg] button");
     if (segBtn) {
@@ -472,6 +479,8 @@
         otras_percepciones: f.extras,
         // ISR + IMSS + otras deducciones, sumados (el esquema no cambia).
         deducciones: deduccionesDe(f),
+        // OT-0064: desglose por separado (el CFDI de nómina lo necesita). Sin el SQL aplicado en la base, la función lo ignora.
+        isr_bruto: f.isrBruto, isr_retenido: f.isr, subsidio: f.subsidio, imss: f.imss, otras_deducciones: f.deducciones, sdi: f.sdi || null,
         // El desglose queda en las notas para poder auditarlo después.
         notas: notasConDesglose(f),
       };
@@ -515,12 +524,16 @@
   // ============================================================
   function fmtFecha(iso) {
     if (!iso) return "—";
+    // Una fecha sin hora (AAAA-MM-DD) NO pasa por Date: en México se leería como el día anterior (zona horaria).
+    const solo = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+    if (solo) return solo[3] + "/" + solo[2] + "/" + solo[1];
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
     return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
   }
   const PERIODO_ETIQUETAS = { semanal: "Semanal", catorcenal: "Catorcenal", quincenal: "Quincenal", mensual: "Mensual" };
 
+  let nominasCache = [];
   async function cargarHistorial() {
     const root = $("[data-historial-nominas-root]");
     if (!root) return;
@@ -532,6 +545,7 @@
       const data = await resp.json();
       if (data.ok) lista = data.nominas || [];
     } catch (e) { /* sin backend: historial vacío, no rompe la pantalla */ }
+    nominasCache = lista;
 
     if (!lista.length) {
       root.innerHTML =
@@ -546,7 +560,9 @@
       "<thead><tr><th>Periodo</th><th>Periodicidad</th><th style=\"text-align:right\">Empleados</th>" +
       "<th style=\"text-align:right\">Neto pagado</th><th>Procesada</th><th></th></tr></thead><tbody>" +
       lista.map(function (n) {
-        const btnVer = '<button class="btn btn--ghost" style="padding:.35rem .7rem;font-size:.82rem" data-hist-ver="' + n.id + '">Ver</button>';
+        const btnVer = '<button class="btn btn--ghost" style="padding:.35rem .7rem;font-size:.82rem" data-hist-ver="' + n.id + '">Ver</button> ' +
+          '<button class="btn btn--ghost" style="padding:.35rem .7rem;font-size:.82rem" data-hist-recibos="' + n.id + '">Recibos</button>' +
+          (puedeProcesar() ? ' <button class="btn btn--ghost" style="padding:.35rem .7rem;font-size:.82rem" data-hist-timbrar="' + n.id + '">Timbrar</button>' : "");
         return "<tr><td>" + fmtFecha(n.fecha_inicio) + " a " + fmtFecha(n.fecha_fin) + "</td>" +
           "<td>" + (PERIODO_ETIQUETAS[n.periodicidad] || n.periodicidad) + "</td>" +
           '<td class="num" style="text-align:right">' + n.empleados_pagados + "</td>" +
@@ -575,19 +591,133 @@
       '<div style="overflow-x:auto"><table class="tbl">' +
       "<thead><tr><th>Empleado</th><th style=\"text-align:right\">Base</th>" +
       "<th style=\"text-align:right\">Percep.</th><th style=\"text-align:right\">Deduc.</th>" +
-      "<th style=\"text-align:right\">Neto</th><th>Notas</th></tr></thead><tbody>" +
+      "<th style=\"text-align:right\">Neto</th><th>CFDI de nómina</th><th>Notas</th></tr></thead><tbody>" +
       detalle.map(function (d) {
-        return "<tr><td>" + d.nombre + (d.puesto ? ' <span style="color:var(--faint);font-size:.8rem">· ' + d.puesto + "</span>" : "") + "</td>" +
+        return "<tr><td>" + escNom(d.nombre) + (d.puesto ? ' <span style="color:var(--faint);font-size:.8rem">· ' + escNom(d.puesto) + "</span>" : "") + "</td>" +
           '<td class="num" style="text-align:right">$' + money(d.sueldo_base) + "</td>" +
           '<td class="num" style="text-align:right">$' + money(d.otras_percepciones) + "</td>" +
           '<td class="num" style="text-align:right">$' + money(d.deducciones) + "</td>" +
           '<td class="num" style="text-align:right;font-weight:600">$' + money(d.neto) + "</td>" +
-          "<td>" + (d.notas ? d.notas : '<span style="color:var(--faint)">—</span>') + "</td></tr>";
+          "<td>" + celdaCfdi(d) + "</td>" +
+          "<td>" + (d.notas ? escNom(d.notas) : '<span style="color:var(--faint)">—</span>') + "</td></tr>";
       }).join("") +
       "</tbody></table></div>" +
       '<p style="text-align:right;margin-top:.8rem;font-size:.95rem">Neto total: <b>$' + money(totNeto) + "</b></p>";
 
     verDetalleModal("Detalle de nómina · " + detalle.length + " empleado(s)", cuerpo);
+  }
+
+  /*RECIBO-INICIO*/
+  // OT-0062: recibo de nómina imprimible, uno por empleado. Es un documento INFORMATIVO de la empresa: no es un CFDI de nómina.
+  // Todo texto que llegue de la base (nombres, puestos, notas) se escapa.
+  function escNom(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
+  }
+  function reciboNominaHtml(nomina, detalle, empresa) {
+    const periodo = fmtFecha(nomina.fecha_inicio) + " al " + fmtFecha(nomina.fecha_fin);
+    const periodicidad = PERIODO_ETIQUETAS[nomina.periodicidad] || nomina.periodicidad || "";
+    const fila = function (a, b, fuerte) { return '<tr><td>' + a + '</td><td style="text-align:right;' + (fuerte ? "font-weight:700" : "") + '">' + b + '</td></tr>'; };
+    const recibos = (detalle || []).map(function (d) {
+      return '<section class="recibo">' +
+        '<h1>Recibo de nómina</h1>' +
+        '<p class="emp">' + escNom(empresa && empresa.nombre ? empresa.nombre : "") + (empresa && empresa.rfc ? " · RFC " + escNom(empresa.rfc) : "") + '</p>' +
+        '<table class="datos">' + fila("Empleado", escNom(d.nombre)) + (d.puesto ? fila("Puesto", escNom(d.puesto)) : "") +
+          fila("Periodo", periodo + (periodicidad ? " (" + escNom(periodicidad) + ")" : "")) + fila("Fecha de proceso", fmtFecha(nomina.created_at)) + '</table>' +
+        '<table class="importes"><thead><tr><th>Concepto</th><th style="text-align:right">Importe</th></tr></thead><tbody>' +
+          fila("Sueldo base", "$" + money(d.sueldo_base)) + fila("Otras percepciones", "$" + money(d.otras_percepciones)) +
+          fila("Deducciones (ISR, IMSS y otras)", "-$" + money(d.deducciones)) + fila("Neto pagado", "$" + money(d.neto), true) + '</tbody></table>' +
+        (d.notas ? '<p class="notas">Notas: ' + escNom(d.notas) + '</p>' : "") +
+        '<div class="firmas"><div>Recibí de conformidad</div><div>Por la empresa</div></div>' +
+        (d.cfdi_uuid
+          ? '<p class="pie">CFDI de nómina timbrado en el ambiente de PRUEBAS del proveedor de timbrado (sin efecto fiscal). UUID: ' + escNom(d.cfdi_uuid) + '</p>'
+          : '<p class="pie">Recibo informativo generado por CONTATECK. No es un CFDI de nómina ni tiene validez fiscal por sí mismo.</p>') +
+      '</section>';
+    }).join("");
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Recibos de nómina</title><style>' +
+      'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}.recibo{padding:28px 36px;page-break-after:always}.recibo:last-child{page-break-after:auto}' +
+      'h1{font-size:20px;margin:0 0 4px}.emp{margin:0 0 14px;color:#444}table{width:100%;border-collapse:collapse;margin-bottom:14px}' +
+      '.datos td{padding:3px 0}.datos td:first-child{color:#555;width:30%}.importes th,.importes td{border-bottom:1px solid #bbb;padding:6px 4px;text-align:left}' +
+      '.notas{font-size:12px;color:#444}.firmas{display:flex;gap:40px;margin-top:70px}.firmas div{flex:1;border-top:1px solid #111;padding-top:4px;text-align:center;font-size:12px}' +
+      '.pie{margin-top:26px;font-size:10px;color:#666}' +
+      '</style></head><body>' + (recibos || '<p style="padding:24px">Esta nómina no tiene empleados.</p>') + '</body></html>';
+  }
+  /*RECIBO-FIN*/
+  /*TIMBRADO-INICIO*/
+  // OT-0064: timbrado del CFDI de nómina (ambiente de pruebas del proveedor). Todo texto del servidor se escapa.
+  function celdaCfdi(d) {
+    if (!d || !d.cfdi_uuid) return '<span style="color:var(--faint)">Sin timbrar</span>';
+    return '<span title="' + escNom(d.cfdi_uuid) + '" style="font-size:.8rem">' + escNom(String(d.cfdi_uuid).slice(0, 8)) + "…</span> " +
+      '<button class="btn btn--ghost" style="padding:.2rem .5rem;font-size:.75rem" data-nom-xml="' + escNom(d.id) + '" data-uuid="' + escNom(d.cfdi_uuid) + '">XML</button>';
+  }
+  const ESTADO_TIMBRADO = { timbrado: "Timbrado", ya_timbrado: "Ya estaba timbrado", error: "Error", timbrado_sin_registro: "Timbrado, sin anotar", omitido: "Omitido" };
+  function resultadoTimbradoHtml(data) {
+    if (!data || !data.ok) return '<p style="color:var(--muted)">' + escNom((data && data.error) || "No se pudo timbrar la nómina.") + "</p>";
+    const r = data.resumen || {};
+    const filas = (data.resultados || []).map(function (x) {
+      const bad = x.estado === "error" || x.estado === "timbrado_sin_registro" || x.estado === "omitido";
+      return "<tr><td>" + escNom(x.nombre) + "</td><td>" + escNom(ESTADO_TIMBRADO[x.estado] || x.estado) + "</td>" +
+        '<td style="font-size:.82rem;color:' + (bad ? "#ff8f9d" : "var(--muted)") + '">' + escNom(x.error || x.uuid || "") + "</td></tr>";
+    }).join("");
+    return '<p style="margin:0 0 .8rem">Timbrados: <b>' + Number(r.timbrados || 0) + "</b> · Ya timbrados: <b>" + Number(r.yaTimbrados || 0) +
+      "</b> · Con error: <b>" + Number(r.errores || 0) + "</b>" + (r.omitidos ? " · Omitidos: <b>" + Number(r.omitidos) + "</b>" : "") + "</p>" +
+      (data.detenido ? '<p style="color:#ffcf82;font-size:.85rem">' + escNom(data.detenido) + "</p>" : "") +
+      '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Empleado</th><th>Resultado</th><th>UUID o motivo</th></tr></thead><tbody>' + filas + "</tbody></table></div>" +
+      '<p style="color:var(--faint);font-size:.8rem;margin-top:.8rem">Ambiente de pruebas del proveedor: estos timbres no tienen efecto fiscal real. Los criterios fiscales del recibo están por validar con un contador.</p>';
+  }
+  /*TIMBRADO-FIN*/
+  async function timbrarNominaUI(id) {
+    if (!puedeProcesar()) { toast("Tu rol no permite timbrar nómina.", "warn"); return; }
+    const nomina = nominasCache.find(function (n) { return String(n.id) === String(id); });
+    if (!nomina) { toast("No se encontró la nómina. Recarga la página.", "warn"); return; }
+    const ok = await confirmarBonito(
+      "Timbrar nómina",
+      '<p style="color:var(--muted);font-size:.92rem;line-height:1.6">Se va a timbrar el CFDI de nómina de cada empleado del periodo <b style="color:var(--text)">' +
+      fmtFecha(nomina.fecha_inicio) + " al " + fmtFecha(nomina.fecha_fin) + "</b>.<br>Es el <b>ambiente de pruebas</b> del proveedor: los timbres no tienen efecto fiscal. " +
+      "Los empleados que ya están timbrados no se vuelven a timbrar.</p>",
+      "Timbrar"
+    );
+    if (!ok) return;
+    toast("Timbrando la nómina…", "ok");
+    let data;
+    try {
+      const resp = await fetch(backendUrl() + "/api/nominas/" + encodeURIComponent(id) + "/timbrar", {
+        method: "POST", headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN },
+      });
+      data = await resp.json();
+    } catch (e) { toast("Error al timbrar: " + e.message, "warn"); return; }
+    verDetalleModal("Resultado del timbrado de nómina", resultadoTimbradoHtml(data));
+  }
+  async function descargarXmlNomina(detalleId, uuid) {
+    try {
+      const resp = await fetch(backendUrl() + "/api/nominas/detalle/" + encodeURIComponent(detalleId) + "/xml", { headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN } });
+      if (!resp.ok) {
+        let m = "No se pudo descargar el XML.";
+        try { m = (await resp.json()).error || m; } catch (e) { /* sin cuerpo */ }
+        toast(m, "warn"); return;
+      }
+      const blob = await resp.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "nomina-" + String(uuid || detalleId).replace(/[^\w-]/g, "") + ".xml";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 1000);
+    } catch (e) { toast("Error al descargar el XML: " + e.message, "warn"); }
+  }
+  async function imprimirRecibosNomina(id) {
+    const nomina = nominasCache.find(function (n) { return String(n.id) === String(id); });
+    if (!nomina) { toast("No se encontró la nómina. Recarga la página.", "warn"); return; }
+    let detalle = [];
+    try {
+      const resp = await fetch(backendUrl() + "/api/nominas/" + id + "/detalle", { headers: { Authorization: "Bearer " + window.CONTATECK_SUPABASE_TOKEN } });
+      const data = await resp.json();
+      if (!data.ok) { toast("No se pudo cargar el detalle: " + (data.error || "error"), "warn"); return; }
+      detalle = data.detalle || [];
+    } catch (e) { toast("Error al cargar el detalle: " + e.message, "warn"); return; }
+    // Se imprime desde un iframe oculto (no depende de ventanas emergentes).
+    const marco = document.createElement("iframe");
+    marco.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(marco);
+    marco.contentDocument.open(); marco.contentDocument.write(reciboNominaHtml(nomina, detalle, window.CONTATECK_EMPRESA_PG || {})); marco.contentDocument.close();
+    setTimeout(function () { marco.contentWindow.focus(); marco.contentWindow.print(); setTimeout(function () { document.body.removeChild(marco); }, 2000); }, 300);
   }
 
   // Modal de solo lectura (reutiliza clases .modal). Distinto del de
