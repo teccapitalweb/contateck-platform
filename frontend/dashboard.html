@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <script>try{var t=localStorage.getItem('contateck-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 </head>
 <body data-dashboard>
@@ -377,7 +377,8 @@
 <script src="app-config.js?v=1"></script>
 <script src="postgres-crud.js?v=5"></script>
 <script src="dashboardService.js?v=1"></script>
-<script src="app.js?v=22"></script>
+<script src="acceso-roles.js?v=1"></script>
+<script src="app.js?v=23"></script>
 <!-- OT-0032: firebase-config.js YA NO se carga. Sin él, data-firestore.js se salta
      el arranque de Firestore (su interruptor `configured` queda en false). Ese
      arranque siempre fallaba con permission-denied (pedía un token a
@@ -387,7 +388,7 @@
      <script src="firebase-config.js"></script> antes de supabase-config.js. -->
 <script src="supabase-config.js?v=2"></script>
 <script src="storage-empresa.js?v=2"></script>
-<script type="module" src="auth-guard.js?v=10"></script>
+<script type="module" src="auth-guard.js?v=11"></script>
 <script type="module" src="data-firestore.js?v=15"></script>
 <script src="facturacion-masiva-csv.js?v=1"></script>
 <script src="facturacion.js?v=24"></script>
@@ -399,6 +400,6 @@
 <script src="invitaciones.js?v=4"></script>
 <script src="empresas-selector.js?v=1"></script>
 <script src="panel-busqueda-core.js?v=1"></script>
-<script src="panel-busqueda.js?v=1"></script>
+<script src="panel-busqueda.js?v=2"></script>
 </body>
 </html>

@@ -59,8 +59,11 @@
 
   /* ---------- ir a un lugar del panel ---------- */
   function clic(selector) { var e = document.querySelector(selector); if (e) e.click(); return !!e; }
+  // OT-0070: el buscador y la campana solo usan lo que el rol de la persona puede ver en el panel.
+  function puede(vista) { return !window.CTAcceso || window.CTAcceso.puedeVer(document.documentElement.getAttribute("data-rol"), vista); }
   async function ir(d) {
     if (!d) return;
+    if (d.vista && !puede(d.vista)) return;
     if (d.selectorEmpresa) { clic(".empresa-sel .select__btn"); return; }
     if (d.vista) clic('.nav-item[data-view="' + d.vista + '"]');
     if (d.tab) { await esperar(80); clic('[data-tabs="cont"] .tab[data-tab="' + d.tab + '"]'); }
@@ -91,8 +94,8 @@
 
   function fuentes() {
     return {
-      cfdis: window.CONTATECK_CFDIS_PG || [], polizas: window.CONTATECK_POLIZAS_PG || [],
-      clientes: window.CONTATECK_CLIENTES_PG || [], empleados: window.CONTATECK_EMPLEADOS_REAL_PG || [],
+      cfdis: puede("facturacion") ? (window.CONTATECK_CFDIS_PG || []) : [], polizas: puede("contabilidad") ? (window.CONTATECK_POLIZAS_PG || []) : [],
+      clientes: puede("facturacion") ? (window.CONTATECK_CLIENTES_PG || []) : [], empleados: puede("nomina") ? (window.CONTATECK_EMPLEADOS_REAL_PG || []) : [],
     };
   }
   function pintar(grupos, consulta) {
@@ -160,8 +163,8 @@
   document.addEventListener("click", function (e) { if (!panel.contains(e.target)) cerrarCampana(); });
 
   // Alertas: las que ya calculó el Dashboard (evento de app.js; o las que ya estén guardadas si llegamos tarde).
-  document.addEventListener("contateck:dashboard-datos", function (e) { alertas = (e.detail && e.detail.alertas) || []; pintarAvisos(); });
-  if (window.__ctDashDatos && window.__ctDashDatos.alertas) alertas = window.__ctDashDatos.alertas;
+  document.addEventListener("contateck:dashboard-datos", function (e) { alertas = puede("dashboard") ? ((e.detail && e.detail.alertas) || []) : []; pintarAvisos(); });
+  if (puede("dashboard") && window.__ctDashDatos && window.__ctDashDatos.alertas) alertas = window.__ctDashDatos.alertas;
   // Invitaciones a otras empresas (solo si el backend ya es multiempresa).
   (async function () {
     for (var i = 0; i < 100 && !(window.CONTATECK_SUPABASE_TOKEN && window.CONTATECK_EMPRESA_PG); i++) await esperar(150);

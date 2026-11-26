@@ -89,6 +89,8 @@
   document.querySelectorAll(".nav-item[data-view]").forEach(function (item) {
     item.addEventListener("click", function () {
       const id = item.getAttribute("data-view");
+      // OT-0070: un rol no entra a una sección que no es suya (ni por un clic programático desde otro módulo).
+      if (window.CTAcceso && !window.CTAcceso.puedeVer(document.documentElement.getAttribute("data-rol"), id)) return;
       document.querySelectorAll(".nav-item[data-view]").forEach(function (n) { n.classList.remove("is-active"); });
       item.classList.add("is-active");
       document.querySelectorAll(".view").forEach(function (v) { v.classList.toggle("is-active", v.getAttribute("data-view") === id); });
