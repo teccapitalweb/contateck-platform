@@ -25,7 +25,8 @@ function armarDoc() {
   const vistas = [...html.matchAll(/<div class="nav-item[^"]*" data-view="([a-z]+)" data-title="([^"]*)"/g)].map((m) => ({ v: m[1], t: m[2] }));
   const secciones = [...html.matchAll(/<section class="view[^"]*" data-view="([a-z]+)"/g)].map((m) => m[1]);
   assert.ok(vistas.length >= 8 && secciones.length >= 8, 'se leyeron las vistas reales de dashboard.html');
-  const items = vistas.map((x) => el({ 'data-view': x.v, 'data-title': x.t }, x.v === 'dashboard' ? ['nav-item', 'is-active'] : ['nav-item']));
+  const clics = [];
+  const items = vistas.map((x) => { const i = el({ 'data-view': x.v, 'data-title': x.t }, x.v === 'dashboard' ? ['nav-item', 'is-active'] : ['nav-item']); i.click = () => clics.push(x.v); return i; });
   const grupo = (vs) => { const g = el({}, ['side__group']); g.hijos = items.filter((i) => vs.includes(i.getAttribute('data-view'))); g.querySelectorAll = () => g.hijos; return g; };
   const grupos = [grupo(['dashboard', 'contabilidad', 'ventas', 'facturacion', 'nomina', 'sat']), grupo(['invitaciones']), grupo(['ia'])];
   const views = secciones.map((v) => el({ 'data-view': v }, v === 'dashboard' ? ['view', 'is-active'] : ['view']));
@@ -34,7 +35,7 @@ function armarDoc() {
     querySelectorAll(sel) { if (sel === '.nav-item[data-view]') return items; if (sel === '.side__group') return grupos; if (sel === '.view[data-view]') return views; throw new Error('selector no previsto: ' + sel); },
     querySelector(sel) { if (sel === '.view.is-active') return views.find((v) => v.classList.contains('is-active')) || null; if (sel === '[data-crumb-title]') return crumb; throw new Error('selector no previsto: ' + sel); },
   };
-  return { doc, items, grupos, views, crumb, vistas: vistas.map((x) => x.v) };
+  return { doc, items, grupos, views, crumb, clics, vistas: vistas.map((x) => x.v) };
 }
 const visibles = (lista) => lista.filter((x) => !x.classList.contains('por-rol-oculto')).map((x) => x.getAttribute('data-view'));
 
@@ -58,6 +59,7 @@ ok('rh: se ocultan menú, rótulos y secciones que no son suyos y arranca en Nó
   assert.equal(d.views.filter((v) => v.classList.contains('is-active')).length, 1, 'una sola sección activa');
   assert.equal(d.items.filter((i) => i.classList.contains('is-active')).map((i) => i.getAttribute('data-view')).join(), 'nomina');
   assert.equal(d.crumb.textContent, 'Nómina');
+  assert.deepEqual(d.clics, ['nomina'], 'se hace el clic real en su opción de inicio: así el módulo dibuja su sección (si no, queda en blanco)');
   assert.equal(d.grupos[2].classList.contains('por-rol-oculto'), true, 'el grupo "Asistente", sin opciones visibles, también se oculta');
   assert.equal(d.grupos[1].classList.contains('por-rol-oculto'), false); assert.equal(d.grupos[0].classList.contains('por-rol-oculto'), false);
 });
@@ -67,12 +69,13 @@ ok('vendedor: ve Ventas y Facturación, arranca en Ventas y se oculta el grupo d
   assert.deepEqual(visibles(d.items).sort(), ['facturacion', 'ventas']); assert.deepEqual(visibles(d.views).sort(), ['facturacion', 'ventas']);
   assert.equal(d.views.find((v) => v.classList.contains('is-active')).getAttribute('data-view'), 'ventas'); assert.equal(d.crumb.textContent, 'Ventas y pagos');
   assert.equal(d.grupos[1].classList.contains('por-rol-oculto'), true); assert.equal(d.grupos[2].classList.contains('por-rol-oculto'), true);
+  assert.deepEqual(d.clics, ['ventas'], 'Ventas se dibuja con el clic en su opción');
 });
 
 ok('los demás roles (y un rol desconocido) no cambian nada; aplicarlo dos veces da lo mismo', () => {
   for (const rol of ['director', 'admin', 'contador', 'auditor', undefined]) {
     const d = armarDoc(); const r = acceso.aplicar(rol, d.doc);
-    assert.deepEqual(r, { ocultas: [], inicio: null }); assert.equal(visibles(d.items).length, d.vistas.length);
+    assert.deepEqual(r, { ocultas: [], inicio: null }); assert.equal(visibles(d.items).length, d.vistas.length); assert.deepEqual(d.clics, [], 'sin clics para los demás roles');
     assert.equal(d.views.find((v) => v.classList.contains('is-active')).getAttribute('data-view'), 'dashboard'); assert.equal(d.crumb.textContent, 'Dashboard ejecutivo');
   }
   const d = armarDoc(); acceso.aplicar('rh', d.doc); const una = JSON.stringify(visibles(d.items)); acceso.aplicar('rh', d.doc);
@@ -85,7 +88,7 @@ ok('si la sección activa ya es del rol, no se mueve (p. ej. el vendedor que ya 
   d.views.forEach((v) => v.classList.toggle('is-active', v.getAttribute('data-view') === 'facturacion'));
   d.items.forEach((i) => i.classList.toggle('is-active', i.getAttribute('data-view') === 'facturacion'));
   acceso.aplicar('vendedor', d.doc);
-  assert.equal(d.views.find((v) => v.classList.contains('is-active')).getAttribute('data-view'), 'facturacion');
+  assert.equal(d.views.find((v) => v.classList.contains('is-active')).getAttribute('data-view'), 'facturacion'); assert.deepEqual(d.clics, [], 'no se mueve ni se hace clic si ya estaba en una sección suya');
 });
 
 ok('el panel carga el módulo antes que app.js, lo aplica al fijar el rol, y app.js y el buscador lo respetan', () => {
