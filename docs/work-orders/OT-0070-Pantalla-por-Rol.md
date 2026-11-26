@@ -26,5 +26,9 @@ Esto **ordena la pantalla; no es la seguridad**. La seguridad sigue siendo el se
 ## Verificado en vivo (rh, Empresa Demo C, 26-nov-2026)
 Con la sesión de `demo.rh@contateck.mx` y el cambio ya aplicado: el menú muestra solo **Nómina** y **Equipo** (los grupos Inicio, Fiscal y Asistente quedan ocultos), la pantalla arranca en **Nómina**, no hay botones de "Nueva póliza", "Configuración contable", "Timbrar CFDI" ni "Timbrado masivo", un clic programático a Contabilidad no cambia de sección, y el buscador no encuentra facturas ("CT-" → sin resultados) pero sí al empleado ("Karla").
 
+## Verificado en vivo (vendedor, Empresa Demo C, 26-nov-2026)
+Con `demo.vendedor.c@contateck.mx` (vendedor de Empresa Demo C): el menú muestra solo **Ventas y pagos** y **Facturación**, arranca en Ventas; en Facturación ve la lista de CFDI **sin ningún botón** (solo lectura); en Ventas tiene "Nueva venta" (abre el formulario "Nueva venta / Registro de pago"; se cerró sin guardar) y no tiene botones de revisar, confirmar ni contabilizar. El servidor le responde 403 en empleados y en SAT y Fiscal, los indicadores fiscales llegan "restringido" y la lista de nóminas llega vacía.
+**Hallazgo menor, sin cambiar:** en Ventas el vendedor ve el aviso "1 venta confirmada sin póliza contable… Ver cuáles", pensado para administración; el enlace lo lleva a Contabilidad, que no es suya (la navegación lo rechaza y se queda en Ventas). También ve las 5 ventas de la empresa, no solo las suyas (la base lo permite).
+
 ## No verificado
-El vendedor en pantalla (la cuenta `demo.vendedor.c@contateck.mx` está creada, pendiente de entrar), la vista de rh en un teléfono y el parpadeo del menú completo durante el instante en que carga el perfil (el menú se ajusta al conocer el rol).
+La vista de rh en un teléfono y el parpadeo del menú completo durante el instante en que carga el perfil (el menú se ajusta al conocer el rol).
