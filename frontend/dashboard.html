@@ -250,6 +250,7 @@
               <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-search="polizas" placeholder="Buscar póliza por folio o concepto…"></div>
               <button class="btn btn--primary btn--sm" data-cont-contabilizar><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;margin-right:.35rem"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Contabilizar CFDI</button>
               <button class="btn btn--ghost btn--sm" data-cont-importar-xml><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;margin-right:.35rem"><path d="M12 16V4M7 9l5-5 5 5M5 21h14"/></svg>Importar XML recibido</button>
+              <button class="btn btn--ghost btn--sm" data-cont-exportar-pol title="Descarga en CSV las pólizas que estás viendo (con el filtro puesto), para abrirlas en Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;margin-right:.35rem"><path d="M12 4v12M7 11l5 5 5-5M5 21h14"/></svg>Exportar CSV</button>
             </div>
             <div style="overflow-x:auto">
               <table class="tbl">
@@ -391,9 +392,10 @@
 <script type="module" src="auth-guard.js?v=11"></script>
 <script type="module" src="data-firestore.js?v=15"></script>
 <script src="facturacion-masiva-csv.js?v=1"></script>
+<script src="exportar-csv.js?v=1"></script>
 <script src="facturacion.js?v=25"></script>
-<script src="contabilidad.js?v=23"></script>
-<script src="ventas.js?v=5"></script>
+<script src="contabilidad.js?v=24"></script>
+<script src="ventas.js?v=6"></script>
 <script src="nomina.js?v=6"></script>
 <script type="module" src="simulador-fiscal.js?v=4"></script>
 <script src="fiscal.js?v=6"></script>

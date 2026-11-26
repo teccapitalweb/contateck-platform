@@ -242,6 +242,7 @@
         <div class="v-toolbar">
           <input class="v-inp" id="v-buscar" type="search" placeholder="Buscar por folio, cliente, concepto o referencia" autocomplete="off">
           <input class="v-inp" id="v-mes" type="month" title="Filtrar por mes de la fecha de pago">
+          <button class="btn btn--ghost" data-v-exportar title="Descarga en CSV los pagos que estás viendo (con el estado, la búsqueda y el mes puestos), para abrirlos en Excel">Exportar CSV</button>
         </div>
         <div style="overflow-x:auto">
           <table class="tbl v-tbl">
@@ -368,6 +369,20 @@
         <td><div class="v-acc">${accionesFila(v)}</div></td>
       </tr>`;
     }).join("");
+  }
+
+  // OT-0074: exporta a CSV lo que se ve (mismo filtro de estado, búsqueda y mes). Solo lee: no cambia nada.
+  function exportarVentas() {
+    const arr = ventasFiltradas();
+    if (!arr.length) { toast("No hay pagos con esos filtros para exportar", "warn"); return; }
+    if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+    const cols = ["Folio", "Cliente", "Concepto", "Importe", "Incluye IVA", "Fecha de pago", "Método de pago", "Referencia", "Banco", "Registrado por", "Estado", "Póliza", "Motivo (rechazo o cancelación)", "Notas"];
+    const filas = arr.map((v) => [
+      v.folio, v.cliente, v.concepto, Number(v.importe) || 0, v.incluye_iva === false ? "No" : "Sí", String(v.fecha_pago || "").slice(0, 10),
+      v.metodo_pago, v.referencia, v.banco, nombreVendedor(v.vendedor_id), (ESTADOS[v.estado] || ESTADOS.pendiente).txt, v.poliza_folio || "", v.motivo_rechazo, v.notas,
+    ]);
+    window.CTExportar.descargar(window.CTExportar.nombreArchivo("Ventas"), window.CTExportar.csv(cols, filas));
+    toast("Exportados " + arr.length + " pago" + (arr.length === 1 ? "" : "s") + " a CSV");
   }
 
   // ---------- Modal genérico ----------
@@ -737,6 +752,7 @@
   }
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-v-nueva]")) { openNuevaVenta(); return; }
+    if (e.target.closest("[data-v-exportar]")) { exportarVentas(); return; }
     if (e.target.closest("[data-v-guardar]")) { guardarVenta(); return; }
     const ver = e.target.closest("[data-v-ver]"); if (ver) { verDetalle(ver.getAttribute("data-v-ver")); return; }
     const tom = e.target.closest("[data-v-tomar]"); if (tom) { tomar(tom.getAttribute("data-v-tomar")); return; }
