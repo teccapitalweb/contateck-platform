@@ -1091,6 +1091,7 @@ ${ctas}
           <div class="fac-sat-results"></div>
         </div>
         ${cta ? `<div class="cont-mayor-saldo"><span>Saldo actual</span><b>$${fmt(saldoCuenta(cta))}</b></div>` : ""}
+        <button class="btn btn--ghost btn--sm" data-mayor-exportar title="Descarga en CSV los movimientos de esta cuenta, para abrirlos en Excel" style="align-self:flex-end">Exportar CSV</button>
       </div>
       <div style="overflow-x:auto;margin-top:1rem">
         <table class="tbl"><thead><tr><th>Fecha</th><th>Folio</th><th>Concepto</th>
@@ -1134,6 +1135,7 @@ ${ctas}
     : p.estado === "cancelado" ? '<span class="pill pill--late">Cancelado</span>' : '<span class="pill pill--pend">Registrado</span>';
 
   let provFacturasCache = []; // OT-0024 fix: evita re-pedir todo el listado nada más para abrir un historial
+  let provFiltradas = []; // OT-0078: lo que se ve en la tabla (con la búsqueda puesta), para exportarlo
   async function renderProveedores() {
     const pane = document.querySelector('[data-pane="proveedores"]');
     if (!pane) return;
@@ -1149,6 +1151,7 @@ ${ctas}
       return pa - pb;
     });
     provFacturasCache = facturas;
+    provFiltradas = facturas;
     const fila = (f) => {
       const esPPD = f.metodo_pago === "PPD";
       const badge = f.metodo_pago ? `<span class="cont-badge-metodo ${esPPD ? "is-ppd" : "is-pue"}">${esc(f.metodo_pago)}</span>` : "";
@@ -1165,7 +1168,8 @@ ${ctas}
     pane.innerHTML = `<div class="card">
       <h3 style="margin:0 0 .2rem;font-size:.95rem">Auxiliar de facturas</h3>
       <p class="cont-hint" style="margin-top:0">Historial completo por factura — pendientes y ya liquidadas. El saldo total que le debes a proveedores (la cuenta de control) vive en Libro Mayor, cuenta <b>201 · Proveedores</b>.</p>
-      <div class="toolbar"><div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-provbusca placeholder="Buscar por folio o proveedor…"></div></div>
+      <div class="toolbar"><div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input data-provbusca placeholder="Buscar por folio o proveedor…"></div>
+        <button class="btn btn--ghost btn--sm" data-cxp-exportar title="Descarga en CSV las facturas que estás viendo (con la búsqueda puesta), para abrirlas en Excel">Exportar CSV</button></div>
       <div style="overflow-x:auto"><table class="tbl">
         <thead><tr><th>Folio</th><th>Proveedor</th><th>Fecha</th><th style="text-align:right">Total</th><th style="text-align:right">Saldo</th><th>Estado</th><th></th></tr></thead>
         <tbody data-provfilas>${facturas.length ? facturas.map(fila).join("") : `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2.2rem">Aún no hay facturas de proveedor. Impórtalas desde Pólizas → "Importar XML recibido".</td></tr>`}</tbody>
@@ -1174,6 +1178,7 @@ ${ctas}
     if (busca) busca.addEventListener("input", () => {
       const q = busca.value.trim().toLowerCase();
       const filtradas = q ? facturas.filter((f) => (f.folio || "").toLowerCase().includes(q) || (f.emisor_nombre || "").toLowerCase().includes(q)) : facturas;
+      provFiltradas = filtradas;
       pane.querySelector("[data-provfilas]").innerHTML = filtradas.length ? filtradas.map(fila).join("") : `<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:2rem">Sin resultados para "${esc(busca.value)}".</td></tr>`;
     });
   }
@@ -1360,6 +1365,58 @@ ${ctas}
     toast("Balanza exportada a CSV (" + b.filas.length + " cuentas)" + (b.cuadra ? "" : " — ojo: no cuadra"), b.cuadra ? "ok" : "warn");
   }
 
+  // OT-0078: movimientos de la cuenta que se ve en el Libro Mayor, con su saldo acumulado. Solo lee.
+  function exportarMayorCsv() {
+    const inp = document.querySelector("[data-mayor-cuenta]");
+    const sel = inp ? inp.value : "";
+    const cta = sel ? getCuentaPorCodigo(sel) : null;
+    if (!cta) { toast("Elige una cuenta para exportar su mayor", "warn"); return; }
+    const movs = movimientosCuenta(sel).movs;
+    if (!movs.length) { toast("Esta cuenta no tiene movimientos para exportar", "warn"); return; }
+    if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+    let acum = 0;
+    const filas = movs.map((m) => {
+      acum += cta.nat === "Deudora" ? (m.debe - m.haber) : (m.haber - m.debe);
+      return [String(m.fecha || "").slice(0, 10), m.folio, m.concepto, round2(num(m.debe)), round2(num(m.haber)), round2(acum)];
+    });
+    const cols = ["Fecha", "Folio", "Concepto", "Debe", "Haber", "Saldo acumulado (" + cta.nat + ")"];
+    window.CTExportar.descargar(window.CTExportar.nombreArchivo("Libro_mayor_" + cta.codigo), window.CTExportar.csv(cols, filas));
+    toast("Mayor de " + cta.codigo + " · " + cta.nombre + " exportado (" + movs.length + " movimientos)");
+  }
+
+  // OT-0078: facturas de proveedor que se ven en Cuentas por Pagar (con la búsqueda puesta). Solo lee.
+  function exportarCxpCsv() {
+    const arr = provFiltradas || [];
+    if (!arr.length) { toast("No hay facturas de proveedor para exportar", "warn"); return; }
+    if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+    const cols = ["Folio", "Proveedor", "Fecha", "Método de pago", "Total", "Saldo pendiente", "Estado"];
+    const filas = arr.map((f) => [f.folio || "", f.emisor_nombre || "", String(f.fecha || "").slice(0, 10), f.metodo_pago || "",
+      round2(num(f.total)), round2(num(f.saldo_pendiente)), num(f.saldo_pendiente) <= 0 ? "Liquidada" : "Pendiente"]);
+    window.CTExportar.descargar(window.CTExportar.nombreArchivo("Cuentas_por_pagar"), window.CTExportar.csv(cols, filas));
+    toast("Exportadas " + arr.length + " factura" + (arr.length === 1 ? "" : "s") + " de proveedor a CSV");
+  }
+
+  // OT-0078: Estado de Resultados y Balance General, tal como se ven (con el periodo elegido), en un solo CSV. Solo lee.
+  function exportarEstadosCsv() {
+    if (!window.CTExportar) { toast("No se pudo preparar la exportación; recarga la página", "warn"); return; }
+    const er = estadoResultados(), bg = balanceGeneral();
+    const filas = [];
+    const sec = (estado, seccion, items) => items.forEach((x) => filas.push([estado, seccion, x.codigo, x.nombre, round2(x.saldo)]));
+    const tot = (estado, seccion, nombre, v) => filas.push([estado, seccion, "", nombre, round2(v)]);
+    sec("Estado de Resultados", "Ingresos", er.ingresos); tot("Estado de Resultados", "Ingresos", "Total de ingresos", er.totalIngresos);
+    sec("Estado de Resultados", "Costos y gastos", er.gastos); tot("Estado de Resultados", "Costos y gastos", "Total de gastos", er.totalGastos);
+    tot("Estado de Resultados", "Resultado", er.utilidad >= 0 ? "Utilidad del ejercicio" : "Pérdida del ejercicio", Math.abs(er.utilidad));
+    sec("Balance General", "Activo", bg.activo); tot("Balance General", "Activo", "Total activo", bg.totalActivo);
+    sec("Balance General", "Pasivo", bg.pasivo); tot("Balance General", "Pasivo", "Total pasivo", bg.totalPasivo);
+    sec("Balance General", "Capital", bg.capital); filas.push(["Balance General", "Capital", "305", "Resultado del ejercicio", round2(bg.utilidad)]);
+    tot("Balance General", "Capital", "Total capital", bg.totalCapital);
+    tot("Balance General", "Resultado", "Pasivo + Capital", bg.totalPasivoCapital);
+    const p = periodoActivo ? "_" + periodoActivo.anio + "-" + String(periodoActivo.mes).padStart(2, "0") : "";
+    window.CTExportar.descargar(window.CTExportar.nombreArchivo("Estados_financieros" + p),
+      window.CTExportar.csv(["Estado", "Sección", "Código", "Cuenta", "Importe"], filas));
+    toast("Estados financieros exportados a CSV" + (bg.cuadra ? "" : " — ojo: el balance no cuadra"), bg.cuadra ? "ok" : "warn");
+  }
+
   /* ---------- Descargar archivo (XML/texto) ---------- */
   function descargarTexto(nombre, contenido, mime) {
     try {
@@ -1381,7 +1438,8 @@ ${ctas}
     // Math.abs(), una cuenta atípica puede llegar con saldo negativo —
     // se muestra "-$1,234.00" en vez de "$-1,234.00".
     const fila = (x) => `<tr${x.saldo < 0 ? ' style="color:#FB7185"' : ""}><td class="num">${esc(x.codigo)}</td><td>${esc(x.nombre)}${x.saldo < 0 ? " ⚠" : ""}</td><td class="num" style="text-align:right">${x.saldo < 0 ? "-$" + fmt(Math.abs(x.saldo)) : "$" + fmt(x.saldo)}</td></tr>`;
-    pane.innerHTML = `<div class="cont-ef-grid">
+    pane.innerHTML = `<div class="toolbar" style="justify-content:flex-end"><button class="btn btn--ghost btn--sm" data-est-exportar title="Descarga en CSV el Estado de Resultados y el Balance General que estás viendo (con el periodo elegido), para abrirlos en Excel">Exportar CSV</button></div>
+      <div class="cont-ef-grid">
       <div class="card">
         <h3 class="cont-ef-titulo">Estado de Resultados</h3>
         <table class="tbl"><tbody>
@@ -3414,6 +3472,9 @@ ${ctas}
     }
     if (e.target.closest("[data-cont-exportar-pol]")) { exportarPolizasCsv(); return; }
     if (e.target.closest("[data-cont-exportar-balanza]")) { exportarBalanzaCsv(); return; }
+    if (e.target.closest("[data-mayor-exportar]")) { exportarMayorCsv(); return; }
+    if (e.target.closest("[data-cxp-exportar]")) { exportarCxpCsv(); return; }
+    if (e.target.closest("[data-est-exportar]")) { exportarEstadosCsv(); return; }
     if (e.target.closest("[data-cont-contabilizar]")) { openContabilizarCfdi(); return; }
     if (e.target.closest("[data-cont-importar-xml]")) { openImportarXml(); return; }
     if (e.target.closest("[data-sat-csv-cat]")) { descargarTexto("Cuentas_para_contadora.csv", csvCuentasContadora(), "text/csv;charset=utf-8"); return; }
